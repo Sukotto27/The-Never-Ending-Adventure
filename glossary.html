@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reference Information</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .accordion {
+            background-color: #eee;
+            color: #444;
+            cursor: pointer;
+            padding: 18px;
+            width: 100%;
+            text-align: left;
+            border: none;
+            outline: none;
+            transition: 0.4s;
+        }
+
+        .active, .accordion:hover {
+            background-color: #ccc;
+        }
+
+        .panel {
+            padding: 0 18px;
+            display: none;
+            background-color: white;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="title-banner">
+        <!-- Title banner content goes here -->
+    </div>
+    <div id="content">
+        <h1>Reference Information</h1>
+
+        <button class="accordion">Bestiary & Wildlife</button>
+        <div class="panel">
+            <p>All species that may be encountered:</p>
+		<ul>
+			<li>Humans</li>
+			<li>Elves</li>
+			<li>Half-Elves</li>
+			<li>Dwarves</li>
+			<li>Giants</li>
+			<li>Half-Giants</li>
+			<li>Dragons</li>
+			<li>Wyverns</li>
+			<li>Trolls</li>
+			<li>Goblins</li>
+			<li>Half-Goblins</li>
+			<li>Gryphon</li>
+			<li>Siren</li>
+			<li>Giant Spiders</li>
+			<li>Sand Worms</li>
+			<li>Wolves</li>
+			<li>Fairies</li>
+			<li>Nymphs</li>
+			<li>Deer</li>
+			<li>Elk</li>
+			<li>Boar</li>
+			<li>Foxes</li>
+			<li>Rabbits</li>
+			<li>Jackalopes</li>
+			<li>Squirrels</li>
+			<li>Fish</li>
+			<li>Chickens</li>
+			<li>Dire Wolves</li>
+			<li>Bears</li>
+		</ul>
+        </div>
+
+        <button class="accordion">Setting</button>
+        <div class="panel">
+            <p>All Kingdoms, cities, villages, and notable locations that can be visited:</p>
+		<ul>
+		    <ul>
+			<li>Kingdom of Ardrenhold</li>
+		    <ul>
+			    <li>Description: A large-spanning, human territory with a formiatble military. The people of Ardrenhold are a proud people, and are welcoming to strangers, so long as they don't draw attention.</li>
+			    <li>Population: Human ruled and populated primarily by humans.</li>
+			    <li>Known for: Brave, valiant knights, and welcoming taverns.</li>
+			    <li>Geography: Lush, green, forest-rich. Located on the western coast.</li>
+			    <li>Notable Locations: Raven's Perch Lookout (A high tower offering breathtaking views, said to be a favored spot of prophetic ravens. The high cliffs around Raven's Perch Lookout are rumored to be nesting grounds for wyverns), The Hearthstone Inn (A cozy inn known for its heartwarming hospitality), The Goldenfields (Vast and fertile fields known for their golden wheat and the annual Harvest Festival), The Knight's Rest (A historic inn in the city of Ardrenkeep, famous for being a meeting place of legendary knights and adventurers), The Royal Falconry (A majestic aviary in the city of Ardrenkeep, where the finest falcons are trained for hunting and messaging), Ardrenwood: A large forest inhabited by a goblin tribe threatening nearby villages), The Shadow Cavern (Beneath the Raven's Perch Lookout, a hidden cavern exists. It's said to hide a legendary set of armor once belonging to the Raven Knight. A raven said to be the reincarnation of the knight loves there. If the player can solve his riddle, he will be rewarded with the legendary armor).</li>
+			    <li>Cities & Villages: Ealdenford - Meaning 'Old River Crossing.' A city built around a historic ford across a major river. Wulfhelm - Translating to 'Wolf's Helm.' A fortified city known for its strength and resilience. Aethelstow - 'Noble Place.' A city known for its royal heritage and regal architecture. Grimscastel - Meaning 'Grim's Castle.' A city marked by a legendary, imposing castle on its skyline. Ardrenkeep – Ardrenhold’s capital. A fortified and well-guarded city housing Ardrenhold’s main keep and the throne of their noble king. Kinsburg - 'King's Borough.' A small village known for a historical event involving a king. Hearthmere - 'Lake of the Hearth.' A village near a tranquil lake, known for its warm, welcoming community. Wyrmwood - Meaning 'Dragon's Wood.' A mysterious village bordering an ancient, dense forest. Brigstow - 'Bridge Town.' A quaint village located by an old, stone bridge. Eorlingstead - 'Noble's Homestead.' A rural village with a strong sense of community and tradition. Alderwood - 'Old woods' A small village bordering an old forest in which many of the trees have mysteriously died. Rumor has is a sorceress living within the forest is to blame.</li>
+		    </ul>
+		</ul>
+		    <ul>
+			<li>Kingdom of Dwynbroch</li>
+		    <ul>
+			    <li>Description: A lively, hard-working, close-knit people who are careful about who crosses their borders.</li>
+			    <li>Population: Human ruled and populated by humans and dwarves.</li>
+			    <li>Known for: Lively music and art, and a fascination with dragons.</li>
+			    <li>Geography: Mountainous, pine forests, bogs, rocky. Northwestern region.</li>
+			    <li>Notable Locations: Ancient ruins just outside the border that hide 1 of 12 lost ancient artifacts. Lochvale Arena (A fighting arena where contestants from across the continent come to fight or bet on fights to make gold. The rocky terrain around Lochvale Arena is said to be inhabited by mountain trolls. These formidable creatures are drawn to the noise and commotion of the arena, often wandering close to the nearby settlements), The Highland Meadery (Famous for its exquisite honey mead, this establishment is a favorite among locals and travelers alike), The Misty Moors (Expansive moorlands shrouded in perpetual mist, rumored to be home to mystical creatures and ancient spirits), The Thornwood Forest (A dense, thorny forest believed to be enchanted, with paths that change and hidden glades. Giant spiders reside within. The dense Thornwood Forest is rumored to be home to a reclusive dragon. Sightings of this majestic and fearsome beast have been reported by travelers who venture too deep into the forest), The Minstrel's Meadow (A tranquil meadow where bards and poets gather to share stories and songs under the stars), The Echoing Hollow (A secluded glen in Thornwood Forest, where echoes seem to carry hidden messages. An ancient stone altar here is rumored to be a gateway to hidden treasures if the correct sequence of echoes is replicated), The Dragon's Spine Ridge (A treacherous mountain path where dragon sightings are common. Hidden in a crevice, there lies a dragon egg, which, if hatched, could grant the finder a powerful dragon companion), The Weeping Waterfall (A magnificent waterfall that hides a cave behind its veil. Within the cave, illuminated by bioluminescent moss, is a chest containing a lost treasure).</li>
+			    <li>Cities & Villages: Lochvale. Morvarth - From 'Mor,' meaning sea, and 'Varth,' signifying a hill. A coastal city known for its commanding views over the sea from elevated grounds. Glencairn - 'Glen' for a deep valley, and 'Cairn,' representing stone monuments. A city famed for its valley filled with historical cairns. Aberwyn – (Capital) Combining 'Aber,' for the mouth of a river, with 'Wyn,' meaning fair or white. A city by the river mouth, known for its picturesque beauty. Glenvarloch - 'Glen' for a valley, and 'Varloch,' meaning lake. A city beside a mysterious, deep lake in a valley. Dalmore - 'Dal' for field or valley, and 'More,' meaning great. A village in a great valley, known for its expansive fields. Thornwood village. Braefern - 'Brae' for a hillside, and 'Fern,' for the lush ferns. A village on a hillside, surrounded by a sea of green ferns. Dunleith - 'Dun' for a fort, and 'Leith,' a derivative of gray. A village with an ancient, gray-stone fort, steeped in history. Glenmire village.</li>
+		    </ul>
+		</ul>
+			<li>Kingdom of Brythwen</li>
+			<li>Kingdom of Nithrond</li>
+			<li>Kingdom of Sivanrift</li>
+			<li>Kingdom of Naradreth</li>
+			<li>Kingdom of Feldarún</li>
+			<li>Kingdom of Wistravael</li>
+			<li>Kingdom of Orindroth</li>
+			<li>Kingdom of Rendarost</li>
+		</ul>
+
+        </div>
+
+        <button class="accordion">NPCs</button>
+        <div class="panel">
+            <p>NPC information goes here.</p>
+		<ul>
+		    <ul>
+			<li>Classes & Professions</li>
+		    <ul>
+			<li>Mage</li>
+			<li>Druid</li>
+			<li>Wizard</li>
+			<li>Witch</li>
+			<li>Sorcerer</li>
+			<li>Sorceress</li>
+			<li>Noble</li>
+			<li>Peasant</li>
+			<li>Warrior</li>
+			<li>Guard</li>
+			<li>Ranger</li>
+			<li>Worker</li>
+			<li>Bounty Hunter</li>
+			<li>Hunter</li>
+			<li>Assassin</li>
+			<li>Merchant</li>
+			<li>Tavern Keeper</li>
+			<li>Tailor</li>
+			<li>Fletcher</li>
+			<li>Apothecary</li>
+			<li>Healer</li>
+			<li>Elder</li>
+			<li>Knight</li>
+			<li>Squire</li>
+			<li>Soldier</li>
+			<li>Bard</li>
+			<li>Minstrel</li>
+			<li>Thief</li>
+			<li>Barbarian</li>
+			<li>Assassin</li>
+			<li>Bandit</li>
+			<li>Pirate</li>
+			<li>Cleric</li>
+			<li>Sage</li>
+			<li>Blacksmith</li>
+			<li>Scholar</li>
+			<li>Alchemist</li>
+			<li>Scout</li>
+			<li>Sellsword</li>
+			<li>Mercenary</li>
+			<li>Herbalist</li>
+			<li>Carpenter</li>
+			<li>Cobbler</li>
+			<li>Baker</li>
+			<li>Butcher</li>
+			<li>Mason</li>
+			<li>Weaver</li>
+			<li>Potter</li>
+			<li>Farmer</li>
+			<li>Fisherman</li>
+			<li>Handmaiden</li>
+			<li>Brewer</li>
+			<li>Miller</li>
+			<li>Barber</li>
+			<li>Scribe</li>
+			<li>Glassblower</li>
+			<li>Tanner</li>
+			<li>Cartographer</li>
+			<li>Smith</li>
+			<li>Armorer</li>
+			<li>Shipwright</li>
+			<li>Stablemaster</li>
+			<li>Midwife</li>
+			<li>Constable</li>
+			<li>Herald</li>
+			<li>King</li>
+			<li>Queen</li>
+			<li>Prince</li>
+			<li>Princess</li>
+			<li>Duke</li>
+			<li>Duchess</li>
+			<li>Count</li>
+			<li>Countess</li>
+			<li>Baron</li>
+			<li>Baroness</li>
+			<li>Chancellor</li>
+			<li>Steward</li>
+			<li>Warden</li>
+			<li>Chamberlain</li>
+			<li>Castellan</li>
+			<li>Marshal</li>
+			<li>Bowyer</li>
+			<li>Jeweler</li>
+			<li>Assassin</li>
+			<li>Courier</li>
+			<li>Executioner</li>
+			<li>Watchman</li>
+			<li>Page</li>
+			<li>Shepherd</li>
+			<li>Bailiff</li>
+			<li>Chandler</li>
+			<li>Cooper</li>
+			<li>Spy</li>
+			<li>Stable Hand</li>
+			<li>Reeve</li>
+			<li>Leatherworker</li>
+			<li>Commoner</li>
+			<li>Advisor</li>
+			<li>Lord</li>
+			<li>Lady</li>
+			<li>Regent</li>
+			<li>Thane</li>
+			<li>Treasurer</li>
+			<li>Spymaster</li>
+			<li>Tactician</li>
+			<li>Loremaster</li>
+			<li>Woodworker</li>
+			<li>Gardener</li>
+			<li>Miner</li>
+			<li>Craftsman</li>
+			<li>Artist</li>
+			<li>Calligrapher</li>
+			<li>Captain</li>
+			<li>Sentinel</li>
+			<li>Book Keeper</li>
+			<li>Librarian</li>
+			<li>Historian</li>
+			<li>Prospector</li>
+			<li>Chief</li>
+			<li>Chieftain</li>
+			<li>Councilor</li>
+			<li>Ambassador</li>
+			<li>Trader</li>
+			<li>Sculptor</li>
+			<li>Spearman</li>
+			<li>Pikeman</li>
+			<li>Archer</li>
+			<li>Axeman</li>
+			<li>Shield Maiden</li>
+			<li>Siege Engineer</li>
+			<li>Woodsman</li>
+			<li>Forester</li>
+			<li>Swordsman</li>
+			<li>Thespian</li>
+			<li>Explorer</li>
+			<li>Navigator</li>
+			<li>Adventurer</li>
+			<li>Sailor</li>
+			<li>Forager</li>
+			<li>Chef</li>
+			<li>Pathfinder</li>
+			<li>Tracker</li>
+		</ul>
+
+        </div>
+
+        <button class="accordion">Quests</button>
+        <div class="panel">
+            <p>Quest information goes here.</p>
+        </div>
+
+        <button class="accordion">Items</button>
+        <div class="panel">
+            <p>All obtainable items:</p>
+		<ul>
+	    <li>Weapons</li>
+		    <ul>
+			<li>Iron Longsword</li>
+			<li>Steel Longsword</li>
+			<li>Iron Shortsword</li>
+			<li>Steel Shortsword</li>
+			<li>Woodcutting Axe</li>
+			<li>Iron Battle Axe</li>
+			<li>Steel Battle Axe</li>
+			<li>Iron War Axe</li>
+			<li>Steel War Axe</li>
+			<li>Iron Spear</li>
+			<li>Steel Spear</li>
+			<li>Blacksmith's Hammer</li>
+			<li>Iron War Hammer</li>
+			<li>Steel War Hammer</li>
+			<li>Iron Halberd</li>
+			<li>Steel Halberd</li>
+			<li>Iron Scimitar</li>
+			<li>Steel Scimitar</li>
+			<li>Iron Saber</li>
+			<li>Steel Saber</li>
+			<li>Arming Sword</li>
+			<li>Recurve Bow</li>
+			<li>Longbow</li>
+			<li>Iron Arrow(s)</li>
+			<li>Steel Arrow(s)</li>
+			<li>Iron Dagger</li>
+			<li>Steel Dagger</li>
+			<li>Hunting Knife</li>
+			<li>Iron Polesword</li>
+			<li>Steel Polesword</li>
+			<li>Throwing Knives</li>
+			<li>Pitchfork</li>
+			<li>Iron Hatchet</li>
+			<li>Steel Hatchet</li>
+			<li>Crossbow</li>
+			<li>Iron Bolt(s)</li>
+			<li>Steel Bolt(s)</li>
+			<li>Iron Mace</li>
+			<li>Steel Mace</li>
+			<li>Iron Flail</li>
+			<li>Steel Flail</li>
+			<li>Iron Greatsword</li>
+			<li>Steel Greatsword</li>
+			<li>Bo Staff</li>
+			<li>Wooden Shield</li>
+			<li>Kite Shield</li>
+			<li>Round Shield</li>
+			<li>Heater Shield</li>
+			<li>Dwarven Great Sword</li>
+			<li>Dwarven Battle Axe</li>
+			<li>Dwarven Halberd</li>
+			<li>Dwarven Warhammer</li>
+			<li>Dwarven Crossbow</li>
+			<li>Elven Longsword</li>
+			<li>Elven Saber</li>
+			<li>Elven War Bow</li>
+			<li>Elven Dagger</li>
+			<li>Elven Battle Axe</li>
+		    </ul>
+		</ul>
+
+		<ul>
+	    <li>Armor & Clothing</li>
+		    <ul>
+			<li>Torso Layer 1</li>
+		<ul>
+			<li>Common Tunic</li>
+			<li>Linen Tunic</li>
+			<li>Robe</li>
+			<li>Military Tunic</li>
+			<li>Doublet</li>
+			<li>Gambeson</li>
+			<li>Padded Gambeson</li>
+		</ul>
+		</ul>
+		<ul>
+			<li>Torso Layer 2</li>
+		<ul>
+			<li>Chainmail Hauberk</li>
+			<li>Chainmail Shirt</li>
+			<li>Elven Chainmail Hauberk</li>
+			<li>Dwarven Chainmail Hauberk</li>
+		</ul>
+		</ul>
+		<ul>
+			<li>Torso Layer 3</li>
+		<ul>
+			<li>Leather Vest</li>
+			<li>Commoner Vest</li>
+			<li>Studded Leather Vest</li>
+			<li>Suede Vest</li>
+			<li>Tabard</li>
+			<li>Royal Tabard</li>
+			<li>Leather Brigandine</li>
+			<li>Studded Leather Brigandine</li>
+			<li>Iron Plate Curaiss</li>
+			<li>Steel Plate Curaiss</li>
+			<li>Leather Curaiss</li>
+			<li>Studded Leather Curaiss</li>
+			<li>Iron Plated Leather Curaiss</li>
+			<li>Steel Plated Leather Curaiss</li>
+		</ul>
+		</ul>
+
+		<ul>
+
+			<li>Cloaks & Capes</li>
+		<ul>
+
+			<li>Cape</li>
+			<li>Wool Cape</li>
+			<li>Royal Cape</li>
+			<li>Fur Cape</li>
+			<li>Common Cloak</li>
+			<li>Wool Cloak</li>
+			<li>Ranger's Cloak</li>
+			<li>Travel Cloak</li>
+		</ul>
+		</ul>
+		<ul>
+			<li>Footwear</li>
+		<ul>
+
+			<li>Iron Plate Greaves</li>
+			<li>Steel Plate Greaves</li>
+			<li>Leather Boots</li>
+			<li>Iron Plated Leather Boots</li>
+			<li>Steel Plated Leather Boots</li>
+			<li>Fur Boots</li>
+			<li>Leg Wraps</li>
+			<li>Commoner Shoes</li>
+			<li>Noble's Shoes</li>
+			<li>Leather Shoes</li>
+			<li>Cavalry Boots</li>
+			<li>Elven Plate Greaves</li>
+			<li>Dwarven Plate Greaves</li>
+		</ul>
+		</ul>
+		<ul>
+			<li>Armwear</li>
+		<ul>
+
+			<li>Leather Vambraces</li>
+			<li>Studded Leather Vambraces</li>
+			<li>Iron Plated Leather Vambraces</li>
+			<li>Steel Plated Leather Vambraces</li>
+			<li>Iron Plate Vambraces</li>
+			<li>Steel Plate Vambraces</li>
+			<li>Iron Plate Gauntlets</li>
+			<li>Steel Plate Gauntlets</li>
+			<li>Chainmail Gauntlets</li>
+			<li>Leather Gloves</li>
+			<li>Studded Leather Gloves</li>
+		</ul>
+		</ul>
+		<ul>
+			<li>Shoulder Armor</li>
+		<ul>
+
+			<li>Iron Plate Pauldrons</li>
+			<li>Steel Plate Pauldrons</li>
+			<li>Leather Pauldrons</li>
+			<li>Studded Leather Pauldrons</li>
+		</ul>
+		</ul>
+		<ul>
+			<li>Leg Armor</li>
+		<ul>
+
+			<li>Chainmail Chausses</li>
+			<li>Iron Plate Chausses</li>
+			<li>Steel Plate Chausses</li>
+			<li>Common Trousers</li>
+			<li>Leather Trousers</li>
+			<li>Studded Leather Trousers</li>
+		</ul>
+		</ul>
+		<ul>
+			<li>Hats & Helms</li>
+		<ul>
+
+			<li>Feathered Hat</li>
+			<li>Iron Bascinet Helm</li>
+			<li>Steel Bascinet Helm</li>
+			<li>Iron Sallet Helm</li>
+			<li>Steel Sallet Helm</li>
+			<li>Iron Barbute Helm</li>
+			<li>Steel Barbute Helm</li>
+			<li>Iron Kettle Hat</li>
+			<li>Steel Kettle Hat</li>
+			<li>Iron Spangenhelm</li>
+			<li>Steel Spangenhelm</li>
+			<li>Iron Nasalhelm</li>
+			<li>Steel Nasalhelm</li>
+			<li>Iron Visored Helm</li>
+			<li>Steel Visored Helm</li>
+			<li>Knight's Helm</li>
+			<li>Leather Coif</li>
+			<li>Chainmail Coif</li>
+			<li>Padded Coif</li>
+			<li>Elven War Helm</li>
+			<li>Dwarven War Helm</li>
+		    </ul>
+		</ul>
+</ul>
+		<ul>
+	    <li>Food, Ingredients & Herbs</li>
+		    <ul>
+			<li>Potion of Healing</li>
+			<li>Potion of Endurance</li>
+			<li>Bread</li>
+			<li>Cheese</li>
+			<li>Apple</li>
+			<li>Raw meat</li>
+			<li>Cooked meat</li>
+			<li>Honey</li>
+			<li>Mushroom</li>
+			<li>Carrot</li>
+			<li>Spices</li>
+			<li>Garlic</li>
+			<li>Onion</li>
+			<li>Potato</li>
+			<li>Tomato</li>
+			<li>Grape</li>
+			<li>Strawberry</li>
+			<li>Blueberry</li>
+			<li>Wheat</li>
+			<li>Flour</li>
+			<li>Wine</li>
+			<li>Milk</li>
+			<li>Egg</li>
+			<li>Raw Fish</li>
+			<li>Cooked Fish</li>
+			<li>Salt</li>
+			<li>Pie</li>
+			<li>Cake</li>
+			<li>Cabbage</li>
+			<li>Lentil</li>
+			<li>Corn</li>
+			<li>Pepper</li>
+			<li>Olive</li>
+			<li>Nuts</li>
+			<li>Ale</li>
+			<li>Mead</li>
+			<li>Tea</li>
+			<li>Sugar</li>
+			<li>Ginger</li>
+			<li>Cinnamon</li>
+			<li>Mint</li>
+			<li>Sage</li>
+			<li>Apple Cider</li>
+			<li>Mint</li>
+			<li>Lavender</li>
+			<li>Rosemary</li>
+			<li>Elderberry</li>
+			<li>Ginseng</li>
+			<li>Aloe Vera</li>
+			<li>Dandelion</li>
+			<li>Valerian Root</li>
+			<li>Milk Thistle</li>
+			<li>Ginger Root</li>
+			<li>Echinacea Root</li>
+			<li>Dandelion Root</li>
+			<li>Mandrake Root</li>
+			<li>Nightshade</li>
+			<li>Nightshade Root</li>
+			<li>Luminous Mushroom</li>
+		    </ul>
+		</ul>
+
+		<ul>
+	    <li>Spells</li>
+		    <ul>
+			<li>Offensive Spells</li>
+				<ul>
+				    <li>Firebolt</li>
+				    <li>Lightning Bolt</li>
+				    <li>Lightning Strike</li>
+				    <li>Kinetic Blow</li>
+				    <li>Ice Shard</li>
+				    <li>Paralysis</li>
+				</ul>
+			<li>Defensive Spells</li>
+				<ul>
+				    <li>Barrier</li>
+				</ul>
+			<li>Illusion Spells</li>
+				<ul>
+				    <li>Invisibility</li>
+				    <li>Bewilderment</li>
+				</ul>
+			<li>Healing Spells</li>
+				<ul>
+				    <li>Rapid Healing</li>
+				    <li>Transfer Life</li>
+				    <li>Cure Illness</li>
+				</ul>
+			<li>Other Spells</li>
+				<ul>
+				    <li>Illuminate</li>
+				</ul>
+
+		    </ul>
+		</ul>
+
+		<ul>
+	    <li>Books</li>
+		    <ul>
+			<li>Alchemist's Guide</li>
+			<li>Fletcher's Guide</li>
+			<li>Druid's Spellbook</li>
+			<li>Smithing Guide</li>
+			<li>Carpenter's Guide</li>
+			<li>Herbalists Guide</li>
+			<li>Crafting Guide</li>
+			<li>Hunter's Guide</li>
+		    </ul>
+		</ul>
+
+ 	    <li>General Items</li>
+		    <ul>
+			<li>Torch</li>
+			<li>Rope</li>
+			<li>Lantern</li>
+			<li>Cooking Pot</li>
+			<li>Tent</li>
+			<li>Waterskin</li>
+			<li>Fishing Rod</li>
+			<li>Lute</li>
+			<li>Flute</li>
+
+		    </ul>
+		</ul>
+
+ 		<li>Materials & Resources</li>
+		    <ul>
+			<li>Leather</li>
+			<li>Cloth</li>
+			<li>Bundle of wood</li>
+			<li>Stick</li>
+			<li>Stone</li>
+			<li>Tinder</li>
+			<li>Flint</li>
+			<li>Charcoal</li>
+			<li>Hide</li>
+			<li>Feather</li>
+			<li>Water</li>
+			<li>Parchment</li>
+			<li>Silver Ore</li>
+			<li>Iron Ore</li>
+			<li>Copper Ore</li>
+			<li>Silver Ingot</li>
+			<li>Iron Ingot</li>
+			<li>Steel Ingot</li>
+			<li>Dwarven Steel Ingot</li>
+			<li>Elven Steel Ingot</li>
+			<li>Clay</li>
+			<li>Sand</li>
+			<li>Hide</li>
+			<li>Wool</li>
+			<li>Ruby</li>
+			<li>Saphire</li>
+			<li>Amethyst</li>
+			<li>Diamond</li>
+			<li>Topaz</li>
+			<li>Opal</li>
+			<li>Garnet</li>
+			<li>Onyx</li>
+			<li>Bloodstone</li>
+			<li>Emerald</li>
+			<li>Moonstone</li>
+			<li>Sunstone</li>
+			<li>Amber</li>
+		    </ul>
+		</ul>
+
+
+        </div>
+
+        <button class="accordion">Traits</button>
+        <div class="panel">
+            <p>Traits that can be earned:</p>
+		<ul>
+			<li>Strong-Willed</li>
+			<li>Evil</li>
+			<li>Good-Hearted</li>
+			<li>Strong</li>
+			<li>Calm</li>
+			<li>Intelligent</li>
+			<li>Quick-Learner</li>
+			<li>Couragous</li>
+			<li>Cunning</li>
+			<li>Resilient</li>
+			<li>Sneaky</li>
+			<li>Witty</li>
+			<li>Cautious</li>
+			<li>Untrustworthy</li>
+			<li>Determined</li>
+			<li>Charming</li>
+			<li>Savage</li>
+			<li>Brutal</li>
+			<li>Lucky</li>
+			<li>Scholar</li>
+			<li>Survivalist</li>
+			<li>Adventurous</li>
+			<li>Compassionate</li>
+			<li>Rude</li>
+			<li>Bloodthirsty</li>
+			<li>Clever</li>
+			<li>Deceptive</li>
+			<li>Inquisitive</li>
+			<li>Loyal</li>
+			<li>Observant</li>
+			<li>Friendly</li>
+			<li>Gallant</li>
+			<li>Valiant</li>
+			<li>Generous</li>
+			<li>Honest</li>
+			<li>Wise</li>
+		</ul>
+        </div>
+
+        <button class="accordion">Skills</button>
+        <div class="panel">
+            <p>All obtainable skills:</p>
+		<ul>
+			<li>Swordsmanship</li>
+			<li>Archery</li>
+			<li>Axes</li>
+			<li>Spears</li>
+			<li>Polearms</li>
+			<li>Brawling</li>
+			<li>Hunting</li>
+			<li>Fishing</li>
+			<li>Fletching</li>
+			<li>Sewing</li>
+			<li>Smithing</li>
+			<li>Crafting</li>
+			<li>Alchemy</li>
+			<li>Stealth</li>
+			<li>Firemaking</li>
+			<li>Carpentry</li>
+			<li>Foraging</li>
+			<li>Negotiating</li>
+			<li>Cooking</li>
+			<li>Brewing</li>
+			<li>Mining</li>
+			<li>Decrypting</li>
+		</ul>
+
+        </div>
+
+        <button class="accordion">Player Status</button>
+        <div class="panel">
+            <p>Player statuses:</p>
+		<ul>
+			<li>Hungry</li>
+			<li>Thirsty</li>
+			<li>Starving (-1 life per turn)</li>
+			<li>Weary (-1 stamina per turn)</li>
+			<li>Well-rested</li>
+			<li>Satisfied</li>
+			<li>Exhausted (-2 stamina per turn)</li>
+			<li>Sore (-1 stamina per turn)</li>
+			<li>Bleeding (-1 life per turn)</li>
+			<li>Wounded (-1 life per turn)</li>
+			<li>Fatally Wounded (-5 life per turn)</li>
+			<li>Bleeding Out (-5 life per turn)</li>
+			<li>Ill (-1 life per turn)</li>
+		</ul>
+
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const accordions = document.getElementsByClassName('accordion');
+            for (let i = 0; i < accordions.length; i++) {
+                accordions[i].addEventListener('click', function () {
+                    this.classList.toggle('active');
+                    const panel = this.nextElementSibling;
+                    if (panel.style.display === 'block') {
+                        panel.style.display = 'none';
+                    } else {
+                        panel.style.display = 'block';
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
