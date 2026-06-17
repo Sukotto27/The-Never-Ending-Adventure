@@ -301,6 +301,8 @@ const randomEvents = [
             storyText: 'The troll clubs you hard enough to see stars. You retreat, bloodied.',
             effects: [
               { type: 'life', amount: -30 },
+              { type: 'status', value: 'bleeding' },
+              { type: 'status', value: 'wounded' },
             ],
           },
         },
@@ -366,6 +368,7 @@ const randomEvents = [
             storyText: 'A tusk catches your leg as it passes.',
             effects: [
               { type: 'life', amount: -18 },
+              { type: 'status', value: 'injured' },
             ],
           },
         },
@@ -385,6 +388,7 @@ const randomEvents = [
             storyText: 'Your aim is off. The boar crashes into you.',
             effects: [
               { type: 'life', amount: -22 },
+              { type: 'status', value: 'bleeding' },
             ],
           },
         },
@@ -424,7 +428,8 @@ const randomEvents = [
             storyText: 'The web entangles your weapon arm. The spider bites before you break free.',
             effects: [
               { type: 'life', amount: -20 },
-              { type: 'status', value: 'Poisoned' },
+              { type: 'status', value: 'poisoned' },
+              { type: 'status', value: 'injured' },
             ],
           },
         },
@@ -468,7 +473,8 @@ const randomEvents = [
       storyText: 'The bite burns. You suck out what venom you can, but your leg swells by the hour.',
       effects: [
         { type: 'life', amount: -12 },
-        { type: 'status', value: 'Poisoned' },
+        { type: 'status', value: 'poisoned' },
+        { type: 'status', value: 'injured' },
         { type: 'skill', name: 'Survival' },
       ],
     },
@@ -717,7 +723,7 @@ const randomEvents = [
             storyText: 'The swarm chases you further than it should. You are covered in stings.',
             effects: [
               { type: 'life', amount: -20 },
-              { type: 'status', value: 'Swarmed' },
+              { type: 'status', value: 'sick' },
             ],
           },
         },

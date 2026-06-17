@@ -323,6 +323,62 @@ const ESTABLISHMENT_STOCK = {
   stable: [
     'Rope', 'Animal Trap', 'Bandage', 'Waterskin', 'Rations',
   ],
+  // Library/archive/scriptorium base stock (non-book items — books injected by _injectSkillBook)
+  library: [
+    'Scroll', 'Quill & Ink', 'Candle', 'Empty Vial', 'Ingredient Pouch',
+  ],
+};
+
+// ── Skill Book Stock ──────────────────────────────────────────────────────
+// Maps establishment type → which skill books may be stocked there.
+// _injectSkillBook() in script.js picks 1 (sometimes 2) per vendor visit,
+// seeded by vendor name so each shop consistently carries the same book(s).
+// Books appear only in 1-2 types to ensure true dispersion.
+const SKILL_BOOK_STOCK = {
+  blacksmith: [
+    'The Art of the Blade', 'Iron and Edge: Axework', 'The Long Reach',
+    'Glaive and Halberd', 'The Forge and the Flame', 'Deep Rock: A Miner\'s Handbook',
+    'A Craftsman\'s Guide', 'Working Wood',
+  ],
+  fletcher: [
+    'Flight of the Arrow', 'Feather and Shaft',
+  ],
+  alchemist: [
+    'The Alchemist\'s Codex', 'Radiant Paths', 'Shadows and Power', 'The Unseen World',
+  ],
+  apothecary: [
+    'The Healer\'s Companion', 'The Green Compendium',
+  ],
+  herbalist: [
+    'What the Forest Offers', 'Marks and Signs',
+    'The Beastkeeper\'s Handbook', 'The Green Compendium', 'How to Live in the Wild',
+  ],
+  general_store: [
+    'How to Live in the Wild', 'The Hunter\'s Code', 'The Fire Maker\'s Handbook',
+    'Still Waters: A Fisher\'s Guide', 'A Craftsman\'s Guide', 'Working Wood', 'By Star and Compass',
+  ],
+  tavern: [
+    'Bare Knuckle', 'The Wanderer\'s Cookbook', 'Ferment and Flavour', 'The Art of Persuasion',
+  ],
+  inn: [
+    'The Wanderer\'s Cookbook', 'Ferment and Flavour',
+  ],
+  market: [
+    'Needle and Thread', 'Terms and Agreements', 'Form and Colour',
+    'Flight of the Arrow', 'Bare Knuckle',
+  ],
+  merchant: [
+    'Shadows and Power', 'The Crimson Rites', 'Moving in Silence',
+    'The Locksmith\'s Art', 'Sleight of Hand',
+  ],
+  stable: [
+    'The Hunter\'s Code', 'Marks and Signs', 'The Beastkeeper\'s Handbook',
+  ],
+  library: [
+    'The Art of Persuasion', 'Terms and Agreements', 'The Healer\'s Companion',
+    'Codes and Ciphers', 'By Star and Compass', 'Form and Colour',
+    'The Unseen World', 'Radiant Paths',
+  ],
 };
 
 // ── Travelling merchant stock pools ───────────────────────────────────────

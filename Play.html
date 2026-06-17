@@ -1326,8 +1326,9 @@ window.titleScreenActive = true;
 
   document.getElementById('ts-btn-new').addEventListener('click', function () {
     hideTitleScreen(function () {
-      localStorage.removeItem('rpg-save');
-      if (typeof window.bookEnterCharCreation === 'function') {
+      if (typeof window.showNewGameSlotPicker === 'function') {
+        window.showNewGameSlotPicker();
+      } else if (typeof window.bookEnterCharCreation === 'function') {
         window.bookEnterCharCreation();
       } else {
         var modal = document.getElementById('character-modal');

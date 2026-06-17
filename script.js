@@ -264,9 +264,9 @@ const player = {
 				currentKingdom: 'Unknown',
 				currentAction: 'Idle',
 				maxLife: 100,
-				life: 100,
+				life: 50,
 				maxStamina: 50,
-				stamina: 50,
+				stamina: 25,
 				maxMana: 50,
 				mana: 50,
 				get maxCarryWeight() {
@@ -1259,7 +1259,7 @@ function updateJournal() {
 
   // Recipes tab — all known recipes grouped by category
   const knownR = player.knownRecipes || [];
-  const CAT_ICONS = { Crafting: '🔨', Cooking: '🍳', Alchemy: '⚗️' };
+  const CAT_ICONS = { Crafting: '🔨', Cooking: '🍳', Alchemy: '⚗️', Smelting: '🔥', Smithing: '⚒️' };
   let recipesHTML = '';
   if (typeof Recipes !== 'undefined') {
     for (const [cat, list] of Object.entries(Recipes)) {
@@ -1489,7 +1489,15 @@ function gainSkillXp(skillName, tier) {
   }
   const sk = player.skills[skillName];
   if (sk.xp === undefined) sk.xp = 0;
-  sk.xp += (SKILL_XP_TABLE[tier] || 1);
+  const _baseXp  = SKILL_XP_TABLE[tier] || 1;
+  let   _xpMult  = 1;
+  if (typeof gameTraits !== 'undefined' && Array.isArray(player.traits)) {
+    for (const _t of player.traits) {
+      const _td = gameTraits[_t];
+      if (_td?.xpBonus) _xpMult += _td.xpBonus; // Quick-Learner: +0.25; Slow-Learner: -0.20
+    }
+  }
+  sk.xp += Math.max(1, Math.round(_baseXp * _xpMult));
   sk.usageCount = (sk.usageCount || 0) + 1;
   const threshold = (sk.level || 1) * 5;
   if (sk.xp >= threshold) {
@@ -1497,8 +1505,10 @@ function gainSkillXp(skillName, tier) {
     const prevLevel = sk.level || 1;
     sk.level = prevLevel + 1;
     if (sk.level === 99) queueMasterGuildEncounters(skillName);
-    addStory(`⭐ ${skillName} reached Level ${sk.level}!`);
+    addStory(`<strong>⭐ ${skillName} reached Level ${sk.level}!</strong>`);
     addWorldEvent(`${skillName} increased to Level ${sk.level}.`, 'player');
+    if (!player.traitCounters) player.traitCounters = {};
+    player.traitCounters.skillLevelUps = (player.traitCounters.skillLevelUps || 0) + 1;
     gainExperience(5, true); // skill level-up feeds player XP silently
     // Award skill-tier title when crossing a tier boundary
     if (typeof SKILL_TIERS !== 'undefined') {
@@ -1586,7 +1596,8 @@ function performSkillCheck(skillName, situationalMod = 0) {
   const _hopeLvl   = getHopeTier(player.hope ?? 0).level;
   const hopeMod    = _hopeLvl >= 4 ? 2 : _hopeLvl >= 3 ? 1 : _hopeLvl <= -4 ? -1 : 0;
   const pendantMod = (player.equipped?.pendant === "Aelindra's Pendant") ? 1 : 0;
-  const adjusted   = Math.min(20, Math.max(1, base + skillMod + condMod + titleMod + campMod + equipMod + situationalMod + hopeMod + pendantMod));
+  const traitMod   = getTraitRollBonus(skillName);
+  const adjusted   = Math.min(20, Math.max(1, base + skillMod + condMod + titleMod + campMod + equipMod + situationalMod + hopeMod + pendantMod + traitMod));
   const lvl        = player.skills[skillName]?.level;
   const parts      = [];
   const skillLabel = lvl ? `${skillName} Lv${lvl}` : skillName;
@@ -1597,6 +1608,7 @@ function performSkillCheck(skillName, situationalMod = 0) {
   if (equipMod       !== 0) parts.push(`${equipMod       > 0 ? '+' : ''}${equipMod} (gear)`);
   if (situationalMod !== 0) parts.push(`${situationalMod > 0 ? '+' : ''}${situationalMod} (weather)`);
   if (hopeMod        !== 0) parts.push(`${hopeMod        > 0 ? '+' : ''}${hopeMod} (spirit)`);
+  if (traitMod       !== 0) parts.push(`${traitMod       > 0 ? '+' : ''}${traitMod} (traits)`);
   const tier = adjusted <= 5 ? 1 : adjusted <= 10 ? 2 : adjusted <= 14 ? 3 : adjusted <= 18 ? 4 : 5;
   const ol   = outcomeLabel(tier);
   const suffix = parts.length ? ` ${parts.join(' ')} = ${adjusted}` : '';
@@ -1839,6 +1851,72 @@ const TRAIT_UNLOCK_CONDITIONS = [
     const craftSkills = ['Smithing','Cooking','Alchemy','Fletching','Sewing','Carpentry','Brewing','Crafting'];
     return craftSkills.some(sk => (p.skills[sk]?.level || 0) >= 20);
   }},
+  // ── Single traits ────────────────────────────────────────────────────────────
+  { trait: 'Strong-Willed',  test: (c)    => (c.nearDeaths || 0) >= 5 },
+  { trait: 'Evil',           test: (c)    => (c.aggressiveTones || 0) >= 40 && (c.heroicTones || 0) < 5 },
+  { trait: 'Good-Hearted',   test: (c)    => (c.heroicTones || 0) >= 25 && (c.aggressiveTones || 0) < 5 },
+  { trait: 'Strong',         test: (c, p) => ['Brawling','Swordsmanship','Axes'].some(sk => (p.skills?.[sk]?.level || 0) >= 20) },
+  { trait: 'Calm',           test: (c)    => (c.nearDeaths || 0) >= 8 && (c.heroicTones || 0) >= 10 },
+  { trait: 'Intelligent',    test: (c, p) => ['Decrypting','Alchemy'].some(sk => (p.skills?.[sk]?.level || 0) >= 15) },
+  { trait: 'Quick-Learner',  test: (c)    => (c.skillLevelUps || 0) >= 20 },
+  { trait: 'Sneaky',         test: (c, p) => (p.skills?.Stealth?.level || 0) >= 15 },
+  { trait: 'Witty',          test: (c)    => (c.persuasionSuccesses || 0) >= 10 && (c.heroicTones || 0) >= 5 },
+  { trait: 'Untrustworthy',  test: (c)    => (c.aggressiveTones || 0) >= 20 && (c.persuasionFails || 0) >= 10 },
+  { trait: 'Determined',     test: (c)    => (c.nearDeaths || 0) >= 5 && (c.questsCompleted || 0) >= 5 },
+  { trait: 'Charming',       test: (c)    => (c.persuasionSuccesses || 0) >= 15 },
+  { trait: 'Savage',         test: (c)    => (c.aggressiveTones || 0) >= 30 },
+  { trait: 'Brutal',         test: (c)    => (c.aggressiveTones || 0) >= 50 },
+  { trait: 'Lucky',          test: (c)    => (c.nearDeaths || 0) >= 3 && (c.nearDeaths || 0) < 8 },
+  { trait: 'Scholar',        test: (c, p) => (p.skills?.Decrypting?.level || 0) >= 20 },
+  { trait: 'Survivalist',    test: (c, p) => (p.skills?.Survival?.level || 0) >= 20 },
+  { trait: 'Adventurous',    test: (c, p) => (p.journal?.locations?.length || 0) >= 15 },
+  { trait: 'Compassionate',  test: (c)    => (c.heroicTones || 0) >= 20 && (c.questsCompleted || 0) >= 5 },
+  { trait: 'Rude',           test: (c)    => (c.aggressiveTones || 0) >= 15 && (c.persuasionFails || 0) >= 20 },
+  { trait: 'Clever',         test: (c, p) => ['Alchemy','Crafting','Fletching'].some(sk => (p.skills?.[sk]?.level || 0) >= 15) },
+  { trait: 'Inquisitive',    test: (c, p) => (p.journal?.locations?.length || 0) >= 10 && (p.skills?.Decrypting?.level || 0) >= 10 },
+  { trait: 'Observant',      test: (c, p) => (p.skills?.Tracking?.level || 0) >= 15 },
+  { trait: 'Gallant',        test: (c)    => (c.heroicTones || 0) >= 30 },
+  { trait: 'Valiant',        test: (c)    => (c.heroicTones || 0) >= 40 && (c.questsCompleted || 0) >= 10 },
+  { trait: 'Honest',         test: (c)    => (c.heroicTones || 0) >= 20 && (c.aggressiveTones || 0) < 10 },
+
+  // ── Positive paired-opposites (earned through consistent behaviour) ──────────
+  { trait: 'Virtuous',      test: (c)    => (c.heroicTones || 0) >= 40 && (c.aggressiveTones || 0) < 5 },
+  { trait: 'Trustworthy',   test: (c)    => (c.npcInteractions || 0) >= 40 && (c.aggressiveTones || 0) < 10 },
+  { trait: 'Courteous',     test: (c)    => (c.persuasionSuccesses || 0) >= 25 && (c.persuasionFails || 0) < 5 },
+  { trait: 'Composed',      test: (c)    => (c.nearDeaths || 0) >= 5 && (c.aggressiveTones || 0) < 10 && (c.heroicTones || 0) >= 20 },
+  { trait: 'Gentle',        test: (c, p) => (c.heroicTones || 0) >= 20 && (p.skills?.Healing?.level || 0) >= 15 && (c.aggressiveTones || 0) < 10 },
+  // ── Negative paired-opposites (earned through poor behaviour) ────────────────
+  { trait: 'Hot-Headed',    test: (c)    => (c.persuasionFails || 0) >= 20 && (c.aggressiveTones || 0) >= 25 },
+  { trait: 'Cold-Hearted',  test: (c)    => (c.aggressiveTones || 0) >= 35 && (c.npcInteractions || 0) < 15 },
+  { trait: 'Ignoble',       test: (c)    => (c.aggressiveTones || 0) >= 45 && (c.heroicTones || 0) < 5 },
+  { trait: 'Deceptive',     test: (c)    => (c.aggressiveTones || 0) >= 20 && (c.persuasionFails || 0) >= 20 && (c.heroicTones || 0) < 5 },
+
+  // ── Passive negative traits (earned by what you neglect or repeat) ────────────
+  { trait: 'Cowardly',     test: (c)    => (c.nearDeaths || 0) >= 2 && (c.heroicTones || 0) < 3 },
+  { trait: 'Naive',        test: (c)    => (c.npcInteractions || 0) >= 25 && (c.aggressiveTones || 0) < 5 && (c.persuasionFails || 0) >= 10 },
+  { trait: 'Treacherous',  test: (c)    => (c.aggressiveTones || 0) >= 25 && (c.questsCompleted || 0) < 3 && (c.npcInteractions || 0) >= 10 },
+  { trait: 'Merciful',     test: (c, p) => (c.heroicTones || 0) >= 15 && (c.aggressiveTones || 0) < 3 && (p.skills?.Healing?.level || 0) >= 5 },
+  { trait: 'Cruel',        test: (c)    => (c.aggressiveTones || 0) >= 35 && (c.heroicTones || 0) < 5 && (c.npcInteractions || 0) >= 10 },
+  { trait: 'Reckless',     test: (c)    => (c.nearDeaths || 0) >= 5 && (c.aggressiveTones || 0) >= 20 },
+  { trait: 'Impulsive',    test: (c)    => (c.persuasionFails || 0) >= 20 && (c.aggressiveTones || 0) >= 15 },
+  { trait: 'Fragile',      test: (c)    => (c.nearDeaths || 0) >= 3 && (c.skillLevelUps || 0) < 8 && (c.questsCompleted || 0) < 3 },
+  { trait: 'Weak-Willed',  test: (c)    => (c.persuasionFails || 0) >= 30 && (c.heroicTones || 0) < 10 },
+  { trait: 'Feeble',       test: (c, p) => (p.level || 1) >= 5 && !['Brawling','Swordsmanship','Axes','Spears'].some(sk => (p.skills?.[sk]?.level || 0) >= 5) && (c.npcInteractions || 0) >= 20 },
+  { trait: 'Dim-Witted',   test: (c, p) => (p.level || 1) >= 5 && !['Decrypting','Alchemy'].some(sk => (p.skills?.[sk]?.level || 0) >= 5) && (c.npcInteractions || 0) >= 25 },
+  { trait: 'Slow-Learner', test: (c)    => (c.questsCompleted || 0) >= 5 && (c.skillLevelUps || 0) < 5 },
+  { trait: 'Clumsy',       test: (c, p) => (c.nearDeaths || 0) >= 3 && (p.skills?.Stealth?.level || 0) < 3 && (c.npcInteractions || 0) >= 15 },
+  { trait: 'Dull-Witted',  test: (c)    => (c.persuasionFails || 0) >= 25 && (c.persuasionSuccesses || 0) < 5 },
+  { trait: 'Defeatist',    test: (c)    => (c.nearDeaths || 0) >= 4 && (c.heroicTones || 0) < 5 && (c.questsCompleted || 0) < 2 },
+  { trait: 'Off-Putting',  test: (c)    => (c.persuasionFails || 0) >= 30 && (c.persuasionSuccesses || 0) < 10 },
+  { trait: 'Unlucky',      test: (c)    => (c.nearDeaths || 0) >= 8 },
+  { trait: 'Ignorant',     test: (c, p) => (p.level || 1) >= 5 && (p.skills?.Decrypting?.level || 0) < 3 && (c.npcInteractions || 0) >= 15 },
+  { trait: 'Pampered',     test: (c, p) => (c.goldSpent || 0) >= 300 && (p.skills?.Survival?.level || 0) < 5 && (c.npcInteractions || 0) >= 15 },
+  { trait: 'Sheltered',    test: (c, p) => (p.journal?.locations?.length || 0) < 5 && (c.npcInteractions || 0) >= 20 },
+  { trait: 'Callous',      test: (c, p) => (c.aggressiveTones || 0) >= 25 && (c.heroicTones || 0) < 10 && (p.skills?.Healing?.level || 0) < 5 },
+  { trait: 'Obtuse',       test: (c, p) => (c.npcInteractions || 0) >= 20 && !['Alchemy','Crafting','Fletching'].some(sk => (p.skills?.[sk]?.level || 0) >= 5) && (c.questsCompleted || 0) >= 3 },
+  { trait: 'Incurious',    test: (c, p) => (p.journal?.locations?.length || 0) < 8 && (c.questsCompleted || 0) >= 5 && (p.skills?.Decrypting?.level || 0) < 3 },
+  { trait: 'Oblivious',    test: (c, p) => (c.nearDeaths || 0) >= 4 && (p.skills?.Tracking?.level || 0) < 3 },
+  { trait: 'Craven',       test: (c)    => (c.nearDeaths || 0) >= 3 && (c.heroicTones || 0) < 5 && (c.questsCompleted || 0) < 3 },
 ];
 
 // Add a trait to the player, replacing its opposite if the player already has it.
@@ -1965,7 +2043,8 @@ async function _doNpcDialog(npc, tone) {
   const skillMod   = getSkillBonus('Persuasion');
   const condMod    = getConditionModifier('Persuasion');
   const titleMod   = getTitleBonus('Persuasion');
-  const totalMod   = skillMod + condMod + titleMod + affinityMod + knowsMod + dispositionMod;
+  const traitMod   = getTraitRollBonus('Persuasion');
+  const totalMod   = skillMod + condMod + titleMod + affinityMod + knowsMod + dispositionMod + traitMod;
   const adjusted   = Math.min(20, Math.max(1, base + totalMod));
 
   // Build modifier breakdown for story
@@ -1974,6 +2053,7 @@ async function _doNpcDialog(npc, tone) {
   if (skillMod      !== 0) parts.push(`${skillMod > 0 ? '+' : ''}${skillMod} (Persuasion Lv${pLvl})`);
   if (condMod       !== 0) parts.push(`${condMod  > 0 ? '+' : ''}${condMod} (effects)`);
   if (titleMod      !== 0) parts.push(`${titleMod > 0 ? '+' : ''}${titleMod} (title)`);
+  if (traitMod      !== 0) parts.push(`${traitMod > 0 ? '+' : ''}${traitMod} (traits)`);
   if (affinityMod   !== 0) parts.push(`${affinityMod > 0 ? '+' : ''}${affinityMod} (shared traits)`);
   if (knowsMod      !== 0) parts.push(`${knowsMod > 0 ? '+' : ''}${knowsMod} (their read of you)`);
   if (dispositionMod!== 0) parts.push(`${dispositionMod > 0 ? '+' : ''}${dispositionMod} (disposition)`);
@@ -1995,6 +2075,10 @@ async function _doNpcDialog(npc, tone) {
   if (AGGRESSIVE_TONES.has(tone) && ['valiant','heroic'].includes(npcMorality)) toneClash = -1;
   if (HEROIC_TONES.has(tone)     && ['malicious','malevolent'].includes(npcMorality)) toneClash = -1;
   npc.disposition = Math.max(-10, Math.min(10, (npc.disposition || 0) + dispShift + toneClash));
+  // Sync back to world registry so relationship persists across re-encounters
+  if (npc._worldId && worldNPCs?.registry?.[npc._worldId]) {
+    worldNPCs.registry[npc._worldId].relationship = Math.max(-5, Math.min(5, Math.round(npc.disposition / 2)));
+  }
 
   // Show dialog outcome
   addStory(`<em>"${_dialogOutcome(tone, tier)}"</em>`);
@@ -2326,6 +2410,54 @@ function getConditionModifier(skillName) {
   return total;
 }
 
+// Trait bonus field → the skill groups they affect (penalties stored as negative values).
+const _TRAIT_BONUS_MAP = {
+  socialBonus:         ['Persuasion','Negotiating','Animal Handling'],
+  socialPenalty:       ['Persuasion','Negotiating','Animal Handling'],
+  attackBonus:         ['Swordsmanship','Archery','Axes','Spears','Polearms','Brawling'],
+  attackPenalty:       ['Swordsmanship','Archery','Axes','Spears','Polearms','Brawling'],
+  survivalBonus:       ['Survival','Hunting','Foraging','Tracking','Fire-making','Fishing','Navigation'],
+  survivalPenalty:     ['Survival','Hunting','Foraging','Tracking','Fire-making','Fishing','Navigation'],
+  craftBonus:          ['Crafting','Smithing','Fletching','Alchemy','Cooking','Brewing','Sewing','Carpentry','Mining','Herbalism'],
+  craftPenalty:        ['Crafting','Smithing','Fletching','Alchemy','Cooking','Brewing','Sewing','Carpentry','Mining','Herbalism'],
+  stealthBonus:        ['Stealth','Lockpicking','Thievery'],
+  stealthPenalty:      ['Stealth','Lockpicking','Thievery'],
+  healBonus:           ['Healing'],
+  healPenalty:         ['Healing'],
+  intellectBonus:      ['Decrypting','Mysticism'],
+  intellectPenalty:    ['Decrypting','Mysticism'],
+  magicBonus:          ['Light Magic','Black Magic','Blood Magic','Mysticism'],
+  magicPenalty:        ['Light Magic','Black Magic','Blood Magic','Mysticism'],
+  courageBonus:        ['Swordsmanship','Brawling','Survival'],
+  couragePenalty:      ['Swordsmanship','Brawling','Survival'],
+  manipulationBonus:   ['Persuasion','Thievery'],
+  manipulationPenalty: ['Persuasion','Thievery'],
+  intimidationBonus:   ['Brawling'],
+  intimidationPenalty: ['Brawling'],
+  trustBonus:          ['Negotiating'],
+  trustPenalty:        ['Negotiating'],
+  willBonus:           ['Survival'],
+  willPenalty:         ['Survival'],
+  negotiatingBonus:    ['Negotiating'],
+  negotiatingPenalty:  ['Negotiating'],
+};
+
+// Sums all trait modifiers that apply to a given skill. Capped ±5 to preserve d20 balance.
+function getTraitRollBonus(skillName) {
+  if (!Array.isArray(player.traits) || !player.traits.length) return 0;
+  const gT = typeof gameTraits !== 'undefined' ? gameTraits : {};
+  let total = 0;
+  for (const traitName of player.traits) {
+    const t = gT[traitName];
+    if (!t) continue;
+    total += (t.rollBonus || 0);   // Lucky / Unlucky / Calm apply to everything
+    for (const [field, skills] of Object.entries(_TRAIT_BONUS_MAP)) {
+      if (skills.includes(skillName) && t[field]) total += t[field];
+    }
+  }
+  return Math.max(-5, Math.min(5, total));
+}
+
 // Returns a roll modifier from the wear % of equipped weapon (for weapon skills) or worst armor.
 function getEquipmentConditionModifier(skillName) {
   const equipped = player.equipped || {};
@@ -2411,6 +2543,22 @@ function tickConditions(silent = false) {
     removeCondition('exhausted');
   }
 
+  // Auto-apply weary when stamina is low (between exhausted and normal)
+  if (staminaPct <= 0.25 && staminaPct > 0.1 && !player.conditions.find(c => c.id === 'weary')) {
+    applyCondition('weary', 3);
+  } else if (staminaPct > 0.4 && player.conditions.find(c => c.id === 'weary')) {
+    removeCondition('weary');
+  }
+
+  // Auto-apply fatally_wounded when life critically low
+  const _lifePct = (player.life || 0) / (player.maxLife || 100);
+  if (_lifePct < 0.15 && !player.conditions.find(c => c.id === 'fatally_wounded') && !player.conditions.find(c => c.id === 'bleeding_out')) {
+    applyCondition('fatally_wounded', 4);
+    if (!silent) addStory('💔 Your injuries are life-threatening.');
+  } else if (_lifePct >= 0.3 && player.conditions.find(c => c.id === 'fatally_wounded')) {
+    removeCondition('fatally_wounded');
+  }
+
   // Time-based hunger — tiers: peckish (8 periods), hungry (16), starving (28)
   // Eating sets lastFedDay so hunger is fully suppressed for the remainder of that day.
   const _fedToday = player.lastFedDay !== undefined && player.lastFedDay === (player.day || 1);
@@ -2440,11 +2588,48 @@ function tickConditions(silent = false) {
     }
   }
 
+  // Time-based thirst — mirrors hunger; the hydrated condition suppresses and resets it
+  const _isHydrated = !!player.conditions.find(c => c.id === 'hydrated');
+  if (_isHydrated) {
+    player.turnsWithoutWater = 0;
+    if (player.conditions.find(c => c.id === 'thirsty')) removeCondition('thirsty');
+  } else {
+    player.turnsWithoutWater = (player.turnsWithoutWater || 0) + 1;
+    if (player.turnsWithoutWater >= 8 && !player.conditions.find(c => c.id === 'thirsty')) {
+      applyCondition('thirsty', 999);
+    }
+  }
+  if ((player.turnsWithoutWater || 0) >= 16 && player.conditions.find(c => c.id === 'thirsty')) {
+    player.life = Math.max(1, (player.life || 1) - 2);
+    if (!silent) addStory('🏜️ Severe dehydration is taking its toll. Find water soon.');
+  }
+
   // Starvation life drain — health slowly falls but never below 1
   if (player.conditions.find(c => c.id === 'starving')) {
     player.life = Math.max(1, (player.life || 1) - 3);
     updateTopStats();
     if (!silent) addStory('💀 Starvation is taking its toll. You must eat something.');
+  }
+
+  // Bleeding life drain
+  if (player.conditions.find(c => c.id === 'bleeding')) {
+    player.life = Math.max(1, (player.life || 1) - 2);
+    updateTopStats();
+    if (!silent) addStory('🩸 You are bleeding. Treat your wounds soon.');
+  }
+
+  // Fatally wounded life drain
+  if (player.conditions.find(c => c.id === 'fatally_wounded')) {
+    player.life = Math.max(1, (player.life || 1) - 5);
+    updateTopStats();
+    if (!silent) addStory('💔 Your wounds are fatal. You must seek urgent aid.');
+  }
+
+  // Bleeding out life drain (most severe)
+  if (player.conditions.find(c => c.id === 'bleeding_out')) {
+    player.life = Math.max(1, (player.life || 1) - 8);
+    updateTopStats();
+    if (!silent) addStory('🫀 You are bleeding out. Find help immediately!');
   }
 
   // Condition escalation: cold + wet sustained → sick
@@ -2544,6 +2729,7 @@ function consumeFood(itemName) {
   player.turnsWithoutFood = 0;
   player.lastFedDay = player.day || 1;
   applyCondition('well_fed');
+  applyCondition('satisfied', 3);
 }
 
 // 6.3 · Update Player Stats
@@ -3015,6 +3201,14 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
       }
     }
 
+    // Read — books
+    if (type === 'book') {
+      addOpt('📖 Read', () => {
+        _doReadBook(it);
+        updateInventory();
+      });
+    }
+
     // Use / Eat / Drink
     if (isConsumable) {
       const useLabel = type === 'food' ? '🍽️ Eat' : type === 'recipe_scroll' ? '📜 Read' : '🧪 Drink';
@@ -3329,9 +3523,19 @@ function renderMapsPanel() {
 // 6.7 · Calculate Total Carry Weight
 function _updateCarryConditions(carryPct) {
   if (!player.conditions) player.conditions = [];
+  const _wasOver = !!player.conditions.find(c => c.id === 'overloaded');
+  const _wasEnc  = !!player.conditions.find(c => c.id === 'encumbered');
   player.conditions = player.conditions.filter(c => c.id !== 'encumbered' && c.id !== 'overloaded');
-  if      (carryPct >= 100) player.conditions.push({ id: 'overloaded',  duration: 999 });
-  else if (carryPct >= 75)  player.conditions.push({ id: 'encumbered',  duration: 999 });
+  if (carryPct >= 100) {
+    player.conditions.push({ id: 'overloaded', duration: 999 });
+    if (!_wasOver) addStory('🏋️ You are overloaded. Movement is painfully slow.');
+  } else if (carryPct >= 75) {
+    player.conditions.push({ id: 'encumbered', duration: 999 });
+    if (!_wasEnc && !_wasOver) addStory('⚖️ Your pack is heavy. You are encumbered.');
+  } else {
+    if (_wasOver) addStory('🏋️ You are no longer overloaded.');
+    else if (_wasEnc) addStory('⚖️ You are no longer encumbered.');
+  }
   renderConditions();
 }
 
@@ -3564,8 +3768,10 @@ async function handleGatherAttempt(opt) {
     if (tier >= 3) results.push('Edible Mushrooms');
     if (tier >= 4) results.push('Nuts');
     if (tier >= 5) results.push('Rare Herb');
-    results.forEach(item => addItem(item, 1, { type: 'food', consumable: true, weight: 0.2, rarity: 'Common' }));
-    addStory(results.length ? `🌿 You forage: ${results.join(', ')}.` : '🌿 You find nothing edible.');
+    const forageMult = player.cultivateActive ? (player.cultivateActive = false, 2) : 1;
+    results.forEach(item => addItem(item, forageMult, { type: 'food', consumable: true, weight: 0.2, rarity: 'Common' }));
+    const harvestNote = forageMult > 1 ? ' (Cultivated: double yield)' : '';
+    addStory(results.length ? `🌿 You forage: ${results.join(', ')}${harvestNote}.` : '🌿 You find nothing edible.');
     if (results.length) awardProfessionXp('gather');
     updateInventory();
     return;
@@ -3627,12 +3833,14 @@ async function performSleep() {
   } else if (tierS === 4) {
     gain = player.maxStamina - player.stamina;
     changeStamina(gain);
+    applyCondition('well_rested', 4);
     addStory(`🛏️ Restful sleep. Well rested (+${gain} stamina).`);
     changeHope(1, 'good rest');
   } else {
     gain = player.maxStamina - player.stamina;
     changeStamina(gain);
     applyCondition('blessings', 6);
+    applyCondition('well_rested', 6);
     addStory(`🌌 Dreamer's Blessing: you wake refreshed and inspired (+${gain} stamina).`);
     changeHope(3, 'dreamer\'s rest');
   }
@@ -4002,20 +4210,21 @@ case 'rest': {
             restLog.textContent = _inTown2 ? 'Street noise keeps you from sleeping.' : 'You are disturbed by a wild animal.';
             addStory(_inTown2 ? 'Noisy surroundings. No rest gained.' : 'Disturbed. No stamina gain.');
           } else if (tierR === 3) {
-            const gain = Math.floor(player.maxStamina * 0.75) - player.stamina;
-            changeStamina(Math.max(0, gain));
+            const gain = Math.max(0, Math.floor(player.maxStamina * 0.5) - player.stamina);
+            changeStamina(gain);
             restLog.textContent = `Partially rested (+${gain} stamina).`;
             addStory(`Partially rested (+${gain} stamina).`);
           } else if (tierR === 4) {
-            const gain = player.maxStamina - player.stamina;
-            changeStamina(Math.max(0, gain));
+            const gain = Math.max(0, Math.floor(player.maxStamina * 0.75) - player.stamina);
+            changeStamina(gain);
             restLog.textContent = `Well rested (+${gain} stamina).`;
             addStory(`Well rested (+${gain} stamina).`);
           } else {
-            changeStamina(player.maxStamina - player.stamina);
+            const gain = Math.max(0, Math.floor(player.maxStamina * 0.9) - player.stamina);
+            changeStamina(gain);
             applyCondition('rejuvenated', 5);
-            restLog.textContent = 'Fully rested. (Rejuvenated buff)';
-            addStory(`Fully rested. Stamina restored.`);
+            restLog.textContent = 'Deeply rested. (Rejuvenated buff)';
+            addStory('Deeply rested. (Rejuvenated buff)');
           }
 
           restModal.querySelectorAll('button').forEach(b => b.disabled = false);
@@ -4152,20 +4361,21 @@ if (!hasPit) {
             restLog.textContent = _inTown3 ? 'Street noise keeps you from sleeping.' : 'You are disturbed by a wild animal.';
             addStory?.(_inTown3 ? 'Noisy surroundings. No rest gained.' : 'Disturbed. No stamina gain.');
           } else if (tierR === 3) {
-            const gain = Math.floor(player.maxStamina * 0.75) - player.stamina;
-            changeStamina(Math.max(0, gain));
+            const gain = Math.max(0, Math.floor(player.maxStamina * 0.5) - player.stamina);
+            changeStamina(gain);
             restLog.textContent = `Partially rested (+${gain} stamina).`;
             addStory?.(`Partially rested (+${gain} stamina).`);
           } else if (tierR === 4) {
-            const gain = player.maxStamina - player.stamina;
-            changeStamina(Math.max(0, gain));
+            const gain = Math.max(0, Math.floor(player.maxStamina * 0.75) - player.stamina);
+            changeStamina(gain);
             restLog.textContent = `Well rested (+${gain} stamina).`;
             addStory?.(`Well rested (+${gain} stamina).`);
           } else {
-            changeStamina(player.maxStamina - player.stamina);
+            const gain = Math.max(0, Math.floor(player.maxStamina * 0.9) - player.stamina);
+            changeStamina(gain);
             applyCondition('rejuvenated', 5);
-            restLog.textContent = 'Fully rested. (Rejuvenated buff)';
-            addStory?.('Fully rested. Stamina restored.');
+            restLog.textContent = 'Deeply rested. (Rejuvenated buff)';
+            addStory?.('Deeply rested. (Rejuvenated buff)');
           }
         } finally {
           restModal?.querySelectorAll('button')?.forEach(b => b.disabled = false);
@@ -4977,6 +5187,7 @@ function pulseD20(times = 3) {
 				if (typeof _tutCheckActionsForWater === 'function') _tutCheckActionsForWater();
 				if (typeof _tutCheckActionsForSearch === 'function') _tutCheckActionsForSearch();
 				if (typeof _tutCheckActionsForTown === 'function') _tutCheckActionsForTown();
+				if (typeof _tutCheckActionsForSurvival === 'function') _tutCheckActionsForSurvival();
 			}
 
 			function _showExplorationWheel() {
@@ -5369,14 +5580,18 @@ function pulseD20(times = 3) {
 				const isExhausted  = !!(player.conditions || []).find(c => c.id === 'exhausted');
 				const inSettlement = ['City','CapitalCity','Village'].includes(survCell.zone || '');
 				const atCamp       = campSetup && player.campLocation === player.currentLocation;
+				const hasFoods     = Object.values(player.inventory || {}).some(v => (v?.type === 'food' || v?.type === 'potion') && (v.quantity ?? 0) > 0);
+				const hasMagicSkill = (player.skills?.['Light Magic']?.level || 0) > 0 || (player.skills?.['Black Magic']?.level || 0) > 0;
 				_buildWheel([
+					{ label: 'Eat',     action: () => { _wheelStack.push(_showSurvivalWheel); _wheelEat(); }, disabled: !hasFoods },
 					{ label: 'Rest',    icon: 'images/icons/bedroll.png',                          action: _wheelRest },
 					{ label: 'Hunt',    icon: 'images/icons/bow-arrows.png',                       action: _wheelHunt,  disabled: !(hasBow && hasArrows) || isInjured || isExhausted || inSettlement },
 					{ label: 'Fish',    icon: 'images/icons/poneti/tools/tool_fishing_rod.png',    action: _wheelFish,  disabled: !nearWater || isExhausted || inSettlement },
 					{ label: 'Gather',  icon: 'images/icons/sticks.png',                            action: () => { _wheelStack.push(_showSurvivalWheel); _wheelGather(); }, disabled: isExhausted || inSettlement },
 					campSetup
 						? { label: 'Encampment', icon: 'images/icons/shelter.png', action: () => { _wheelStack.push(_showSurvivalWheel); _showCampWheel(); }, disabled: !atCamp }
-						: { label: 'Make Camp',  icon: 'images/icons/shelter.png', action: _wheelSetupCamp, disabled: inSettlement },
+						: { label: 'Make Camp',  icon: 'images/icons/shelter.png', action: _wheelSetupCamp, disabled: inSettlement || !player.flags?.camp_spot_scouted },
+					...(hasMagicSkill ? [{ label: '🔮 Magic', action: () => { _wheelStack.push(_showSurvivalWheel); _showOutOfCombatMagicWheel(); } }] : []),
 					..._getSkillActionsForWheel('survival'),
 					{ label: '← Back', action: _goBack, isBack: true },
 				], 'Survival');
@@ -5432,6 +5647,65 @@ function pulseD20(times = 3) {
 				return 10;
 			}
 
+			function _doReadBook(bookName) {
+				const item = player.inventory[bookName];
+				if (!item) { addStory(`⛔ You don't have a ${bookName}.`); return; }
+
+				// Spellbook: special — boosts both magic schools and restores mana
+				if (bookName === 'Spellbook') {
+					const magicSkill = (player.skills?.['Light Magic']?.level || 0) >= (player.skills?.['Black Magic']?.level || 0)
+						? 'Light Magic' : 'Black Magic';
+					gainSkillXp(magicSkill, 3);
+					const manaGain = Math.min(15, (player.maxMana || 100) - (player.mana || 0));
+					if (manaGain > 0) player.mana = (player.mana || 0) + manaGain;
+					addStory(`📖 You study the Spellbook. Your grasp of arcane theory sharpens. (${magicSkill} XP gained, +${manaGain} mana)`);
+					updatePlayerStats(); return;
+				}
+
+				// Prayer Book: special — restores life and applies Inspired
+				if (bookName === 'Prayer Book') {
+					gainSkillXp('Mysticism', 3);
+					const lifeGain = Math.min(10, (player.maxLife || 100) - (player.life || 0));
+					if (lifeGain > 0) player.life = (player.life || 0) + lifeGain;
+					applyCondition('inspired', 5);
+					addStory(`📖 The words of the Prayer Book wash over you. Your faith is renewed. (+${lifeGain} life, Inspired)`);
+					updatePlayerStats(); return;
+				}
+
+				// Generic skill book — look up the skillBook field from the item database
+				const dbItem = typeof findItemInDatabase === 'function' ? findItemInDatabase(bookName) : null;
+				const skill = dbItem?.skillBook;
+				if (!skill) {
+					gainSkillXp('Decrypting', 2);
+					addStory(`📖 You read the ${bookName} carefully. (Decrypting XP gained)`);
+					updatePlayerStats(); return;
+				}
+
+				gainSkillXp(skill, 3);
+
+				// Secondary effect by skill category
+				const _wildernessSkills = ['Survival','Hunting','Foraging','Tracking','Fire-making','Fishing','Herbalism','Animal Handling'];
+				const _magicSkills      = ['Light Magic','Black Magic','Blood Magic','Mysticism'];
+				const _healingSkills    = ['Healing'];
+
+				if (_wildernessSkills.includes(skill)) {
+					const sGain = Math.min(8, (player.maxStamina || 100) - (player.stamina || 0));
+					if (sGain > 0) changeStamina(sGain);
+					addStory(`📖 You study "${bookName}". The knowledge grounds you. (${skill} XP${sGain > 0 ? `, +${sGain} stamina` : ''})`);
+				} else if (_magicSkills.includes(skill)) {
+					const mGain = Math.min(10, (player.maxMana || 100) - (player.mana || 0));
+					if (mGain > 0) player.mana = (player.mana || 0) + mGain;
+					addStory(`📖 You study "${bookName}". The arcane concepts kindle something within. (${skill} XP${mGain > 0 ? `, +${mGain} mana` : ''})`);
+				} else if (_healingSkills.includes(skill)) {
+					const hGain = Math.min(8, (player.maxLife || 100) - (player.life || 0));
+					if (hGain > 0) player.life = (player.life || 0) + hGain;
+					addStory(`📖 You study "${bookName}". The medical knowledge feels almost restorative. (${skill} XP${hGain > 0 ? `, +${hGain} life` : ''})`);
+				} else {
+					addStory(`📖 You study "${bookName}". (${skill} XP gained)`);
+				}
+				updatePlayerStats();
+			}
+
 			function eatItem(itemName) {
 				const item = player.inventory[itemName];
 				if (!item || (item.quantity ?? 0) < 1) { addStory(`⛔ No ${itemName} to eat.`); return; }
@@ -5460,13 +5734,16 @@ function pulseD20(times = 3) {
 					return;
 				}
 
-				// Food: use baseEffect.stamina from Items DB; fall back to heuristics for dynamic food
+				// Food: use baseEffect from Items DB; fall back to heuristics for dynamic food
 				const staminaGain = dbData?.baseEffect?.stamina ?? _fallbackStaminaGain(itemName, item);
+				const lifeGain    = dbData?.baseEffect?.life    ?? Math.max(1, Math.floor(staminaGain / 2));
 
 				removeItem(itemName, 1);
 				changeStamina(staminaGain);
+				player.life = Math.max(0, Math.min(player.maxLife, (player.life || 0) + lifeGain));
+				updateTopStats?.();
 				consumeFood(itemName);
-				addStory(`🍽️ You eat the ${itemName}. +${staminaGain} stamina.`);
+				addStory(`🍽️ You eat the ${itemName}. +${staminaGain} stamina, +${lifeGain} life.`);
 				checkQuestObjectives?.('food_eaten');
 				// 10% chance that eating something well-prepared sparks recipe insight
 				const _isCooked = item && /cooked|roasted|smoked|baked|dried/i.test(item.condition || itemName);
@@ -5512,22 +5789,24 @@ function pulseD20(times = 3) {
 				} else if (tier === 2) {
 					addStory(_restInTown ? '🔊 Noise from the street keeps you from sleep. No rest gained.' : '🐾 Disturbed by wildlife. No rest gained.');
 				} else if (tier === 3) {
-					gain = Math.max(0, Math.floor(player.maxStamina * 0.75) - player.stamina);
+					gain = Math.max(0, Math.floor(player.maxStamina * 0.5) - player.stamina);
 					changeStamina?.(gain);
 					addStory(`😴 Partially rested (+${gain} stamina).`);
 				} else if (tier === 4) {
-					gain = Math.max(0, player.maxStamina - player.stamina);
+					gain = Math.max(0, Math.floor(player.maxStamina * 0.75) - player.stamina);
 					changeStamina?.(gain);
 					addStory(`😴 Well rested (+${gain} stamina).`);
 				} else {
-					changeStamina?.(player.maxStamina - player.stamina);
+					const gain5 = Math.max(0, Math.floor(player.maxStamina * 0.9) - player.stamina);
+					changeStamina?.(gain5);
 					applyCondition('rejuvenated', 5);
-					addStory('✨ Fully rested. (Rejuvenated buff)');
+					addStory('✨ Deeply rested. (Rejuvenated buff)');
 				}
 				// Snare check
 				if (player.snarePlaced) {
 					player.snarePlaced = false;
 					const snareTier = performSkillCheck('Tracking');
+					if (snareTier === 5) applyCondition?.('focused', 3);
 					if (snareTier >= 3) {
 						const qty = snareTier >= 5 ? 2 : 1;
 						addItem('Raw Rabbit Meat', qty, { type: 'food', weight: 0.4, rarity: 'Common', consumable: true, description: 'Lean rabbit meat, fresh from the snare.' });
@@ -5592,6 +5871,7 @@ function pulseD20(times = 3) {
 				setBuiltIcon?.('shelter-button',  false);
 				setBuiltIcon?.('defenses-button', false);
 				updateComfortProtection?.();
+				updateCampSuppliesGrid?.();
 				addStory('🎒 Camp broken. Campsite removed from map.');
 				renderMapsPanel?.();
 				saveGame(true);
@@ -6309,10 +6589,11 @@ function _wheelShelter() {
 				if (typeof Recipes === 'undefined') {
 					addStory('📖 No crafting recipes available.'); _goBack(); return;
 				}
-				const known = player.knownRecipes || [];
-				const allRecipes = [...(Recipes.Crafting || []), ...(Recipes.Alchemy || [])];
-				const knownCrafting = allRecipes.filter(r => known.includes(r.name));
-				if (!knownCrafting.length) {
+				const known    = player.knownRecipes || [];
+				const CAT_ICONS = { Crafting: '🔨', Cooking: '🍳', Alchemy: '⚗️', Smelting: '🔥', Smithing: '⚒️' };
+				const cats     = Object.keys(Recipes);
+				const total    = cats.reduce((s, c) => s + (Recipes[c] || []).filter(r => known.includes(r.name)).length, 0);
+				if (!total) {
 					_buildWheel([
 						{ label: '📖 No recipes yet', disabled: true, action: () => {} },
 						{ label: '← Back', action: _goBack, isBack: true },
@@ -6320,33 +6601,64 @@ function _wheelShelter() {
 					addStory('📖 You don\'t know any recipes yet. Learn them from vendors, NPCs, or exploration.');
 					return;
 				}
-				const available   = knownCrafting.filter(r =>  canCraft(r, player.inventory));
-				const unavailable = knownCrafting.filter(r => !canCraft(r, player.inventory));
-
-				const opts = [
-					...available.map(r => ({
-						label:  r.name,
-						action: () => { _wheelStack.push(_wheelCraft); _doCraftItem(r); }
-					})),
-					...unavailable.slice(0, Math.max(0, 6 - available.length)).map(r => ({
-						label:  r.name,
-						action: () => {
-							const missing = r.requires
-								.filter(req => !req.tool && (!(player.inventory[req.item]) || player.inventory[req.item].quantity < req.qty))
-								.map(req => `${req.qty}× ${req.item}`);
-							addStory(`⛔ Need: ${missing.join(', ')}.`);
-						},
-						disabled: true
-					})),
-					{ label: '← Back', action: _goBack, isBack: true },
-				];
-
+				const opts = cats.map(cat => {
+					const n = (Recipes[cat] || []).filter(r => known.includes(r.name)).length;
+					return {
+						label:    `${CAT_ICONS[cat] || '📖'} ${cat}${n ? ` (${n})` : ''}`,
+						disabled: n === 0,
+						action:   n > 0
+							? () => { _wheelStack.push(_wheelCraft); _wheelCraftCategory(cat, 0); }
+							: () => { addStory(`📖 No known ${cat.toLowerCase()} recipes yet.`); },
+					};
+				});
+				opts.push({ label: '← Back', action: _goBack, isBack: true });
 				_buildWheel(opts.slice(0, 8), 'Craft');
 			}
 
+			function _wheelCraftCategory(cat, page) {
+				const PAGE_SIZE   = 5;
+				const known       = player.knownRecipes || [];
+				const allInCat    = (Recipes[cat] || []).filter(r => known.includes(r.name));
+				if (!allInCat.length) {
+					addStory(`📖 No ${cat.toLowerCase()} recipes known.`); _goBack(); return;
+				}
+				const available   = allInCat.filter(r =>  canCraft(r, player.inventory));
+				const unavailable = allInCat.filter(r => !canCraft(r, player.inventory));
+				const sorted      = [...available, ...unavailable];
+				const pages       = Math.ceil(sorted.length / PAGE_SIZE);
+				const slice       = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+				const opts = slice.map(r => {
+					const avail = canCraft(r, player.inventory);
+					return avail
+						? { label: r.name, action: () => { _wheelStack.push(() => _wheelCraftCategory(cat, page)); _doCraftItem(r); } }
+						: {
+							label: r.name,
+							disabled: true,
+							action: () => {
+								const missing = r.requires
+									.filter(req => !req.tool && (!player.inventory[req.item] || player.inventory[req.item].quantity < req.qty))
+									.map(req => `${req.qty}× ${req.item}`);
+								addStory(`⛔ Need: ${missing.join(', ')}.`);
+							},
+						};
+				});
+				if (page > 0)         opts.push({ label: '← Prev', action: () => _wheelCraftCategory(cat, page - 1) });
+				if (page < pages - 1) opts.push({ label: 'More →', action: () => _wheelCraftCategory(cat, page + 1) });
+				opts.push({ label: '← Back', action: _goBack, isBack: true });
+				_buildWheel(opts.slice(0, 8), cat);
+			}
+
 			async function _doCraftItem(recipe) {
-				_buildWheel([{ label: '⏳ Crafting…', action: () => {} }]);
-				await runInlineProgress(`Crafting ${recipe.name}…`, 3000);
+				// Determine category for context-specific messaging
+				const _craftCat  = (typeof Recipes !== 'undefined')
+					? (Object.keys(Recipes).find(c => (Recipes[c] || []).some(r => r.name === recipe.name)) || 'Crafting')
+					: 'Crafting';
+				const _VERB  = { Cooking: 'prepare', Alchemy: 'brew', Smelting: 'smelt', Smithing: 'forge', Crafting: 'craft' }[_craftCat] || 'craft';
+				const _ICON  = { Cooking: '🍳', Alchemy: '⚗️', Smelting: '🔥', Smithing: '⚒️', Crafting: '🔨' }[_craftCat] || '🔨';
+
+				_buildWheel([{ label: `⏳ ${capitalize(_VERB)}ing…`, action: () => {} }]);
+				await runInlineProgress(`${capitalize(_VERB)}ing ${recipe.name}…`, 3000);
 
 				// Double-check materials haven't changed
 				if (!canCraft(recipe, player.inventory)) {
@@ -6368,36 +6680,35 @@ function _wheelShelter() {
 
 				if (tier === 1) {
 					consumeIngredients(recipe, player.inventory);
-					addStory(`💥 Your attempt at crafting ${recipe.name} fails badly. The materials are ruined.`);
+					addStory(`💥 Your attempt to ${_VERB} ${recipe.name} fails badly. The materials are ruined.`);
 				} else if (tier === 2) {
 					consumeIngredients(recipe, player.inventory);
 					const qty = Math.max(1, Math.floor(recipe.produces.qty / 2));
 					addItem(recipe.produces.item, qty, { ...baseOpts, wear: 30 });
-					addStory(`🔨 You craft ${qty}× ${recipe.produces.item}, but the quality is poor (30%).`);
+					addStory(`${_ICON} You ${_VERB} ${qty}× ${recipe.produces.item}, but the quality is poor (30%).`);
 				} else if (tier === 3) {
 					consumeIngredients(recipe, player.inventory);
 					addItem(recipe.produces.item, recipe.produces.qty, { ...baseOpts, wear: 55 });
-					addStory(`🔨 You craft ${recipe.produces.qty}× ${recipe.produces.item} (55%).`);
+					addStory(`${_ICON} You ${_VERB} ${recipe.produces.qty}× ${recipe.produces.item} (55%).`);
 				} else if (tier === 4) {
 					consumeIngredients(recipe, player.inventory);
 					addItem(recipe.produces.item, recipe.produces.qty, { ...baseOpts, wear: 80 });
-					addStory(`🔨 Solid work. You craft ${recipe.produces.qty}× ${recipe.produces.item} (80%).`);
+					addStory(`${_ICON} Solid work. You ${_VERB} ${recipe.produces.qty}× ${recipe.produces.item} (80%).`);
 				} else {
 					consumeIngredients(recipe, player.inventory);
 					const qty = Math.ceil(recipe.produces.qty * 1.5);
 					addItem(recipe.produces.item, qty, { ...baseOpts, wear: 100 });
-					addStory(`✨ Exceptional craftsmanship! ${qty}× ${recipe.produces.item} (100%).`);
+					addStory(`✨ <strong>Exceptional ${_craftCat === 'Smithing' ? 'smithwork' : _craftCat === 'Alchemy' ? 'brew' : 'craftsmanship'}!</strong> ${qty}× ${recipe.produces.item} (100%).`);
 					gainSkillXp(skillName, 5);
 				}
 
 				if (tier >= 2) {
 					awardProfessionXp('craft');
 					checkQuestObjectives?.('crafted', { item: recipe.produces.item });
-					// Cooking recipes also satisfy food_cooked
-					const isCookingRecipe = (typeof Recipes !== 'undefined') && (Recipes.Cooking || []).some(r => r.name === recipe.name);
-					if (isCookingRecipe) checkQuestObjectives?.('food_cooked');
+					if (_craftCat === 'Cooking') checkQuestObjectives?.('food_cooked');
 				}
 				updateInventory();
+				saveGame(true);
 				_goBack();
 			}
 
@@ -6710,11 +7021,14 @@ function awardHuntLoot() {
   const animal = currentHunt.animal;
   const meatItem = meats[animal] || 'Raw Meat';
 
-  const quantity = currentHunt.tier >= 4 ? randomInt(2,4) : randomInt(1,2);
+  const _apex = player.apexPredatorActive;
+  if (_apex) player.apexPredatorActive = false;
+  const quantity = _apex ? 4 : (currentHunt.tier >= 4 ? randomInt(2,4) : randomInt(1,2));
+  if (_apex) addStory(`🦁 Apex Predator: maximum yield guaranteed!`);
   addItem(meatItem, quantity, { type: 'food', weight: 1, consumable: true, rarity: 'Common' });
 
-  // Hide chance — better with a hunting knife (clean skinning)
-  const hideChance = currentHunt._knife ? 0.85 : 0.45;
+  // Hide chance — better with a hunting knife (clean skinning); Apex Predator guarantees hide
+  const hideChance = _apex ? 1.0 : (currentHunt._knife ? 0.85 : 0.45);
   if (Math.random() < hideChance) {
     addItem(`${animal} Hide`, 1, { type: 'material', weight: 3, rarity: 'Uncommon' });
   }
@@ -7165,18 +7479,18 @@ function getSupplyQty(name) {
 
 // Enemy stat table — damage is [min, max] per hit, gold is [min, max] loot
 const ENEMY_STATS = {
-  'Bandit':        { maxLife: 35,  damage: [5, 10],  weapon: 'sword',    xp: 30,  gold: [5,  20], loot: [] },
-  'Bandits':       { maxLife: 50,  damage: [7, 13],  weapon: 'blades',   xp: 45,  gold: [10, 30], loot: [] },
-  'Highwayman':    { maxLife: 30,  damage: [6, 11],  weapon: 'blade',    xp: 30,  gold: [8,  25], loot: [] },
-  'Wolf':          { maxLife: 20,  damage: [4, 8],   weapon: 'bite',     xp: 18,  gold: [0,  0],  loot: ['Wolf Hide'] },
-  'Wolves':        { maxLife: 30,  damage: [5, 10],  weapon: 'claws',    xp: 25,  gold: [0,  0],  loot: ['Wolf Hide'] },
-  'Bear':          { maxLife: 70,  damage: [12, 22], weapon: 'claws',    xp: 60,  gold: [0,  0],  loot: ['Bear Hide', 'Raw Bear Meat'] },
-  'Boar':          { maxLife: 30,  damage: [6, 12],  weapon: 'tusks',    xp: 20,  gold: [0,  0],  loot: ['Raw Boar Meat'] },
-  'Goblin':        { maxLife: 15,  damage: [3, 6],   weapon: 'blade',    xp: 15,  gold: [1,  5],  loot: [] },
-  'Goblin Scout':  { maxLife: 18,  damage: [4, 7],   weapon: 'blade',    xp: 18,  gold: [1,  6],  loot: [] },
-  'Skeleton':      { maxLife: 22,  damage: [5, 10],  weapon: 'sword',    xp: 25,  gold: [0,  0],  loot: [] },
-  'Cultist':       { maxLife: 28,  damage: [7, 13],  weapon: 'dagger',   xp: 35,  gold: [3,  12], loot: [] },
-  'Giant Spider':  { maxLife: 20,  damage: [5, 8],   weapon: 'fangs',    xp: 25,  gold: [0,  0],  loot: ['Spider Silk'] },
+  'Bandit':        { maxLife: 35,  damage: [5, 10],  weapon: 'sword',    xp: 30,  gold: [5,  20], loot: [{ item: 'Bandage', chance: 0.4 }, { item: 'Rope', chance: 0.25 }] },
+  'Bandits':       { maxLife: 50,  damage: [7, 13],  weapon: 'blades',   xp: 45,  gold: [10, 30], loot: [{ item: 'Bandage', chance: 0.5 }, { item: 'Rope', chance: 0.35 }] },
+  'Highwayman':    { maxLife: 30,  damage: [6, 11],  weapon: 'blade',    xp: 30,  gold: [8,  25], loot: [{ item: 'Bandage', chance: 0.35 }, { item: 'Rope', chance: 0.3 }] },
+  'Wolf':          { maxLife: 20,  damage: [4, 8],   weapon: 'bite',     xp: 18,  gold: [0,  0],  loot: [{ item: 'Wolf Hide', chance: 0.85 }, { item: 'Raw Wolf Meat', chance: 0.7 }] },
+  'Wolves':        { maxLife: 30,  damage: [5, 10],  weapon: 'claws',    xp: 25,  gold: [0,  0],  loot: [{ item: 'Wolf Hide', chance: 0.85 }, { item: 'Raw Wolf Meat', chance: 0.85 }] },
+  'Bear':          { maxLife: 70,  damage: [12, 22], weapon: 'claws',    xp: 60,  gold: [0,  0],  loot: [{ item: 'Bear Hide', chance: 1.0 }, { item: 'Raw Bear Meat', chance: 1.0 }, { item: 'Bear Claw', chance: 0.4 }] },
+  'Boar':          { maxLife: 30,  damage: [6, 12],  weapon: 'tusks',    xp: 20,  gold: [0,  0],  loot: [{ item: 'Raw Boar Meat', chance: 1.0 }, { item: 'Boar Tusk', chance: 0.4 }] },
+  'Goblin':        { maxLife: 15,  damage: [3, 6],   weapon: 'blade',    xp: 15,  gold: [1,  5],  loot: [{ item: 'Goblin Eye', chance: 0.5 }, { item: 'Bones', chance: 0.3 }] },
+  'Goblin Scout':  { maxLife: 18,  damage: [4, 7],   weapon: 'blade',    xp: 18,  gold: [1,  6],  loot: [{ item: 'Goblin Eye', chance: 0.5 }, { item: 'Rope', chance: 0.2 }] },
+  'Skeleton':      { maxLife: 22,  damage: [5, 10],  weapon: 'sword',    xp: 25,  gold: [0,  0],  loot: [{ item: 'Bones', chance: 0.8 }, { item: 'Rusty Blade', chance: 0.15 }] },
+  'Cultist':       { maxLife: 28,  damage: [7, 13],  weapon: 'dagger',   xp: 35,  gold: [3,  12], loot: [{ item: 'Black Candle', chance: 0.5 }, { item: 'Strange Herb', chance: 0.35 }] },
+  'Giant Spider':  { maxLife: 20,  damage: [5, 8],   weapon: 'fangs',    xp: 25,  gold: [0,  0],  loot: [{ item: 'Spider Silk', chance: 0.85 }, { item: 'Spider Venom', chance: 0.4 }] },
   'Rat':           { maxLife: 8,   damage: [1, 3],   weapon: 'bite',     xp: 5,   gold: [0,  0],  loot: [] },
 };
 
@@ -7250,16 +7564,39 @@ function startCombat(enemyType, opts = {}) {
     round:     0,
   };
   if (opts.narrative) addStory(opts.narrative);
+  // Dread Flag — 50% chance the enemy flees before combat begins
+  if (player.dreadFlagActive) {
+    player.dreadFlagActive = false;
+    if (Math.random() < 0.5) {
+      addStory(`☠️ Your fearsome reputation precedes you — the ${enemyType} takes one look and flees!`);
+      combatState = null;
+      _showDefaultWheel();
+      return;
+    }
+    addStory(`☠️ The ${enemyType} sees your dread flag and wavers — but stands their ground.`);
+  }
+  if (player.ritualWard) {
+    player.ritualWard = false;
+    combatState.enemy.life = Math.max(1, combatState.enemy.life - 20);
+    addStory(`🌀 Your ritual ward flares — the ${enemyType} begins weakened (−20 HP).`);
+  }
   const playerDefense = _getEquippedDefense();
   const playerWeapon  = player.equipped?.rightHand || player.equipped?.leftHand || 'bare hands';
   const defStr = playerDefense > 0 ? ` · Armor: ${playerDefense} def` : '';
-  addStory(`⚔️ A fight breaks out with ${enemyType}! (${tpl.maxLife} HP) — You: ${playerWeapon}${defStr}`);
+  addStory(`⚔️ A fight breaks out with ${enemyType}! (${combatState.enemy.life}/${tpl.maxLife} HP) — You: ${playerWeapon}${defStr}`);
   _showCombatWheel();
 }
 
 function _showCombatWheel() {
   if (!combatState) { _showDefaultWheel(); return; }
   const e = combatState.enemy;
+  // Poison tick at the start of each combat turn display
+  if (combatState.enemyPoisoned && e.life > 0) {
+    const _pDmg = 3;
+    e.life = Math.max(0, e.life - _pDmg);
+    addStory(`☠️ Poison burns through the ${e.name} for ${_pDmg} damage. (${e.life}/${e.maxLife} HP)`);
+    if (e.life <= 0) { _resolveCombatVictory(); return; }
+  }
   const hasMagic = (player.skills?.['Light Magic']?.level || 0) > 0
                 || (player.skills?.['Black Magic']?.level  || 0) > 0;
   const opts = [
@@ -7267,14 +7604,21 @@ function _showCombatWheel() {
     { label: '🛡️ Defend',      action: _doCombatDefend },
     { label: '🏃 Flee',        action: _doCombatFlee   },
   ];
-  if (hasMagic) opts.splice(2, 0, { label: '✨ Spell', action: _doCombatSpell });
+  if (hasMagic) opts.splice(2, 0, { label: '✨ Spell', action: _showSpellWheel });
   opts.push(..._getSkillActionsForWheel('combat'));
   _buildWheel(opts, `${e.name} — ${e.life}/${e.maxLife} HP`);
 }
 
 function _enemyCounterattack() {
   if (!combatState) return;
-  const e      = combatState.enemy;
+  const e = combatState.enemy;
+  // Grapple / volley / charge stunned the enemy this round
+  if (combatState.enemySkipsNext) {
+    combatState.enemySkipsNext = false;
+    addStory(`🛡️ The ${e.name} is unable to strike this round.`);
+    combatState.defending = false;
+    return;
+  }
   let dmg      = randomInt(e.damage[0], e.damage[1]);
   const armor  = _getEquippedDefense();
   // Each point of defense reduces damage by 0.5, capped so at least 1 damage always lands
@@ -7283,10 +7627,26 @@ function _enemyCounterattack() {
     dmg = Math.max(1, Math.floor((dmg - reduction) * 0.35));
     const armorNote = armor > 0 ? ` (armor: -${reduction})` : '';
     addStory(`🛡️ You block most of it — the ${e.name}'s ${e.weapon} glances off for ${dmg} damage${armorNote}.`);
+  } else if (combatState.standFirm) {
+    // Stand Firm absorbs the blow at half damage — allies are shielded
+    combatState.standFirm = false;
+    const reduced = Math.max(1, Math.round((dmg - reduction) * 0.5));
+    addStory(`🛡️ You stand firm, bracing for the ${e.name}'s ${e.weapon} — ${reduced} damage (half absorbed, allies protected).`);
+    changeLife(-reduced);
+    combatState.defending = false;
+    return;
   } else {
     dmg = Math.max(1, dmg - reduction);
     const armorNote = armor > 0 ? ` (armor: -${reduction})` : '';
     addStory(`🗡️ The ${e.name} strikes with its ${e.weapon} for ${dmg} damage${armorNote}.`);
+  }
+  if (combatState.damageReduction) dmg = Math.max(1, dmg - combatState.damageReduction);
+  // Natural Guardian — negate one hit that would drop the player to 0 or below
+  if (combatState.naturalGuardian && (player.life - dmg) <= 0) {
+    combatState.naturalGuardian = false;
+    addStory(`🌿 Natural Guardian activates — your bond with nature turns aside the fatal blow! (${dmg} damage negated)`);
+    combatState.defending = false;
+    return;
   }
   changeLife(-dmg);
   // Armor degrades slightly when hit
@@ -7302,12 +7662,19 @@ async function _doCombatAttack() {
   await runInlineProgress('Attacking…', 1500);
   const e       = combatState.enemy;
   const skill   = _getBestCombatSkill();
-  const tier    = performSkillCheck(skill);
-  const wepBonus = _getEquippedWeaponDamage();
-  const dmg     = Math.max(1, tier * 4 + randomInt(-2, 3) + Math.floor(wepBonus * 0.4));
+  let tier = performSkillCheck(skill);
+  if (combatState.eagleEye && skill === 'Archery') tier = Math.max(3, tier);
+  if (skill === 'Archery' && player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
+  const wepBonus    = _getEquippedWeaponDamage();
+  const markedBonus = combatState.markedTarget ? 3 : 0;
+  let broadheadBonus = 0;
+  if (skill === 'Archery' && player.broadheadActive) { broadheadBonus = 4; player.broadheadActive = false; }
+  const dmg         = Math.max(1, tier * 4 + randomInt(-2, 3) + Math.floor(wepBonus * 0.4) + markedBonus + broadheadBonus);
   e.life = Math.max(0, e.life - dmg);
-  const wepNote = wepBonus > 0 ? ` (weapon: +${Math.floor(wepBonus * 0.4)})` : '';
-  addStory(`⚔️ You hit the ${e.name} for ${dmg} damage${wepNote}. (${e.life}/${e.maxLife} HP)`);
+  const wepNote    = wepBonus > 0 ? ` (weapon: +${Math.floor(wepBonus * 0.4)})` : '';
+  const markedNote = markedBonus ? ' 🎯+3' : '';
+  const bhdNote    = broadheadBonus ? ' 🏹+4' : '';
+  addStory(`⚔️ You hit the ${e.name} for ${dmg} damage${wepNote}${markedNote}${bhdNote}. (${e.life}/${e.maxLife} HP)`);
   // Weapon degrades slightly each attack
   const wep = player.equipped?.rightHand || player.equipped?.leftHand;
   if (wep && player.inventory?.[wep]) degradeItemWear(wep, randomInt(2, 4));
@@ -7351,30 +7718,192 @@ async function _doCombatFlee() {
   }
 }
 
-async function _doCombatSpell() {
+function _showSpellWheel() {
+  if (!combatState) { _showDefaultWheel(); return; }
+  const mana     = player.mana || 0;
+  const lightLvl = player.skills?.['Light Magic']?.level || 0;
+  const darkLvl  = player.skills?.['Black Magic']?.level  || 0;
+  const spells   = [];
+  if (lightLvl > 0)  spells.push({ label: `🔥 Fire Bolt (8)`,  action: () => _castSpell('fire_bolt'),  disabled: mana < 8  });
+  if (lightLvl >= 3) spells.push({ label: `💫 Mend (12)`,      action: () => _castSpell('mend'),        disabled: mana < 12 });
+  if (lightLvl >= 5) spells.push({ label: `⚡ Lightning (15)`, action: () => _castSpell('lightning'),   disabled: mana < 15 });
+  if (darkLvl > 0)   spells.push({ label: `💀 Dark Bolt (8)`,  action: () => _castSpell('dark_bolt'),   disabled: mana < 8  });
+  if (darkLvl >= 3)  spells.push({ label: `🩸 Life Drain (12)`,action: () => _castSpell('drain'),       disabled: mana < 12 });
+  if (darkLvl >= 5)  spells.push({ label: `☠️ Wither (15)`,    action: () => _castSpell('wither'),      disabled: mana < 15 });
+  spells.push({ label: '← Back', action: _showCombatWheel, isBack: true });
+  _buildWheel(spells, `Mana: ${mana}`);
+}
+
+const SPELL_DEFS = {
+  fire_bolt:  { cost: 8,  skill: 'Light Magic', dmgMult: 5, label: '🔥 Fire bolt'   },
+  mend:       { cost: 12, skill: 'Light Magic', dmgMult: 0, label: '💫 Divine mend'  },
+  lightning:  { cost: 15, skill: 'Light Magic', dmgMult: 7, label: '⚡ Lightning'    },
+  dark_bolt:  { cost: 8,  skill: 'Black Magic', dmgMult: 5, label: '💀 Dark bolt'    },
+  drain:      { cost: 12, skill: 'Black Magic', dmgMult: 4, label: '🩸 Life drain'   },
+  wither:     { cost: 15, skill: 'Black Magic', dmgMult: 6, label: '☠️ Wither curse' },
+};
+
+async function _castSpell(id) {
   _buildWheel([{ label: '✨ Casting…', action: () => {} }]);
-  await runInlineProgress('Casting…', 1500);
-  if ((player.mana || 0) < 10) {
-    addStory('⛔ Not enough mana to cast.');
+  const sp = SPELL_DEFS[id];
+  if (!sp || (player.mana || 0) < sp.cost) {
+    addStory('⛔ Not enough mana.');
     _showCombatWheel();
     return;
   }
-  const e = combatState.enemy;
-  const skill = (player.skills?.['Light Magic']?.level || 0) >= (player.skills?.['Black Magic']?.level || 0)
-    ? 'Light Magic' : 'Black Magic';
-  const tier = performSkillCheck(skill);
-  const dmg  = tier * 6 + randomInt(0, 5);
-  changeMana(-10);
+  await runInlineProgress(`${sp.label}…`, 1500);
+  changeMana(-sp.cost);
+  const tier = performSkillCheck(sp.skill);
+
+  // Healing spell — no attack roll, just restore life then take a counter
+  if (id === 'mend') {
+    const healAmt = Math.max(1, tier * 8 + randomInt(0, 5));
+    changeLife(healAmt);
+    removeCondition('injured');
+    addStory(`💫 Divine light flows through you. +${healAmt} life${tier >= 4 ? ', Injured removed' : ''}.`);
+    awardProfessionXp('magic_used');
+    _enemyCounterattack();
+    if (player.life <= 0) { _resolveCombatDefeat(); return; }
+    combatState.round++;
+    _showCombatWheel();
+    return;
+  }
+
+  // Damage spells
+  const e           = combatState.enemy;
+  const markedBonus = combatState.markedTarget ? 3 : 0;
+  const dmg         = Math.max(1, tier * sp.dmgMult + randomInt(0, 4) + markedBonus);
   e.life = Math.max(0, e.life - dmg);
+  const markNote = markedBonus ? ' 🎯+3' : '';
+  addStory(`${sp.label} strikes the ${e.name} for ${dmg} damage${markNote}. (${e.life}/${e.maxLife} HP)`);
+
+  // Spell side-effects
+  if (id === 'drain') {
+    const steal = Math.floor(dmg * 0.4);
+    changeLife(steal);
+    addStory(`You absorb ${steal} life.`);
+  }
+  if (id === 'lightning') combatState.enemySkipsNext = true;
+  if (id === 'wither')    e.damage = [Math.max(1, e.damage[0] - 2), Math.max(1, e.damage[1] - 3)];
+
   awardProfessionXp('magic_used');
-  addStory(`✨ Your spell strikes the ${e.name} for ${dmg} damage. (${e.life}/${e.maxLife} HP)`);
   if (e.life <= 0) { _resolveCombatVictory(); return; }
   _partyAssistCombat();
-  if (combatState.enemy.life <= 0) { _resolveCombatVictory(); return; }
+  if (combatState?.enemy?.life <= 0) { _resolveCombatVictory(); return; }
   _enemyCounterattack();
   if (player.life <= 0) { _resolveCombatDefeat(); return; }
   combatState.round++;
   _showCombatWheel();
+}
+
+function _showOutOfCombatMagicWheel() {
+  const mana     = player.mana || 0;
+  const lightLvl = player.skills?.['Light Magic']?.level || 0;
+  const darkLvl  = player.skills?.['Black Magic']?.level  || 0;
+  const spells   = [];
+  if (mana > 0) spells.push({
+    label:    '🧘 Meditate',
+    action:   _doMeditateSpell,
+    disabled: mana >= (player.maxMana || 100),
+  });
+  if (lightLvl > 0) spells.push({
+    label:    `💫 Mend Self (12)`,
+    action:   _doMendSelfSpell,
+    disabled: mana < 12,
+  });
+  if (lightLvl >= 3) spells.push({
+    label:    `✨ Ward (8)`,
+    action:   _doWardSpell,
+    disabled: mana < 8,
+  });
+  if (darkLvl > 0) spells.push({
+    label:    `🔍 Dark Sight (5)`,
+    action:   _doDarkSightSpell,
+    disabled: mana < 5,
+  });
+  if (darkLvl >= 3) spells.push({
+    label:    `☠️ Curse Self (0)`,
+    action:   _doCurseSelfSpell,
+  });
+  spells.push({ label: '← Back', action: _goBack, isBack: true });
+  _buildWheel(spells, `Mana: ${mana}`);
+}
+
+async function _doMeditateSpell() {
+  _buildWheel([{ label: '🧘 Meditating…', action: () => {} }]);
+  await runInlineProgress('Meditating…', 4000);
+  const tier    = performSkillCheck('Mysticism');
+  const maxMana = player.maxMana || 100;
+  const restore = Math.min(tier * 10 + randomInt(0, 5), maxMana - (player.mana || 0));
+  changeMana(restore);
+  changeStamina(-5);
+  addStory(`🧘 You meditate and restore ${restore} mana. (−5 stamina)`);
+  _goBack();
+}
+
+async function _doMendSelfSpell() {
+  _buildWheel([{ label: '💫 Mending…', action: () => {} }]);
+  await runInlineProgress('Channelling…', 2000);
+  changeMana(-12);
+  const tier   = performSkillCheck('Light Magic');
+  const healAmt = Math.max(1, tier * 10 + randomInt(0, 8));
+  changeLife(healAmt);
+  if (tier >= 3) removeCondition('injured');
+  addStory(`💫 You mend your wounds. +${healAmt} life${tier >= 3 ? ', Injured removed' : ''}.`);
+  awardProfessionXp('heal');
+  _goBack();
+}
+
+async function _doWardSpell() {
+  _buildWheel([{ label: '✨ Warding…', action: () => {} }]);
+  await runInlineProgress('Weaving a ward…', 2000);
+  changeMana(-8);
+  const tier = performSkillCheck('Light Magic');
+  if (tier >= 3) {
+    player.ritualWard = true;
+    addStory('✨ A ward coils around you. The next enemy you face begins weakened (−20 HP).');
+  } else {
+    addStory('✨ The ward wavers and dissipates. Your concentration wasn\'t sufficient.');
+  }
+  _goBack();
+}
+
+async function _doDarkSightSpell() {
+  _buildWheel([{ label: '🔍 Sensing…', action: () => {} }]);
+  await runInlineProgress('Reaching into shadow…', 2000);
+  changeMana(-5);
+  const tier = performSkillCheck('Black Magic');
+  if (tier <= 1) { addStory('🔍 The shadow sight fails. Nothing revealed.'); _goBack(); return; }
+  // Reveal a random nearby undiscovered cell
+  const key   = player.currentLocation;
+  const match = key.match(/^x(\d+)_y(\d+)$/);
+  if (match) {
+    const cx = +match[1], cy = +match[2];
+    const candidates = [];
+    for (let d = 1; d <= 3; d++) {
+      for (let dx = -d; dx <= d; dx++) {
+        for (let dy = -d; dy <= d; dy++) {
+          const ckey = `x${cx + dx}_y${cy + dy}`;
+          if (mapData?.[ckey] && !mapData[ckey].discovered) candidates.push(ckey);
+        }
+      }
+    }
+    const toReveal = Math.min(tier, candidates.length);
+    for (let i = 0; i < toReveal; i++) { _markDiscovered(candidates[i]); }
+    if (toReveal) { setupMap?.(); addStory(`🔍 Shadow sight reveals ${toReveal} hidden location${toReveal > 1 ? 's' : ''}.`); }
+    else addStory('🔍 Your dark sight sweeps the surroundings — nothing hidden nearby.');
+  } else {
+    addStory('🔍 The darkness whispers but reveals nothing clear here.');
+  }
+  _goBack();
+}
+
+async function _doCurseSelfSpell() {
+  addStory('☠️ You reach into the void and let a whisper of darkness touch your soul.');
+  applyCondition('cursed', 3);
+  changeMana(20);
+  addStory('A curse settles on you (+Cursed, 3 turns) but dark energy floods in (+20 mana).');
+  _goBack();
 }
 
 // Party members contribute to combat — called after each player action.
@@ -7391,6 +7920,11 @@ function _partyAssistCombat() {
     Cleric: 'Survival', Priest: 'Survival', Monk: 'Brawling', Brawler: 'Brawling',
   };
 
+  const _battleCryBonus = combatState.battleCryActive ? 2 : 0;
+  if (combatState.battleCryActive) {
+    combatState.battleCryActive = false;
+    addStory(`📣 Your battle cry rallies your companions — each deals +${_battleCryBonus} bonus damage!`);
+  }
   for (const member of party) {
     const prof   = member.profession || 'Fighter';
     const skill  = PARTY_SKILLS[prof] || 'Brawling';
@@ -7400,7 +7934,7 @@ function _partyAssistCombat() {
       addStory(`🗡️ ${member.name} misses their strike.`);
       continue;
     }
-    const dmg = Math.max(1, tier * 3 + randomInt(-1, 2));
+    const dmg = Math.max(1, tier * 3 + randomInt(-1, 2) + _battleCryBonus);
     combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
     const e = combatState.enemy;
     const actions = {
@@ -7419,13 +7953,24 @@ function _resolveCombatVictory() {
   addStory(`🏆 You defeated the ${e.name}!`);
   awardProfessionXp('combat_victory');
   gainExperience(e.xp);
-  const gold = randomInt(e.goldRange[0], e.goldRange[1]);
+  const _forPay  = player.forPayActive;
+  if (_forPay)  player.forPayActive  = false;
+  const _plunder = player.plunderActive;
+  if (_plunder) player.plunderActive = false;
+  const goldMult = (_forPay ? 1.5 : 1) * (_plunder ? 1.8 : 1);
+  const gold = Math.round(randomInt(e.goldRange[0], e.goldRange[1]) * goldMult);
   if (gold > 0) {
     player.gold = (player.gold || 0) + gold;
-    addStory(`💰 +${gold} gold.`);
+    const bonuses = [_forPay && 'For Pay: +50%', _plunder && 'Plunder: +80%'].filter(Boolean);
+    const payNote = bonuses.length ? ` (${bonuses.join(', ')})` : '';
+    addStory(`💰 +${gold} gold${payNote}.`);
     updateTopStats();
   }
-  e.loot.forEach(item => addItem(item, 1, { type: 'material', weight: 1, rarity: 'Common' }));
+  e.loot.forEach(entry => {
+    const itemName = typeof entry === 'string' ? entry : entry.item;
+    const chance   = typeof entry === 'object'  ? (entry.chance ?? 1.0) : 1.0;
+    if (Math.random() < chance) addItem(itemName, 1, { type: 'material', weight: 1, rarity: 'Common' });
+  });
   if (Math.random() < 0.06) awardRecipeScroll();
   checkQuestObjectives?.('defeated', { target: e.name });
   addWorldEvent(`Defeated ${e.name} in combat.`, 'combat');
@@ -7446,6 +7991,10 @@ function _resolveCombatDefeat() {
     addStory(`💰 You lose ${goldLost} gold.`);
   }
   applyCondition('injured');
+  if (e && e.damage[1] >= 12) {
+    applyCondition('bleeding');
+    applyCondition('wounded');
+  }
   updateTopStats();
   addStory('You regain consciousness sometime later, battered and barely alive.');
   combatState = null;
@@ -7778,6 +8327,34 @@ function showRadialMenu(iconEl, items) {
 
 				awardProfessionXp('npc_talk');
 				const _canApprentice = !!(npc.profession && PROFESSION_TIER_DATA?.[npc.profession]) && (player.professions?.[npc.profession]?.tier ?? -1) < 3;
+
+				// Delivery spokes — show only when this NPC is the target of an active delivered objective
+				const _deliverSpokes = [];
+				(player.journal?.quests || []).filter(q => q.status === 'Active').forEach(inst => {
+					const def = getQuestDef(inst.id);
+					if (!def) return;
+					const branch = _getActiveBranch(inst, def);
+					const obj = branch
+						? branch.objectives?.[inst.branchObjectiveIndex ?? 0]
+						: def.objectives?.[inst.objectiveIndex];
+					if (!obj || obj.completion?.type !== 'delivered') return;
+					const targetNpc = (obj.completion?.npc || obj.target?.npc || '').toLowerCase();
+					if (targetNpc !== (npc.name || '').toLowerCase()) return;
+					const reqItem = obj.target?.item || obj.completion?.item;
+					const hasIt   = !reqItem || getItemQty(reqItem) >= 1;
+					_deliverSpokes.push({
+						label:    reqItem ? `Deliver ${reqItem}` : `Deliver Item`,
+						disabled: !hasIt,
+						action: () => {
+							if (reqItem) removeItem(reqItem, 1);
+							addStory(`📦 You hand ${reqItem ? `the ${reqItem}` : 'the item'} to ${npc.name}.`);
+							addStory(`${npc.name}: "Thank you. This is exactly what I needed."`);
+							setQuestFlag(inst.id, `delivered_${(npc.name || '').replace(/\s+/g,'_').toLowerCase()}`, true);
+							_goBack();
+						}
+					});
+				});
+
 				_buildWheel([
 					{
 						label: 'Ask About Work',
@@ -7824,6 +8401,11 @@ function showRadialMenu(iconEl, items) {
 						action:   () => { joinProfession(npc.profession); _goBack(); },
 						disabled: !_canApprentice,
 					},
+					{
+						label:  '💬 Converse',
+						action: () => _showNpcInteraction(npc),
+					},
+					..._deliverSpokes,
 					{ label: '← Back', action: _goBack, isBack: true }
 				], npc.name);
 			}
@@ -8234,6 +8816,7 @@ function showRadialMenu(iconEl, items) {
 					player.gold = Math.max(0, (player.gold || 0) - d.cost);
 					addStory(`🍺 ${d.story}${d.cost > 0 ? ` (−${d.cost} gold)` : ''}`);
 					changeStamina(d.stamina);
+					applyCondition('hydrated', 4);
 					updateTopStats();
 					advanceTime(1);
 					_goBack();
@@ -8836,7 +9419,9 @@ function _renderPartyHud() {
 // Determine stock list for a given establishment type string
 function _getEstablishmentStock(typeStr) {
   if (typeof ESTABLISHMENT_STOCK === 'undefined') return [];
-  const key = (typeStr || 'merchant').toLowerCase().replace(/[\s\-]/g, '_');
+  let key = (typeStr || 'merchant').toLowerCase().replace(/[\s\-]/g, '_');
+  // Normalize library-family types to a single key
+  if (/library|bookshop|book_shop|archive|scriptorium|loremaster|lore_master/.test(key)) key = 'library';
   // Fuzzy match — try exact, then partial
   if (ESTABLISHMENT_STOCK[key]) return ESTABLISHMENT_STOCK[key];
   for (const k of Object.keys(ESTABLISHMENT_STOCK)) {
@@ -8867,6 +9452,28 @@ function _vendorStock(baseStock, kingdomExtras, vendorName) {
   }
   const variableTarget = Math.min(variable.length, baseStock.length - coreCount + Math.ceil(kingdomExtras.length * 0.6));
   return [...core, ...variable.slice(0, variableTarget)];
+}
+
+// Inject skill books into a stock array — each vendor deterministically carries
+// exactly 1 book from the pool (by vendor name seed), plus a ~33% chance of a 2nd.
+// Different vendors of the same type carry different books, so finding them all requires exploration.
+function _injectSkillBook(stock, typeKey, vendorName) {
+  if (typeof SKILL_BOOK_STOCK === 'undefined') return;
+  // Normalize library-family types to single key
+  let key = (typeKey || '').toLowerCase();
+  if (/library|bookshop|book_shop|archive|scriptorium|loremaster/.test(key)) key = 'library';
+  const pool = SKILL_BOOK_STOCK[key];
+  if (!pool || !pool.length) return;
+  const seed = _strSeed(vendorName || key);
+  const idx1 = seed % pool.length;
+  const book1 = pool[idx1];
+  if (!stock.includes(book1)) stock.push(book1);
+  // ~33% chance of a second distinct book
+  if (pool.length > 1 && (seed >>> 4) % 3 === 0) {
+    const idx2 = (idx1 + 1 + ((seed >>> 8) % (pool.length - 1))) % pool.length;
+    const book2 = pool[idx2];
+    if (book2 !== book1 && !stock.includes(book2)) stock.push(book2);
+  }
 }
 
 // Build the economy opts object for the current location
@@ -9787,6 +10394,7 @@ function _openEstablishment(est) {
     const active      = (worldEconomy?.activeEvents || []).filter(e => !e.kingdom || e.kingdom === kingdom);
     const scarceStock = _applyStockScarcity(stock, active);
     const stockToUse  = scarceStock.length > 0 ? scarceStock : stock.slice(0, Math.max(1, Math.floor(stock.length * 0.3)));
+    _injectSkillBook(stockToUse, 'library', est.name || 'library');
     const studyLabel  = isLoremasterType ? '📜 Consult Loremaster' : '📖 Study Texts';
     const studySource = isLoremasterType ? 'loremaster' : 'library';
 
@@ -9855,6 +10463,7 @@ function _openEstablishment(est) {
     addStory(marketNote);
   }
   const stockToUse = scarceStock.length > 0 ? scarceStock : stock.slice(0, Math.max(1, Math.floor(stock.length * 0.3)));
+  _injectSkillBook(stockToUse, typeKey, est.name || typeKey);
 
   addStory(`🏪 You enter ${est.name}. ${shopkeeper.name}, a ${shopkeeper.race} ${shopkeeper.profession}, looks up.`);
   if (shopkeeper.traits?.[0]) addStory(`They seem ${shopkeeper.traits[0].toLowerCase()}.`);
@@ -10891,7 +11500,7 @@ function runCountdownBar(id, durationMs) {
 					player.life       = player.maxLife;
 					player.stamina    = player.maxStamina;
 					player.mana       = player.maxMana;
-					addStory(`🌟 Level ${player.level}! Max Life +10 · Max Stamina +5 · Max Mana +5. All pools restored.`);
+					addStory(`<strong>🌟 Level ${player.level}! Max Life +10 · Max Stamina +5 · Max Mana +5. All pools restored.</strong>`);
 					addWorldEvent(`Reached Level ${player.level}.`, 'player');
 					changeHope(3, 'leveled up');
 					checkAchievementTitles?.();
@@ -11405,40 +12014,46 @@ function removeItem(name, qty = 1) {
 				// 1. Quest sidebar
 				await tutorialHint(
 					'#left-sidebar .pf-sb:first-child',
-					'<strong>Quest Panel</strong><br>This sidebar panel shows your active quest and current objective. It updates automatically as you complete each step.',
+					'<strong>Quest Panel</strong><br>Huzzah! Your first quest! This panel shows your active quest and current objective.',
 				);
 
 				// 2. Journal tab — advance when clicked
 				await tutorialHint(
 					'[data-bksec="character"]',
-					'<strong>Journal Tab</strong><br>Click the <em>Journal</em> tab above to open your journal — where you track quests, skills, locations, and more.',
+					'<strong>Journal Tab</strong><br>Click the <em>Journal</em> tab to open your journal, where you track quests, skills, locations, and more.',
 					{ advance: 'click' }
 				);
 
 				// 3. Quest Log sub-tab — advance when clicked
 				await tutorialHint(
 					'[data-tab="quests-tab"]',
-					'<strong>Quest Log</strong><br>Click <em>Quest Log</em> to see your active quests and all their objectives.',
+					'<strong>Quest Log</strong><br>Click <em>Quest Log</em> to see all of your quests and their objectives.',
 					{ advance: 'click' }
 				);
 
 				// 4. Quest list content
 				await tutorialHint(
 					'#quests-tab',
-					'Here you can read every quest in full detail, including each objective and your current progress.',
+					'Here you can read every quest in detail and change which quest you are currently tracking.',
 				);
 
 				// 5. Return to Story tab
 				await tutorialHint(
 					'[data-bksec="story"]',
-					'<strong>Story Tab</strong><br>Click <em>Story</em> to return to the main story view and your action wheel.',
+					'<strong>Story Tab</strong><br>Click <em>Story</em> to return to the main story view.',
 					{ advance: 'click' }
 				);
 
 				// 6. Action wheel area
 				await tutorialHint(
 					'#wheel-area',
-					'<strong>Action Wheel</strong><br>This is your main way to interact with the world. Every action — exploring, resting, hunting, crafting — starts here.<br><br>Click <strong>Actions</strong>, then <strong>Exploration</strong>, and look for <strong>Find Camping Spot</strong> — that\'s your first objective.',
+					'<strong>Action Wheel</strong><br>This is your primary way to interact with the world. Every action available to you — exploring, resting, hunting, crafting — starts here.',
+				);
+
+				// 7. Time & weather dial
+				await tutorialHint(
+					'#time-dial',
+					'<strong>Time & Weather</strong><br>This dial tracks the time of day and current weather. Both affect what actions are available and how the world responds to you.<br><br>It\'s getting late. You should probably make camp for the night. You\'ll need to find a suitable spot to set up your campsite. From the Action Wheel, choose <strong>Exploration</strong>.',
 				);
 			}
 
@@ -11451,7 +12066,7 @@ function removeItem(name, qty = 1) {
 				setTimeout(async () => {
 					await tutorialHint(
 						'#wheel-area',
-						'<strong>Find Camping Spot</strong><br>You\'re in the Exploration wheel. Find and click <strong>Find Camping Spot</strong> to complete your first objective. It costs 5 stamina.',
+						'<strong>Find Camping Spot</strong><br>Now, select <strong>Find Camping Spot</strong> to scout a good camping spot and complete your first objective.',
 						{ pulseLabel: 'Find Camping Spot' }
 					);
 				}, 120);
@@ -11466,8 +12081,14 @@ function removeItem(name, qty = 1) {
 				setTimeout(async () => {
 					await tutorialHint(
 						'#wheel-area',
-						'<strong>Make Camp</strong><br>You\'ve found a good spot! Back out to the main wheel, then choose <strong>Survival → Make Camp</strong> to set up your campsite.',
+						'<strong>Make Camp</strong><br>You\'ve found a good spot! Now select <strong>Back</strong> to exit the Exploration wheel menu.',
 					);
+					await tutorialHint(
+						'#hud-player-info',
+						'<strong>Your Stats</strong><br>Your life, stamina, and mana are shown here — you\'re weary and hungry from your journey, so all three are low. Eating restores life and stamina; resting restores stamina and mana. Keep an eye on these as you explore.<br>Now, click <strong>Survival</strong> to set up your new campsite.',
+					);
+					if (!player.flags) player.flags = {};
+					player.flags.tutShowSurvivalHint = true;
 				}, 120);
 			}
 
@@ -11481,7 +12102,7 @@ function removeItem(name, qty = 1) {
 				setTimeout(async () => {
 					await tutorialHint(
 						'#wheel-area',
-						'<strong>Make Camp</strong><br>Your spot is scouted. Click <strong>Make Camp</strong> to set up your campsite.',
+						'<strong>Make Camp</strong><br>Now, Click <strong>Make Camp</strong>.',
 						{ pulseLabel: 'Make Camp' }
 					);
 				}, 120);
@@ -11497,7 +12118,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutHuntSpokeShown) return;
 				player.flags.tutHuntSpokeShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Hunt</strong><br>Bow equipped! Click <strong>Hunt</strong> to begin hunting for food.', { pulseLabel: 'Hunt' });
+					await tutorialHint('#wheel-area', '<strong>Hunting</strong><br>With your bow equipped, you can now hunt for food. Click <strong>Hunt</strong> in the Survival menu to begin.', { pulseLabel: 'Hunt' });
 				}, 120);
 			}
 
@@ -11513,13 +12134,13 @@ function removeItem(name, qty = 1) {
 					if (player.flags?.tutEncampmentForFireShown) return;
 					player.flags.tutEncampmentForFireShown = true;
 					setTimeout(async () => {
-						await tutorialHint('#wheel-area', '<strong>Encampment</strong><br>You have enough Stones. Choose <strong>Encampment</strong> to build the campfire.', { pulseLabel: 'Encampment' });
+						await tutorialHint('#wheel-area', '<strong>Encampment</strong><br>You have enough Stones to build a campfire. Choose <strong>Encampment</strong>, then <strong>Campfire</strong>.', { pulseLabel: 'Encampment' });
 					}, 120);
 				} else if (idx === 4) {
 					if (player.flags?.tutEncampmentForCookShown) return;
 					player.flags.tutEncampmentForCookShown = true;
 					setTimeout(async () => {
-						await tutorialHint('#wheel-area', '<strong>Encampment</strong><br>Choose <strong>Encampment</strong> to access your campfire and cook.', { pulseLabel: 'Encampment' });
+						await tutorialHint('#wheel-area', '<strong>Encampment</strong><br>Choose <strong>Encampment</strong> to access your campfire and cook your food.', { pulseLabel: 'Encampment' });
 					}, 120);
 				} else if (idx === 7) {
 					const sticks = player.campSupplies?.find(i => i.name === 'Stick Bundle')?.quantity ?? 0;
@@ -11527,7 +12148,7 @@ function removeItem(name, qty = 1) {
 					if (player.flags?.tutEncampmentForShelterShown) return;
 					player.flags.tutEncampmentForShelterShown = true;
 					setTimeout(async () => {
-						await tutorialHint('#wheel-area', '<strong>Encampment</strong><br>You have enough Stick Bundles. Choose <strong>Encampment</strong> to build your shelter.', { pulseLabel: 'Encampment' });
+						await tutorialHint('#wheel-area', '<strong>Encampment</strong><br>You have enough Stick Bundles to build a shelter! Choose <strong>Encampment</strong> to construct your shelter.', { pulseLabel: 'Encampment' });
 					}, 120);
 				}
 			}
@@ -11554,7 +12175,7 @@ function removeItem(name, qty = 1) {
 				if ((idx === 3 || idx === 4) && !player.flags?.tutCampWheelFireShown) {
 					player.flags.tutCampWheelFireShown = true;
 					setTimeout(async () => {
-						await tutorialHint('#wheel-area', '<strong>Campfire</strong><br>Click <strong>Campfire</strong> to access fire-building options.', { pulseLabel: 'Campfire' });
+						await tutorialHint('#wheel-area', '<strong>Campfire</strong><br>If you\'ve got the materials, click <strong>Campfire</strong>.', { pulseLabel: 'Campfire' });
 					}, 120);
 				} else if (idx === 7 && !player.hasShelter && !player.flags?.tutCampWheelShelterShown) {
 					player.flags.tutCampWheelShelterShown = true;
@@ -11564,7 +12185,7 @@ function removeItem(name, qty = 1) {
 				} else if (idx === 7 && player.hasShelter && !player.flags?.tutCampWheelSleepShown) {
 					player.flags.tutCampWheelSleepShown = true;
 					setTimeout(async () => {
-						await tutorialHint('#wheel-area', '<strong>Shelter</strong><br>Shelter built! Click <strong>Shelter</strong> to access the Sleep option.', { pulseLabel: 'Shelter' });
+						await tutorialHint('#wheel-area', '<strong>Shelter</strong><br>Shelter constructed! Now it\'s time to sleep and recover some strength. Click <strong>Shelter</strong>.', { pulseLabel: 'Shelter' });
 					}, 120);
 				}
 			}
@@ -11577,7 +12198,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutBuildCampfireShown) return;
 				player.flags.tutBuildCampfireShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Build Campfire</strong><br>Click <strong>Build Campfire</strong> to lay the stone fire pit using your Stones.', { pulseLabel: 'Build Campfire' });
+					await tutorialHint('#wheel-area', '<strong>Build Campfire</strong><br>Click <strong>Build Campfire</strong> to lay the stone fire pit using your Stones. Once completed, click <strong>Campfire</strong> again to light it.', { pulseLabel: 'Build Campfire' });
 				}, 120);
 			}
 
@@ -11600,7 +12221,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutCookSpokeShown) return;
 				player.flags.tutCookSpokeShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Cook</strong><br>Fire is burning! Click <strong>Cook</strong> to cook your raw meat.', { pulseLabel: 'Cook' });
+					await tutorialHint('#wheel-area', '<strong>Cook</strong><br>Click <strong>Cook</strong>!', { pulseLabel: 'Cook' });
 				}, 120);
 			}
 
@@ -11663,12 +12284,12 @@ function removeItem(name, qty = 1) {
 				if (!player.hasShelter && !player.flags?.tutBuildShelterShown) {
 					player.flags.tutBuildShelterShown = true;
 					setTimeout(async () => {
-						await tutorialHint('#wheel-area', '<strong>Build Simple Shelter</strong><br>Click <strong>Build Simple Shelter</strong> to construct a campsite shelter.', { pulseLabel: 'Build Simple Shelter' });
+						await tutorialHint('#wheel-area', '<strong>Build Simple Shelter</strong><br>Click <strong>Build Simple Shelter</strong> to construct a shelter.', { pulseLabel: 'Build Simple Shelter' });
 					}, 120);
 				} else if (player.hasShelter && !player.flags?.tutSleepShelterShown) {
 					player.flags.tutSleepShelterShown = true;
 					setTimeout(async () => {
-						await tutorialHint('#wheel-area', '<strong>Sleep</strong><br>Shelter built! Click <strong>Sleep</strong> to rest for the night.', { pulseLabel: 'Sleep' });
+						await tutorialHint('#wheel-area', '<strong>Sleep</strong><br>Click <strong>Sleep</strong> to rest for the night.', { pulseLabel: 'Sleep' });
 					}, 120);
 				}
 			}
@@ -11683,7 +12304,7 @@ function removeItem(name, qty = 1) {
 				setTimeout(async () => {
 					await tutorialHint(
 						'[data-bksec="map"]',
-						'<strong>Use the Map to Travel</strong><br>Head to the <em>Map</em> tab — the nearest village is already selected. Click the <strong>TRAVEL</strong> button there to set off.',
+						'<strong>Use the Map to Travel</strong><br>You\'re going to need some gold to get by in this world. You should find a town and look for ways to earn some coin. Head to the <em>Map</em> tab — the nearest village is already selected. Click the <strong>TRAVEL</strong> button there to set off.',
 						{ advance: 'click' }
 					);
 				}, 120);
@@ -11696,7 +12317,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutTravelBtnShown) return;
 				player.flags.tutTravelBtnShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#travel-to-cell', '<strong>TRAVEL</strong><br>Click the <strong>TRAVEL</strong> button to set off. You\'ll be taken back to the story automatically.');
+					await tutorialHint('#travel-to-cell', '<strong>TRAVEL</strong><br>Click the <strong>TRAVEL</strong> button to set off.');
 				}, 120);
 			}
 
@@ -11708,7 +12329,21 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutTownSpokeShown) return;
 				player.flags.tutTownSpokeShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Town</strong><br>You\'re in a settlement. Click <strong>Town</strong> to access local activities including Odd Jobs.', { pulseLabel: 'Town' });
+					await tutorialHint('#wheel-area', '<strong>Town</strong><br>You\'re in a settlement. Here, you can find work to earn gold. Click <strong>Town</strong> to access local activities and Odd Jobs.', { pulseLabel: 'Town' });
+				}, 120);
+			}
+
+			// Fires from _showActionsWheel after stats hint is shown — guides player to eat
+			function _tutCheckActionsForSurvival() {
+				if (!player.flags?.tutShowSurvivalHint) return;
+				if (player.flags?.tutSurvivalEatHintShown) return;
+				player.flags.tutSurvivalEatHintShown = true;
+				setTimeout(async () => {
+					await tutorialHint(
+						'#wheel-area',
+						'<strong>Survival</strong><br>You\'re hungry and your stats are low. Click <strong>Survival</strong> — from there you can eat food to restore your life and stamina.',
+						{ pulseLabel: 'Survival' }
+					);
 				}, 120);
 			}
 
@@ -11720,7 +12355,7 @@ function removeItem(name, qty = 1) {
 					// Guide to Inventory tab
 					await tutorialHint(
 						'[data-bksec="inventory"]',
-						'<strong>Equip Your Bow</strong><br>Your bow needs to be equipped before you can hunt. Click the <em>Inventory</em> tab to open your pack.',
+						'<strong>Equip Your Bow</strong><br>Your bow needs to be equipped before you can hunt. Click the <em>Inventory</em> tab to view your items.',
 						{ advance: 'click' }
 					);
 					await new Promise(r => setTimeout(r, 150));
@@ -11735,7 +12370,7 @@ function removeItem(name, qty = 1) {
 					// Highlight the Equip button
 					await tutorialHint(
 						'.inv-action-btn[data-action="equip"]',
-						'<strong>Equip the Bow</strong><br>Click <em>Equip</em> to put the bow in your weapon slot.',
+						'<strong>Equip the Bow</strong><br>Your item stats are displayed here. Click <em>Equip</em> to put the bow in your weapon slot.',
 						{ advance: 'click' }
 					);
 					await new Promise(r => setTimeout(r, 150));
@@ -11755,7 +12390,7 @@ function removeItem(name, qty = 1) {
 				setTimeout(async () => {
 					await tutorialHint(
 						null,
-						'<strong>Low Stamina</strong><br>You\'re too tired to continue. Go back to the Action Wheel and choose <strong>Survival → Rest</strong> or light a campfire. Resting restores your stamina so you can keep going.',
+						'<strong>Low Stamina</strong><br>You\'re too tired to continue. Go back to the Action Wheel and choose <strong>Survival → Rest</strong>. Resting restores your stamina so you can keep going. Try again once you\'ve rested.',
 					);
 				}, 80);
 			}
@@ -11790,7 +12425,7 @@ function removeItem(name, qty = 1) {
 				player.flags.tutSurvivalSpokeShown = true;
 				setTimeout(async () => {
 					await tutorialHint('#wheel-area',
-						'<strong>Survival</strong><br>Click <strong>Survival</strong> to open the survival options — water collection is in there.',
+						'<strong>Survival</strong><br>Great hunt! Now you should find a water source and fill up your waterskin. Staying hydrated will improve your stamina regeneration.<br>Click <strong>Survival</strong> to open the survival options.',
 						{ pulseLabel: 'Survival', advance: 'click' });
 				}, 120);
 			}
@@ -11802,7 +12437,7 @@ function removeItem(name, qty = 1) {
 				player.flags.tutGatherSpokeShown = true;
 				setTimeout(async () => {
 					await tutorialHint('#wheel-area',
-						'<strong>Gather</strong><br>Click <strong>Gather</strong> to forage for resources — water sources are in here.',
+						'<strong>Gather</strong><br>Click <strong>Gather</strong>.',
 						{ pulseLabel: 'Gather', advance: 'click' });
 				}, 120);
 			}
@@ -11814,7 +12449,7 @@ function removeItem(name, qty = 1) {
 				player.flags.tutWaterSpokeShown = true;
 				setTimeout(async () => {
 					await tutorialHint('#wheel-area',
-						'<strong>Water</strong><br>Click <strong>Water</strong> to access water collection options.',
+						'<strong>Water</strong><br>Here you\'ll see all the resources you can gather. Select <strong>Water</strong>.',
 						{ pulseLabel: 'Water', advance: 'click' });
 				}, 120);
 			}
@@ -11826,7 +12461,7 @@ function removeItem(name, qty = 1) {
 				player.flags.tutFillWaterskinShown = true;
 				setTimeout(async () => {
 					await tutorialHint('#wheel-area',
-						'<strong>Fill Waterskin</strong><br>Click <strong>Fill Waterskin</strong> to collect fresh water. The coastal terrain makes the check easy.',
+						'<strong>Fill Waterskin</strong><br>Click <strong>Fill Waterskin</strong> to collect fresh water. Luckily, you\'re on the coast, so finding water is easy. Your location will have a significant effect on the resources you can find.',
 						{ pulseLabel: 'Fill Waterskin', advance: 'click' });
 				}, 120);
 			}
@@ -11839,9 +12474,9 @@ function removeItem(name, qty = 1) {
 				player.flags.tutFireGatherShown = true;
 				setTimeout(async () => {
 					await tutorialHint('#wheel-area',
-						'<strong>Gather Fire Materials</strong><br>To build and light a campfire you need:<br>• <strong>Gather Stones</strong> — you start with 6; gather once to reach 8<br>• <strong>Gather Sticks</strong> — grab 1 Stick Bundle for lighting the fire<br><br>Kindling is already in your camp supplies. Two gathers total and you\'re ready.');
+						'<strong>Gather Materials</strong><br>Now you\'ve got food and water. Let\'s get a fire going to cook your food!<br>To build and light a campfire you need:<br>• <strong>8 Stones</strong><br>• <strong>1 Bundle of Sticks</strong><br>• <strong>Kindling</strong><br>Luckily, you already found some supplies while setting up your camp.');
 					await tutorialHint('#wheel-area',
-						'<strong>Then Light the Fire</strong><br>Once you have the materials, choose <strong>Survival → Encampment → Campfire</strong>.<br>1. <em>Build Campfire</em> — uses 8 Stones to make the fire pit<br>2. <em>Light Fire</em> — uses Kindling + a Stick Bundle');
+						'<strong>Gather Materials</strong><br>If you need more supplies before building your campfire, use this menu to gather them now. When ready, select <strong>Back</strong>.');
 				}, 120);
 			}
 
@@ -11865,7 +12500,7 @@ function removeItem(name, qty = 1) {
 
 						await tutorialHint(
 							'[data-bksec="inventory"]',
-							'<strong>Equip Your Hunting Bow</strong><br>Next up: hunting for food — but first your bow needs to be equipped. Click the <em>Inventory</em> tab.',
+							'<strong>Equip Your Hunting Bow</strong><br>Your campsite is ready! There\'s a little time left before nightfall. You should use this time to hunt for food. Eating will restore some health and stamina.<br>Before you can hunt, you must have a bow equipped! Click the <em>Inventory</em> tab to view your items.',
 							{ advance: 'click' }
 						);
 						await new Promise(r => setTimeout(r, 150));
@@ -11878,7 +12513,7 @@ function removeItem(name, qty = 1) {
 						await new Promise(r => setTimeout(r, 150));
 						await tutorialHint(
 							'.inv-action-btn[data-action="equip"]',
-							'<strong>Equip the Bow</strong><br>Click <em>Equip</em> to slot the bow as your weapon.',
+							'<strong>Equip the Bow</strong><br>Your item stats are displayed here. Click <em>Equip</em> to slot the bow as your weapon.',
 							{ advance: 'click' }
 						);
 						await new Promise(r => setTimeout(r, 150));
@@ -11890,7 +12525,7 @@ function removeItem(name, qty = 1) {
 						await new Promise(r => setTimeout(r, 300));
 						await tutorialHint(
 							'#wheel-area',
-							'<strong>Hunt</strong><br>You\'re back at the Survival wheel. Click <strong>Hunt</strong> to begin.',
+							'<strong>Hunt</strong><br>You\'re back at the Survival wheel. With your bow equipped, you\'re ready to hunt.',
 							{ pulseLabel: 'Hunt' }
 						);
 					}
@@ -11912,17 +12547,24 @@ function removeItem(name, qty = 1) {
 						player.flags.tutCookHintShown = true;
 						await tutorialHint(
 							'#wheel-area',
-							'<strong>Cook Your Food</strong><br>Fire is burning! Head to <strong>Survival → Encampment → Campfire → Cook</strong> and select your raw meat. Use the <strong>← Back</strong> button if you need to navigate up a level.',
+							'<strong>Cook Your Food</strong><br>The fire is burning. Click <strong>Campfire</strong> to cook your food, before it goes out!.',
 						);
 					}
 
 				// ── Objective 5: eat_food ─────────────────────────────────────────────
 				} else if (newIndex === 5) {
+					if (!player.flags?.tutBackOutAfterCookShown) {
+						player.flags.tutBackOutAfterCookShown = true;
+						await tutorialHint(
+							'#wheel-area',
+							'<strong>Back Out of the Menus</strong><br>Well done — your food is cooked! Now press <strong>← Back</strong> in the wheel until you return to the main Action Wheel. From there, you\'ll find the <strong>Exploration</strong> menu.',
+						);
+					}
 					if (!player.flags?.tutEatHintShown) {
 						player.flags.tutEatHintShown = true;
 						await tutorialHint(
 							'[data-bksec="inventory"]',
-							'<strong>Eat the Food</strong><br>Open your <em>Inventory</em> tab to eat what you cooked.',
+							'<strong>Eat the Food</strong><br>Your food is ready to eat! Open your <em>Inventory</em> tab to eat the food you cooked.',
 							{ advance: 'click' }
 						);
 						await new Promise(r => setTimeout(r, 150));
@@ -11938,14 +12580,14 @@ function removeItem(name, qty = 1) {
 							await new Promise(r => setTimeout(r, 150));
 							await tutorialHint(
 								'.inv-action-btn[data-action="use"]',
-								'<strong>Eat</strong><br>Click <em>Eat</em> to consume the food and restore stamina.',
+								'<strong>Eat</strong><br>Click <em>Eat</em> to consume the food.',
 								{ advance: 'click' }
 							);
 							await new Promise(r => setTimeout(r, 150));
 						}
 						await tutorialHint(
 							'[data-bksec="story"]',
-							'<strong>Return to Story</strong><br>Good. Click <em>Story</em> to continue.',
+							'<strong>Return to Story</strong><br>You\'ve restored some health and stamina! Click <em>Story</em> to continue.',
 							{ advance: 'click' }
 						);
 					}
@@ -11956,7 +12598,7 @@ function removeItem(name, qty = 1) {
 						player.flags.tutSurroundingsHintShown = true;
 						await tutorialHint(
 							'#wheel-area',
-							'<strong>Check Your Surroundings</strong><br>Before you sleep, scout the area. Choose <strong>Exploration → Search Area</strong>. Use <strong>← Back</strong> if you need to navigate up a level.',
+							'<strong>Check Your Surroundings</strong><br>Before you sleep, it\'s wise to scout the area for danger. Choose <strong>Exploration → Search Area</strong>.',
 						);
 					}
 
@@ -11968,12 +12610,12 @@ function removeItem(name, qty = 1) {
 						if (_sticks < 5) {
 							await tutorialHint(
 								'#wheel-area',
-								`<strong>Gather More Sticks</strong><br>You need 5 Stick Bundles to build a shelter (have ${_sticks}). Go to <strong>Survival → Gather → Gather Sticks</strong>, then come back to build your shelter.`,
+								`<strong>Gather More Sticks</strong><br>Now you\'ll need to build a shelter to get some proper rest. You need 5 Stick Bundles to build a shelter (have ${_sticks}). Select <strong>Done Searching</strong>, then find the Survival menu.`,
 							);
 						} else {
 							await tutorialHint(
 								'#wheel-area',
-								'<strong>Build a Shelter &amp; Sleep</strong><br>Go to <strong>Survival → Encampment → Shelter → Build Simple Shelter</strong>, then <strong>Sleep</strong>. Use <strong>← Back</strong> to navigate up a level.',
+								'<strong>Build a Shelter &amp; Sleep</strong><br>You\'ll rest better in a shelter. To build one, go to <strong>Survival → Encampment → Shelter → Build Simple Shelter</strong>, then <strong>Sleep</strong>.',
 							);
 						}
 					}
@@ -11985,7 +12627,7 @@ function removeItem(name, qty = 1) {
 						player.flags.tutVillageHintShown = true;
 						await tutorialHint(
 							'[data-bksec="map"]',
-							'<strong>Find a Village</strong><br>You need to reach a settlement. Click the <em>Map</em> tab to see the world around you.',
+							'<strong>Find a Village</strong><br>The bandits took your gold! You should find a village and look for work. Click the <em>Map</em> tab to plan your route.',
 							{ advance: 'click' }
 						);
 						await new Promise(r => setTimeout(r, 400));
@@ -12022,7 +12664,7 @@ function removeItem(name, qty = 1) {
 						player.flags.tutWorkHintShown = true;
 						await tutorialHint(
 							'#wheel-area',
-							'<strong>Find Work</strong><br>You\'ve reached a settlement. From the Action Wheel, choose <strong>Actions → Town</strong> to access local activities — look for <em>Odd Jobs</em> or speak with villagers to find paid work.',
+							'<strong>Find Work</strong><br>You\'ve reached a settlement. In the Town menu, choose <strong>Activities</strong> to access local activities, then select <strong>Work</strong> to look for <em>Odd Jobs</em>, or you can speak with villagers to find paid work and earn back some coin.',
 						);
 					}
 
@@ -12485,42 +13127,22 @@ function _showReencounterWheel(rec) {
   addStory(`Relation: <em>${_getRelLabel(rel)}</em>`);
   if (rec.activityLog?.[0]) addStory(`You recall: ${rec.activityLog[0].replace(/\[T\d+\] /, '')}.`);
 
-  const inParty    = (player.party || []).some(m => m.worldId === rec.id || m.name === rec.name);
-  const npcStub    = { name: rec.name, race: rec.race, profession: rec.profession, _worldId: rec.id, interactionCount: 1, disposition: 0, revealedTraits: rec.traits || [], description: '' };
-  const assess     = typeof _recruitAssessment === 'function' ? _recruitAssessment(npcStub, rec) : null;
-
-  const reencounterOpts = [
-    { label: 'Malicious', action: () => _reencounterTone(rec, 'Malicious', -2) },
-    { label: 'Neutral',   action: () => _reencounterTone(rec, 'Neutral',    0) },
-    { label: 'Valiant',   action: () => _reencounterTone(rec, 'Valiant',   +1) },
-    { label: 'Heroic',    action: () => _reencounterTone(rec, 'Heroic',    +2) },
-  ];
-
-  if (rel >= 2 && !inParty) {
-    reencounterOpts.push({ label: '🤝 Offer Friendship', action: () => _doOfferFriendship(npcStub, rec) });
-  }
-  if (assess && !inParty && assess.contractType !== 'none') {
-    const joinLabel = assess.contractType === 'mercenary'
-      ? `💰 Hire (${_hireCost(npcStub, rec)}g)`
-      : (assess.possible ? '⚔️ Ask to Join' : `⚔️ Ask to Join (${_getRelLabel(rel)})`);
-    reencounterOpts.push({ label: joinLabel, action: () => _doAskToJoin(npcStub, rec), disabled: !assess.possible });
-  }
-  if ((player.party || []).length > 0) {
-    reencounterOpts.push({ label: '🏕️ Party', action: () => { _wheelStack.push(() => _showReencounterWheel(rec)); _showManagePartyWheel(); } });
-  }
-
-  reencounterOpts.push({ label: '← Back', action: _goBack, isBack: true });
-  _buildWheel(reencounterOpts, rec.name);
-}
-
-function _reencounterTone(rec, tone, delta) {
-  rec.relationship      = Math.max(-5, Math.min(5, (rec.relationship || 0) + delta));
-  rec.conversationCount = (rec.conversationCount || 1) + 1;
-  if (rec.conversationCount >= 3 && rec.importance < 3)  bumpImportance(rec.id, 'repeated contact', 3);
-  if (Math.abs(rec.relationship) >= 4 && rec.importance < 4) bumpImportance(rec.id, 'strong relationship', 4);
-  addStory(`> [${tone}] — ${rec.name} (${_getRelLabel(rec.relationship)})`);
-  if (rec.importance >= 3) _npcActivityLog(rec, `Interaction — tone: ${tone}`);
-  _showDefaultWheel();
+  const inParty = (player.party || []).some(m => m.worldId === rec.id || m.name === rec.name);
+  // Build a full NPC stub from the registry record so _showNpcInteraction can run
+  // the complete dialog engine (skill checks, trait revelation, disposition updates)
+  const npcStub = {
+    name:            rec.name,
+    race:            rec.race,
+    profession:      rec.profession,
+    morality:        rec.morality || '',
+    _worldId:        rec.id,
+    interactionCount: rec.conversationCount || 1,
+    disposition:     Math.max(-10, Math.min(10, (rec.relationship || 0) * 2)),
+    revealedTraits:  rec.traits || [],
+    description:     '',
+    flags: { canBePickpocketed: !inParty, recruitable: rec.importance >= 3, romanceable: false },
+  };
+  _showNpcInteraction(npcStub);
 }
 
 // ── Dev Display ───────────────────────────────────────────────────────────────
@@ -12629,7 +13251,7 @@ function _devShowNPCs() {
 
 			// Heuristic fallback for ai_judgment objectives.
 			function checkAiHeuristic(obj, triggerType) {
-				const desc = ((obj.completion?.description || '') + ' ' + (obj.hint || '')).toLowerCase();
+				const desc = ((obj.completion?.description || '') + ' ' + (obj.hint || '') + ' ' + (obj.text || '')).toLowerCase();
 				if (desc.includes('raw meat') || desc.includes('hunted') || desc.includes('game in inventory'))
 					return Object.keys(player.inventory).some(n => /^raw /i.test(n));
 				if (desc.includes('cooked food') || desc.includes('cooked meal') || desc.includes('cooked over'))
@@ -12639,6 +13261,25 @@ function _devShowNPCs() {
 				if (desc.includes('village') || desc.includes('settlement') || desc.includes('arrived at')) {
 					const cell = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
 					return ['Village','City','CapitalCity'].includes(cell.zone || '');
+				}
+				// Travel/tracking objectives complete when player arrives somewhere
+				if (triggerType === 'location' &&
+				    (desc.includes('track') || desc.includes('travel to') || desc.includes('head to') ||
+				     desc.includes('reach') || desc.includes('find') || desc.includes('investigate') ||
+				     desc.includes('scout') || desc.includes('visit') || desc.includes('go to'))) {
+					return true;
+				}
+				// NPC encounter counts as confronting a target for defeat/confront objectives
+				if (triggerType === 'npc' &&
+				    (desc.includes('defeat') || desc.includes('capture') || desc.includes('confront') ||
+				     desc.includes('bandit') || desc.includes('outlaw') || desc.includes('eliminate'))) {
+					return true;
+				}
+				// Crafting objectives
+				if (triggerType === 'crafted' &&
+				    (desc.includes('craft') || desc.includes('make') || desc.includes('create') ||
+				     desc.includes('forge') || desc.includes('brew') || desc.includes('prepare'))) {
+					return true;
 				}
 				return false;
 			}
@@ -12809,7 +13450,7 @@ function _devShowNPCs() {
 					player.trackedQuest = null;
 					_rebuildQuestMarkers();
 				}
-				addStory(`🏆 Quest Complete: ${def.name}!`);
+				addStory(`<strong>🏆 Quest Complete: ${def.name}!</strong>`);
 				addWorldEvent(`Completed quest: ${def.name}.`, 'quest');
 				checkGlobalEventTriggers();
 				awardProfessionXp('quest_complete');
@@ -12898,6 +13539,13 @@ function _devShowNPCs() {
 					if (typeof advanceWeather === 'function' && Math.random() < 0.35) advanceWeather();
 				}
 				tickConditions(silent);
+				// Mana trickle — arcane practitioners recover a small amount each period
+				const _magicLvl = Math.max(player.skills?.['Light Magic']?.level || 0, player.skills?.['Black Magic']?.level || 0);
+				if (_magicLvl > 0) {
+					const _maxM = player.maxMana || 100;
+					const _regen = Math.min(2 + Math.floor(_magicLvl * 0.5), _maxM - (player.mana || 0));
+					if (_regen > 0) player.mana = (player.mana || 0) + _regen;
+				}
 				updateTopStats();
 				if (!silent || LANDMARK_PERIODS.has(player.timeOfDay)) {
 					addStory(`🕐 ${player.timeOfDay}`);
@@ -13330,7 +13978,7 @@ function applyEventEffects(effects = []) {
       case 'removeItem': removeItem(fx.name, fx.qty || 1); break;
       case 'experience': gainExperience(fx.amount); break;
       case 'skill':      learnSkill(fx.name); break;
-      case 'status':     applyCondition(fx.value); break;
+      case 'status':     applyCondition(fx.value.toLowerCase()); break;
       case 'weather':    player.weather = fx.value; updateTopStats(); addStory(`The weather shifts to ${fx.value}.`); break;
       case 'kingdomRep': {
         const _k = fx.kingdom || player.currentKingdom;
@@ -13717,16 +14365,39 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
         player.timeOfDay && TRAVEL_TIME[player.timeOfDay]  ? _travelLine(TRAVEL_TIME, player.timeOfDay)  : '',
       ].filter(Boolean);
       if (midLines.length) addStory(midLines[Math.floor(Math.random() * midLines.length)]);
+      // Mid-journey conditions during extended travel
+      if (['Rainy', 'Heavy Rain', 'Stormy'].includes(player.weather)) applyCondition('wet');
+      if (player.weather === 'Blizzard') { applyCondition('wet'); applyCondition('cold'); }
+      if (isLateTime() && !player.hasShelter) applyCondition('cold');
       await runInlineProgress('Nearly there…', halfMs);
     } else {
       await runInlineProgress(`Travelling to ${destName}…`, travelMs);
     }
 
-    // Deduct stamina
-    changeStamina(-staminaCost);
+    // Deduct stamina — severe weather increases drain; some abilities waive it once
+    const _staminaSevMult = _travelSev >= 4 ? 1.8 : _travelSev >= 3 ? 1.4 : _travelSev >= 2 ? 1.2 : 1.0;
+    const _coastalBiomes  = ['Coastal', 'Ocean', 'Sea', 'Shoreline'];
+    const _woodlandBiomes = ['Forest', 'Dense Forest', 'Swamp', 'Jungle', 'Rainforest', 'Woodland'];
+    if (player.orienteeringActive) {
+      player.orienteeringActive = false;
+      addStory('🧭 Orienteering: this journey costs no stamina.');
+    } else if (player.seaLegsActive && (_coastalBiomes.includes(destBiome) || _coastalBiomes.includes(fromBiome))) {
+      player.seaLegsActive = false;
+      addStory('🌊 Sea Legs: coastal travel costs no stamina.');
+    } else if (player.woodlandStrideActive && (_woodlandBiomes.includes(destBiome) || _woodlandBiomes.includes(fromBiome))) {
+      player.woodlandStrideActive = false;
+      addStory('🌲 Woodland Stride: the terrain imposes no stamina penalty.');
+    } else {
+      changeStamina(-Math.round(staminaCost * _staminaSevMult));
+    }
 
     // 1 period per grid square (12-period day), minimum 1
     advanceTime(Math.max(1, gridSquares));
+
+    // Sore muscles from hauling a heavy load over a long march
+    if (gridSquares >= 6 && player.conditions?.find(c => c.id === 'encumbered' || c.id === 'overloaded')) {
+      applyCondition('sore');
+    }
   }
 
   // Random events — one check per 3 squares
@@ -14140,13 +14811,19 @@ async function _prof_master_formula() {
 
 async function _prof_steady_aim() {
   if (!combatState) { addStory('⛔ You are not in combat.'); _goBack(); return; }
-  combatState.noCounterThisRound = true;
   await runInlineProgress('Drawing breath, taking aim…', 1500);
-  const tier    = performSkillCheck('Archery');
-  const wepBonus = _getEquippedWeaponDamage();
-  const dmg     = Math.max(1, tier * 4 + randomInt(-1, 3) + Math.floor(wepBonus * 0.4));
+  let tier = performSkillCheck('Archery');
+  if (combatState.eagleEye) tier = Math.max(3, tier);
+  if (player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
+  const wepBonus    = _getEquippedWeaponDamage();
+  const markedBonus = combatState.markedTarget ? 3 : 0;
+  let broadheadBonus = 0;
+  if (player.broadheadActive) { broadheadBonus = 4; player.broadheadActive = false; }
+  const dmg         = Math.max(1, tier * 4 + randomInt(-1, 3) + Math.floor(wepBonus * 0.4) + markedBonus + broadheadBonus);
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
-  addStory(`🎯 Steady shot hits for ${dmg}. No counterattack. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
+  const markedNote = markedBonus ? ' 🎯+3' : '';
+  const bhdNote    = broadheadBonus ? ' 🏹+4' : '';
+  addStory(`🎯 Steady shot hits for ${dmg}${markedNote}${bhdNote}. No counterattack. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
   if (combatState.enemy.life <= 0) { _resolveCombatVictory(); return; }
   _partyAssistCombat();
   if (combatState?.enemy?.life <= 0) { _resolveCombatVictory(); return; }
@@ -14686,9 +15363,16 @@ async function _prof_natural_guardian() {
 
 async function _prof_study() {
   await runInlineProgress('Studying…', 2500);
-  const tier = performSkillCheck('Decrypting');
+  let tier;
+  if (player.decipherRunesReady) {
+    player.decipherRunesReady = false;
+    tier = 5;
+    addStory('🔤 Decipher Runes: your study check auto-succeeds.');
+  } else {
+    tier = performSkillCheck('Decrypting');
+  }
   if (tier <= 2) { addStory('📚 Your study yields nothing new this time.'); _goBack(); return; }
-  const allRecipes = [...(typeof Recipes !== 'undefined' ? [...(Recipes.Crafting || []), ...(Recipes.Alchemy || [])] : [])];
+  const allRecipes = typeof Recipes !== 'undefined' ? Object.values(Recipes).flat() : [];
   const known = player.knownRecipes || [];
   const unknown = allRecipes.filter(r => !known.includes(r.name));
   if (!unknown.length) { addStory('📚 You already know every recipe available.'); _goBack(); return; }
@@ -14772,7 +15456,7 @@ async function _prof_plant_evidence() {
   if (!npcs.length) { addStory('📄 No known NPCs to manipulate.'); _goBack(); return; }
   const target = npcs[Math.floor(Math.random() * npcs.length)];
   if (typeof worldNPCs !== 'undefined' && target.worldId) {
-    const rec = worldNPCs.find(n => n.id === target.worldId);
+    const rec = worldNPCs.registry?.[target.worldId];
     if (rec) rec.relationship = Math.min(5, (rec.relationship || 0) + 3);
   }
   addStory(`📄 Evidence planted. ${target.name}'s relationship with you improves.`);
@@ -14830,10 +15514,12 @@ async function _skAct_power_strike() {
   const base     = Math.max(14, Math.floor(Math.random() * 20) + 1);
   const tier     = base <= 18 ? 4 : 5;
   const wepBonus = _getEquippedWeaponDamage();
-  const dmg      = Math.max(1, tier * 4 + randomInt(0, 4) + Math.floor(wepBonus * 0.4));
+  const markedBonus = combatState.markedTarget ? 3 : 0;
+  const dmg      = Math.max(1, tier * 4 + randomInt(0, 4) + Math.floor(wepBonus * 0.4) + markedBonus);
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   gainSkillXp(skill, tier);
-  addStory(`⚔️ Power Strike! ${dmg} damage. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
+  const markedNote = markedBonus ? ' 🎯+3' : '';
+  addStory(`⚔️ Power Strike! ${dmg} damage${markedNote}. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
   if (combatState.enemy.life <= 0) { _resolveCombatVictory(); return; }
   _partyAssistCombat();
   if (combatState?.enemy?.life <= 0) { _resolveCombatVictory(); return; }
@@ -14859,11 +15545,18 @@ async function _skAct_disarm() {
 async function _skAct_aimed_shot() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Taking aim…', 2000);
-  const tier    = performSkillCheck('Archery');
-  const wepBonus = _getEquippedWeaponDamage();
-  const dmg     = Math.max(1, tier * 4 + randomInt(-1, 3) + Math.floor(wepBonus * 0.4));
+  let tier = performSkillCheck('Archery');
+  if (combatState.eagleEye) tier = Math.max(3, tier);
+  if (player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
+  const wepBonus    = _getEquippedWeaponDamage();
+  const markedBonus = combatState.markedTarget ? 3 : 0;
+  let broadheadBonus = 0;
+  if (player.broadheadActive) { broadheadBonus = 4; player.broadheadActive = false; }
+  const dmg         = Math.max(1, tier * 4 + randomInt(-1, 3) + Math.floor(wepBonus * 0.4) + markedBonus + broadheadBonus);
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
-  addStory(`🎯 Aimed shot hits for ${dmg} — no counterattack this round. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
+  const markedNote = markedBonus ? ' 🎯+3' : '';
+  const bhdNote    = broadheadBonus ? ' 🏹+4' : '';
+  addStory(`🎯 Aimed shot hits for ${dmg}${markedNote}${bhdNote} — no counterattack this round. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
   if (combatState.enemy.life <= 0) { _resolveCombatVictory(); return; }
   _partyAssistCombat();
   if (combatState?.enemy?.life <= 0) { _resolveCombatVictory(); return; }
@@ -15040,6 +15733,7 @@ async function _skAct_read_aura() {
 				function saveGame(silent = false) {
 					try {
 						if (player.storyLog.length > 400) player.storyLog = player.storyLog.slice(-400);
+					player.storyLog = player.storyLog.filter(e => !e.startsWith('📂 Game loaded'));
 						const snapshot = {
 							player: player,
 							borderSelections: borderSelections,
@@ -15126,7 +15820,7 @@ async function _skAct_read_aura() {
 								// Clear this slot's save so char creation starts fresh
 								localStorage.removeItem(SAVE_KEY(_activeSlot));
 								localStorage.removeItem(SAVE_META(_activeSlot));
-								location.reload();
+								_bookEnterCharCreation();
 							};
 						}
 						list.appendChild(row);
@@ -15295,7 +15989,7 @@ const PROFESSION_DATA = {
   'Forager':      { socialClass:'Commonfolk', desc:'A gatherer who lives off what the land freely gives between settlements',       skills:['Foraging','Survival','Herbalism'],       trait:'Wise',        items:[['Hunting Knife',1],['Herb Pouch',1],['Rope',1],['Rations',2],['Torch',1]],            gold:10, recipes:['Herb Poultice','Berry Stew','Mushroom Broth','Rope'] },
   'Scavenger':    { socialClass:'Commonfolk', desc:'One who picks through ruins and discarded things for anything of value',        skills:['Survival','Crafting','Tracking'],        trait:'Cunning',     items:[['Belt Knife',1],['Rope',1],['Torch',2],['Rations',2]],                                gold:5,  recipes:['Stone Knife','Torch','Rope','Stick Bundle'] },
   'Trapper':      { socialClass:'Commonfolk', desc:'A patient hunter who relies on snares and hidden traps rather than the blade',  skills:['Tracking','Survival','Crafting'],        trait:'Cunning',     items:[['Hunting Knife',1],['Rope',2],['Rations',2],['Torch',1]],                             gold:8,  recipes:['Hunting Trap','Rope','Torch','Leather Wrap'] },
-  'Smith':        { socialClass:'Artisan',    desc:'A craftsman who shapes metal into weapons, tools, and armour',                  skills:['Smithing','Crafting','Brawling'],        trait:'Loyal',       items:[['Hammer',1],['Iron Ingot',2],['Leather Apron',1],['Health Potion',1],['Torch',2]],    gold:25, recipes:['Stone Knife','Stone Campfire Ring','Simple Club','Rope','Wooden Spear'] },
+  'Smith':        { socialClass:'Artisan',    desc:'A craftsman who shapes metal into weapons, tools, and armour',                  skills:['Smithing','Crafting','Brawling'],        trait:'Loyal',       items:[['Hammer',1],['Iron Ingot',2],['Coal',3],['Leather Apron',1],['Health Potion',1],['Torch',2]],    gold:25, recipes:['Stone Knife','Stone Campfire Ring','Rope','Smelt Iron','Smelt Copper','Smelt Black Iron','Forge Hunting Knife','Forge Dagger','Forge Mace','Forge Iron Arrows','Craft Chainmail Shirt'] },
   'Merchant':     { socialClass:'Artisan',    desc:'A trader of goods who knows the value of everything and the price of nothing',  skills:['Persuasion','Crafting','Survival'],      trait:'Cunning',     items:[['Trading Goods',1],['Belt Knife',1],['Fine Clothing',1],['Coin Purse',1],['Rations',1]],gold:60, recipes:['Torch','Rope'] },
   'Tinkerer':     { socialClass:'Artisan',    desc:'A cobbling inventor who fashions crude contraptions from whatever is at hand',   skills:['Crafting','Alchemy','Thievery'],         trait:'Cunning',     items:[['Hammer',1],['Rope',1],['Torch',2],['Empty Vial',2],['Rations',1]],                   gold:10, recipes:['Stone Knife','Torch','Rope','Stick Bundle'] },
   'Peddler':      { socialClass:'Artisan',    desc:'A wandering dealer in found, traded, and occasionally stolen goods',            skills:['Persuasion','Thievery','Survival'],      trait:'Cunning',     items:[['Belt Knife',1],['Trading Goods',1],['Rope',1],['Rations',1],['Torch',1]],            gold:20, recipes:['Torch','Rope'] },
@@ -15303,11 +15997,11 @@ const PROFESSION_DATA = {
   'Pirate':       { socialClass:'Outlaw',     desc:'A sea-hardened rogue at home with salt and steel',                             skills:['Brawling','Survival','Navigation'],      trait:'Cunning',     items:[['Cutlass',1],['Pistol',1],['Rum Flask',1],['Rope',1],['Compass',1]],                   gold:25, recipes:['Rope','Torch','Stone Knife'] },
   'Shade':        { socialClass:'Outlaw',     desc:'A shadow operative who uses silence and misdirection as weapons',               skills:['Stealth','Thievery','Swordsmanship'],    trait:'Ruthless',    items:[['Short Sword',1],['Throwing Knife',3],['Black Cloak',1],['Rope',1]],                   gold:25, recipes:['Torch','Stone Knife','Rope'] },
   'Drifter':      { socialClass:'Outlaw',     desc:'A criminal wanderer who follows opportunity and avoids consequence',             skills:['Stealth','Survival','Thievery'],         trait:'Cunning',     items:[['Dagger',1],['Dark Cloak',1],['Rope',1],['Rations',2]],                               gold:20, recipes:['Torch','Stone Knife','Rope'] },
-  'Apothecary':   { socialClass:'Scholar',    desc:'A learned herbalist and pharmacist who heals with knowledge',                   skills:['Healing','Alchemy','Herbalism'],         trait:'Wise',        items:[['Herb Pouch',1],['Bandage',3],['Health Potion',2],['Empty Vial',2],['Candle',2]],      gold:25, recipes:['Herb Poultice','Bandage','Berry Stew','Mushroom Broth'] },
+  'Apothecary':   { socialClass:'Scholar',    desc:'A learned herbalist and pharmacist who heals with knowledge',                   skills:['Healing','Alchemy','Herbalism'],         trait:'Wise',        items:[['Herb Pouch',1],['Bandage',3],['Health Potion',2],['Empty Vial',2],['Candle',2]],      gold:25, recipes:['Herb Poultice','Bandage','Berry Stew','Mushroom Broth','Health Potion','Greater Health Potion','Antidote','Healing Salve','Wound Seal'] },
   'Cartographer': { socialClass:'Scholar',    desc:'A surveyor of lands who turns the unknown into maps',                           skills:['Navigation','Survival','Crafting'],      trait:'Wise',        items:[['Map (Blank)',1],['Compass',1],['Quill & Ink',1],['Torch',2],['Rations',2]],            gold:20, recipes:['Torch','Rope'] },
-  'Healer':       { socialClass:'Scholar',    desc:'A herbalist and physician skilled in the mending of wounds',                   skills:['Healing','Alchemy','Persuasion'],        trait:'Kind',        items:[['Healer Kit',1],['Bandage',5],['Health Potion',2],['Herb Pouch',1],['Candle',2]],       gold:20, recipes:['Herb Poultice','Bandage','Berry Stew','Mushroom Broth'] },
+  'Healer':       { socialClass:'Scholar',    desc:'A herbalist and physician skilled in the mending of wounds',                   skills:['Healing','Alchemy','Persuasion'],        trait:'Kind',        items:[['Healer Kit',1],['Bandage',5],['Health Potion',2],['Herb Pouch',1],['Candle',2]],       gold:20, recipes:['Herb Poultice','Bandage','Berry Stew','Mushroom Broth','Health Potion','Antidote','Healing Salve','Rejuvenation Vial'] },
   'Mediator':     { socialClass:'Scholar',    desc:'A neutral negotiator trusted by multiple factions because they owe none',       skills:['Persuasion','Negotiating','Decrypting'], trait:'Wise',        items:[['Quill & Ink',1],['Scroll',1],['Fine Clothing',1],['Rations',2],['Candle',2]],          gold:25, recipes:['Torch','Berry Stew'] },
-  'Alchemist':    { socialClass:'Arcane',     desc:'A creator of potions, poisons, and remedies through transmutation',            skills:['Alchemy','Healing','Crafting'],          trait:'Wise',        items:[['Health Potion',3],['Empty Vial',3],['Herb Pouch',1],['Candle',3],['Torch',1]],         gold:20, recipes:['Herb Poultice','Bandage','Mushroom Broth'] },
+  'Alchemist':    { socialClass:'Arcane',     desc:'A creator of potions, poisons, and remedies through transmutation',            skills:['Alchemy','Healing','Crafting'],          trait:'Wise',        items:[['Health Potion',3],['Empty Vial',3],['Herb Pouch',1],['Candle',3],['Torch',1]],         gold:20, recipes:['Health Potion','Greater Health Potion','Mana Potion','Stamina Potion','Antidote','Warmth Elixir','Focused Draught','Rejuvenation Potion','Herb Poultice','Healing Salve','Wound Seal'] },
   'Cleric':       { socialClass:'Arcane',     desc:'A devoted servant of the divine, healer and protector of the faithful',        skills:['Healing','Light Magic','Persuasion'],    trait:'Loyal',       items:[['Holy Symbol',1],['Mace',1],['Bandage',5],['Health Potion',2],['Prayer Book',1]],        gold:20, recipes:['Herb Poultice','Bandage'] },
   'Mage':         { socialClass:'Arcane',     desc:'A scholar of the arcane arts who bends reality through study and will',        skills:['Light Magic','Alchemy','Survival'],      trait:'Wise',        items:[['Staff',1],['Spellbook',1],['Mana Potion',2],['Candle',3],['Torch',1]],                 gold:25, recipes:['Herb Poultice','Torch'] },
 
@@ -15323,9 +16017,9 @@ const PROFESSION_DATA = {
   // ── Dwarf ─────────────────────────────────────────────────────────────────
   'Ironguard':    { socialClass:'Military',   desc:'A heavily armoured defender of the clan hold, sworn never to yield',           skills:['Brawling','Axes','Survival'],            trait:'Loyal',       items:[['Mace',1],['Shield',1],['Chainmail',1],['Torch',2],['Rations',2]],                     gold:20, recipes:['Stone Campfire Ring','Torch','Rope'] },
   'Delver':       { socialClass:'Military',   desc:'An elite underground explorer who maps the tunnels others fear to enter',      skills:['Mining','Navigation','Survival'],        trait:'Brave',       items:[['Torch',5],['Rope',1],['Hammer',1],['Rations',3],['Candle',3]],                         gold:10, recipes:['Torch','Rope','Stone Campfire Ring'] },
-  'Miner':        { socialClass:'Commonfolk', desc:'A hardened labourer who digs wealth from the earth with bare hands and will',  skills:['Brawling','Crafting','Survival'],        trait:'Loyal',       items:[['Torch',5],['Rope',1],['Candle',3],['Rations',3],['Health Potion',1]],                  gold:8,  recipes:['Torch','Stone Campfire Ring','Stick Bundle'] },
+  'Miner':        { socialClass:'Commonfolk', desc:'A hardened labourer who digs wealth from the earth with bare hands and will',  skills:['Brawling','Crafting','Survival'],        trait:'Loyal',       items:[['Torch',5],['Rope',1],['Candle',3],['Rations',3],['Health Potion',1]],                  gold:8,  recipes:['Torch','Stone Campfire Ring','Stick Bundle','Smelt Iron','Smelt Copper'] },
   'Brewer':       { socialClass:'Commonfolk', desc:'A dwarf craftsperson who coaxes the finest ales from grain, hop, and patience',skills:['Brewing','Crafting','Persuasion'],       trait:'Kind',        items:[['Wineskin',2],['Candle',2],['Rations',2],['Rope',1],['Torch',1]],                      gold:15, recipes:['Berry Stew','Mushroom Broth'] },
-  'Engraver':     { socialClass:'Artisan',    desc:'A dwarf artisan who decorates stone and metal with patterns of lasting beauty', skills:['Crafting','Artistry','Smithing'],        trait:'Loyal',       items:[['Hammer',1],['Candle',3],['Torch',1],['Rope',1],['Rations',2]],                         gold:20, recipes:['Stone Campfire Ring','Torch','Rope'] },
+  'Engraver':     { socialClass:'Artisan',    desc:'A dwarf artisan who decorates stone and metal with patterns of lasting beauty', skills:['Crafting','Artistry','Smithing'],        trait:'Loyal',       items:[['Hammer',1],['Candle',3],['Torch',1],['Rope',1],['Rations',2]],                         gold:20, recipes:['Stone Campfire Ring','Torch','Rope','Smelt Iron','Forge Crafting Knife','Forge Hunting Knife'] },
   'Grudgebearer': { socialClass:'Outlaw',     desc:'A dwarf consumed by an unresolved wrong, pursuing justice by any means left',  skills:['Tracking','Brawling','Axes'],            trait:'Ruthless',    items:[['Dagger',2],['Rope',1],['Torch',2],['Rations',2],['Dark Cloak',1]],                    gold:10, recipes:['Stone Knife','Torch','Rope'] },
   'Tunnelrat':    { socialClass:'Outlaw',     desc:'An underground criminal who preys on miners and travellers in the dark',       skills:['Stealth','Mining','Thievery'],           trait:'Ruthless',    items:[['Dagger',2],['Torch',3],['Rope',1],['Rations',2]],                                     gold:15, recipes:['Stone Knife','Torch','Rope'] },
   'Chronicler':   { socialClass:'Scholar',    desc:'A keeper of clan history, recording victories, grudges, and bloodlines',       skills:['Decrypting','Persuasion','Crafting'],    trait:'Wise',        items:[['Quill & Ink',1],['Scroll',3],['Candle',4],['Torch',1],['Rations',2]],                   gold:15, recipes:['Torch','Berry Stew'] },
@@ -15644,6 +16338,13 @@ function updateCharPreview() {
 					updateInventory();
 					updatePlayerStats();
 
+					// Start weary and hungry — illustrates stat recovery gameplay
+					player.life    = Math.max(1, Math.floor(player.maxLife    * 0.25));
+					player.stamina = Math.max(1, Math.floor(player.maxStamina * 0.25));
+					player.mana    = 0;
+					applyCondition('hungry', 999);
+					updateTopStats();
+
 					_bookExitCharCreation(() => {
 						addStory(`Character created. Welcome ${name}.`);
 						addWorldEvent(`${name} begins their journey as a ${profKey}.`, 'player');
@@ -15700,7 +16401,7 @@ addStory("A faint ember awakens at the heart of the sphere- a soft glow at its c
 await waitForEnter();
 addStory("You can't shake the distinct feeling that the it's staring back at you. Observing. Peering into your very soul...");
 await waitForEnter();
-addStory("In a fleeting moment of unease, it crosses your mind to discard it- to leave it in the dirt where you found it and never look back. Yet the notion triggers a sharp sorrow, tears welling in a sudden moment of grief. You feel a deep attachment to it. The d20 has anchored itself to you, or you to it; the difference no longer matters. Without it, you'd be lost...");
+addStory("In a fleeting moment of unease, it crosses your mind to discard it- to leave it in the dirt where you found it and never look back. Yet the notion triggers a sharp sorrow, tears welling in a sudden moment of grief. You feel a deep attachment to it. The object has anchored itself to you, or you to it; the difference no longer matters. Without it, you'd be lost...");
 await waitForEnter();
 addStory("It holds a strange compulsion over you. You feel as though it's as much a part of you as your own hands...");
 await waitForEnter();
@@ -16987,6 +17688,7 @@ window.bookSwitchJournalTab  = bookSwitchJournalTab;
 window.bookTurnPage          = bookTurnPage;
 window.bookEnterCharCreation = _bookEnterCharCreation;
 window.bookExitCharCreation  = _bookExitCharCreation;
+window.showNewGameSlotPicker = () => _showSaveSlotModal('new');
 
 // Initial state: story section is active on both pages
 _bookActivateLeftSection('story');

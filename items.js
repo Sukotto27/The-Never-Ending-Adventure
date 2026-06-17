@@ -7824,6 +7824,287 @@ const Items = {
       condition: "Good", burnTime: 0, rarity: "Common",
       baseEffect: {}, weight: 0.2, value: 1,
       icon: _I.misc("wood_cup.png")
+    },
+    "Spellbook": {
+      description: "A tome bound in midnight-blue leather, its pages filled with arcane diagrams and mana-flow notation. Reading it deepens your understanding of magic.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.5, value: 40,
+      icon: _I.misc("parchment.png")
+    },
+    "Prayer Book": {
+      description: "A worn devotional text inlaid with silver leaf. Each verse carries the quiet weight of ages of faith. Reading it soothes the spirit and fortifies the body.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.2, value: 35,
+      icon: _I.misc("parchment.png")
+    },
+
+    // ── Skill Books ──────────────────────────────────────────────────────────────
+    // Combat
+    "The Art of the Blade": {
+      description: "A treatise on sword technique by a retired duelist. Covers guard stances, footwork, and timing. Dense with diagrams of effective parries.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.2, value: 45, skillBook: "Swordsmanship",
+      icon: _I.misc("parchment.png")
+    },
+    "Flight of the Arrow": {
+      description: "An archer's field manual: wind correction, range estimation, and the anatomy of a killing shot. Written by a competition champion.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 45, skillBook: "Archery",
+      icon: _I.misc("parchment.png")
+    },
+    "Iron and Edge: Axework": {
+      description: "A blunt, practical guide to wielding axes in combat — from wood-chopper grips to the overhead cleave favoured by soldiers.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.2, value: 40, skillBook: "Axes",
+      icon: _I.misc("parchment.png")
+    },
+    "The Long Reach": {
+      description: "A spearman's primer on reach, formation fighting, and the low-line thrust. Authored by a retired pike captain.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 40, skillBook: "Spears",
+      icon: _I.misc("parchment.png")
+    },
+    "Glaive and Halberd": {
+      description: "A study of polearm combat forms: hooking, sweeping, and overhead guards. Illustrated with training drills used by guard companies.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.2, value: 40, skillBook: "Polearms",
+      icon: _I.misc("parchment.png")
+    },
+    "Bare Knuckle": {
+      description: "A scrappy pamphlet sold under tavern counters: how to break a grip, survive a headlock, and put a man down without a weapon.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.6, value: 28, skillBook: "Brawling",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Wilderness & Survival
+    "How to Live in the Wild": {
+      description: "A comprehensive survival handbook: shelter-building, water purification, predator avoidance, and signal-fire technique.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.0, value: 30, skillBook: "Survival",
+      icon: _I.misc("parchment.png")
+    },
+    "The Hunter's Code": {
+      description: "A hunter's collected wisdom on patience, territory, and clean kills. Includes seasonal movement charts for common game.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.0, value: 30, skillBook: "Hunting",
+      icon: _I.misc("parchment.png")
+    },
+    "What the Forest Offers": {
+      description: "A forager's guide with hand-drawn illustrations of edible plants, fungi, and roots across six biomes. Has saved many lives.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.9, value: 28, skillBook: "Foraging",
+      icon: _I.misc("parchment.png")
+    },
+    "Marks and Signs": {
+      description: "A tracker's lexicon: footprints, scat, broken bark, disturbed earth. How to read a story from ground that looks empty.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.9, value: 30, skillBook: "Tracking",
+      icon: _I.misc("parchment.png")
+    },
+    "The Fire Maker's Handbook": {
+      description: "Every method of making fire — friction, flint, lens, fungal tinder — with notes on maintaining coals through rain and wind.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.8, value: 25, skillBook: "Fire-making",
+      icon: _I.misc("parchment.png")
+    },
+    "Still Waters: A Fisher's Guide": {
+      description: "River and lake fishing techniques: fly, bait, net, and weir. Includes tide charts and notes on seasonal fish runs.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.9, value: 25, skillBook: "Fishing",
+      icon: _I.misc("parchment.png")
+    },
+    "The Green Compendium": {
+      description: "A thorough catalog of medicinal and alchemical plants, their preparation, dosage, and dangerous interactions. A standard herbalist reference.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.3, value: 40, skillBook: "Herbalism",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Crafts & Trades
+    "A Craftsman's Guide": {
+      description: "Covers joinery, measurement, tool maintenance, and the fundamentals of working wood, leather, and simple metalwork.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.0, value: 30, skillBook: "Crafting",
+      icon: _I.misc("parchment.png")
+    },
+    "The Forge and the Flame": {
+      description: "A smith's reference: alloy temperatures, hammer weights, quench methods, and the visual cues of properly worked steel.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.5, value: 45, skillBook: "Smithing",
+      icon: _I.misc("parchment.png")
+    },
+    "Feather and Shaft": {
+      description: "The craft of arrows and bows: wood selection, spine stiffness, fletching angles, and string tension for each draw weight.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 40, skillBook: "Fletching",
+      icon: _I.misc("parchment.png")
+    },
+    "The Alchemist's Codex": {
+      description: "Reaction theory, reagent sourcing, and step-by-step formulations for sixty compounds. The chapter on stabilisers alone is worth the price.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.4, value: 50, skillBook: "Alchemy",
+      icon: _I.misc("parchment.png")
+    },
+    "The Wanderer's Cookbook": {
+      description: "Campfire recipes, preservation techniques, and how to make almost anything taste better than it should. Used and annotated by dozens of previous owners.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.8, value: 28, skillBook: "Cooking",
+      icon: _I.misc("parchment.png")
+    },
+    "Ferment and Flavour": {
+      description: "A brewer's notebook covering grain selection, yeast cultivation, temperature, and the subtle art of secondary fermentation.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.9, value: 28, skillBook: "Brewing",
+      icon: _I.misc("parchment.png")
+    },
+    "Needle and Thread": {
+      description: "Pattern-making, seam strength, material properties, and repairs that last. Plain and unassuming — exactly like good needlework should be.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.7, value: 25, skillBook: "Sewing",
+      icon: _I.misc("parchment.png")
+    },
+    "Working Wood": {
+      description: "The carpenter's bible: grain direction, joint selection, load bearing, and the finishing touches that distinguish craft from construction.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.1, value: 30, skillBook: "Carpentry",
+      icon: _I.misc("parchment.png")
+    },
+    "Deep Rock: A Miner's Handbook": {
+      description: "Vein identification, geological strata, safe tunnelling, and the signals that warn of a coming collapse. Written in the dark, by feel.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.3, value: 38, skillBook: "Mining",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Magic
+    "Radiant Paths": {
+      description: "A theoretical and practical guide to channelling radiant energy — mana flow, sigil construction, and the mathematics of restorative casting.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 1.6, value: 65, skillBook: "Light Magic",
+      icon: _I.misc("parchment.png")
+    },
+    "Shadows and Power": {
+      description: "An unsettling but thorough examination of shadow-drawn energy: entropy binding, void resonance, and the willpower required to wield it safely.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 1.5, value: 65, skillBook: "Black Magic",
+      icon: _I.misc("parchment.png")
+    },
+    "The Crimson Rites": {
+      description: "A forbidden manuscript on blood-drawn power. The cover has no author. Passages are struck through in an unfamiliar hand — warnings, perhaps.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Worn", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 1.3, value: 80, skillBook: "Blood Magic",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Social & Knowledge
+    "The Art of Persuasion": {
+      description: "How to read a room, pace a sentence, and find the opening in anyone's resistance. Equal parts philosophy and manipulation.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.0, value: 42, skillBook: "Persuasion",
+      icon: _I.misc("parchment.png")
+    },
+    "Terms and Agreements": {
+      description: "A merchant's reference on contract law, leverage identification, and the art of leaving both parties feeling they won.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 42, skillBook: "Negotiating",
+      icon: _I.misc("parchment.png")
+    },
+    "The Healer's Companion": {
+      description: "Field medicine for those without a clinic: wound assessment, improvised sutures, fever management, and when to cut rather than wait.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.2, value: 45, skillBook: "Healing",
+      icon: _I.misc("parchment.png")
+    },
+    "Codes and Ciphers": {
+      description: "Historical and modern cipher systems, frequency analysis, and methods for breaking encryptions without a key. Authored by a royal intelligence archivist.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.2, value: 48, skillBook: "Decrypting",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Roguish
+    "Moving in Silence": {
+      description: "A thief-taker's field notes, repurposed. Ironically, it describes how to avoid being caught rather than how to catch. Sold wrapped in plain cloth.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 0.8, value: 60, skillBook: "Stealth",
+      icon: _I.misc("parchment.png")
+    },
+    "The Locksmith's Art": {
+      description: "Pin tumbler mechanics, warded key geometry, and how any lock can be opened with enough patience and the right touch. Officially sold only to licensed locksmiths.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 0.9, value: 55, skillBook: "Lockpicking",
+      icon: _I.misc("parchment.png")
+    },
+    "Sleight of Hand": {
+      description: "A performer's manual that is decidedly more than a performer's manual. Palm transfers, misdirection, and the psychology of inattention.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 0.7, value: 60, skillBook: "Thievery",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Trades & Professions
+    "The Beastkeeper's Handbook": {
+      description: "Animal psychology, training methods, wound care for livestock, and how to earn trust from a creature that has no reason to give it.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.0, value: 32, skillBook: "Animal Handling",
+      icon: _I.misc("parchment.png")
+    },
+    "By Star and Compass": {
+      description: "Celestial navigation, landmark triangulation, and dead reckoning for overland travel. Essential reading for those who go where maps run out.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 42, skillBook: "Navigation",
+      icon: _I.misc("parchment.png")
+    },
+    "Form and Colour": {
+      description: "Principles of visual composition, pigment theory, and the observation skills that separate technique from art. Heavily illustrated.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.0, value: 28, skillBook: "Artistry",
+      icon: _I.misc("parchment.png")
+    },
+    "The Unseen World": {
+      description: "A scholar's survey of omen interpretation, spiritual resonance, and the documented cases where the invisible world bent toward those who were paying attention.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 1.3, value: 65, skillBook: "Mysticism",
+      icon: _I.misc("parchment.png")
     }
   },
 

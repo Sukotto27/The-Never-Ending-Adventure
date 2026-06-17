@@ -5818,6 +5818,12 @@ h4 {
   padding-top: 0.3rem;
 }
 
+#cc-race-row {
+  display: grid;
+  grid-template-columns: repeat(3, 178px);
+  justify-content: center;
+}
+
 #bksec-char-creation #cc-cat-view,
 #bksec-char-creation #cc-prof-view {
   padding: 0.4rem 0.5rem;
