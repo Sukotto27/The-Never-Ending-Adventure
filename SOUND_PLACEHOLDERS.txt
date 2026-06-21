@@ -1,0 +1,181 @@
+SOUND PLACEHOLDERS
+==================
+These sound files are registered in sound.js and already wired in the game.
+Drop the audio files into the folders listed below and they will play automatically.
+All files should be MP3.
+
+
+── AMBIENCE ────────────────────────────────────────────────────────────────────
+Folder: sounds/ambience/
+
+  ambience_coastal.mp3
+    Plays in Coastal and Ocean biomes (day or night).
+    Suggest: ocean waves, distant seagulls, wind off water.
+
+  ambience_mountain.mp3
+    Plays in Mountain / Mountains biomes during the day.
+    At night falls back to ambience_common_night.
+    Suggest: high-altitude wind, distant eagle cry, sparse birdsong.
+
+  ambience_river.mp3
+    Plays in River and Lake biomes (day or night).
+    Suggest: flowing water, frogs, light insect hum.
+
+  ambience_town_night.mp3
+    Plays in City / CapitalCity / Village zones at night.
+    Currently falls back to ambience_common_night.
+    Suggest: distant tavern chatter, night watchman bell, occasional dog bark.
+
+  ambience_mine.mp3  [REGISTERED — wire trigger when mine zone/location is added]
+    Plays inside underground mine locations.
+    Suggest: deep cave drip, distant pickaxe echoes, low stone reverb.
+
+
+── SOUND EFFECTS ───────────────────────────────────────────────────────────────
+Folder: sounds/effects/
+
+  quest_update.mp3
+    Plays when a quest objective is ticked off (✅ message).
+    Suggest: short ascending chime or parchment-rustle.
+
+  quest_complete.mp3
+    Plays when a full quest is completed (🏆 message).
+    Suggest: triumphant fanfare sting, 1–2 seconds.
+
+
+── COMBAT ──────────────────────────────────────────────────────────────────────
+Folder: sounds/actions/
+
+  sword_swing.mp3
+    Plays on every player melee/ranged attack.
+    Suggest: a sharp whoosh-and-impact; something between a sword swipe and a
+    dull thud. Should be short (under 0.8s) so it doesn't overlap enemy counter.
+
+  shield_block.mp3
+    Plays when the player takes the Defend stance.
+    Suggest: heavy clank of a raised shield, or a grunt and armour scrape.
+
+  combat_flee.mp3
+    Plays when the player attempts to flee combat (both success and failure).
+    Suggest: quick scrambling footsteps, urgent thud of boots on dirt.
+
+  combat_victory.mp3
+    Plays when combat ends in player victory (enemy HP reaches 0).
+    Suggest: short triumphant sting — a brief sword-sheathe plus an upward
+    musical phrase. Keep under 2s.
+
+  combat_defeat.mp3
+    Plays when the player's HP reaches 0 and the defeat sequence begins.
+    Suggest: low reverberant toll, like a slow bell or heavy gong fading out.
+
+
+── MAGIC / SPELLS ──────────────────────────────────────────────────────────────
+Folder: sounds/actions/
+
+  spell_fire.mp3
+    Plays when casting Fire Bolt or Lightning in combat.
+    Suggest: sharp crackle and whoosh — fire igniting with energy.
+    Lightning variant can be the same file; if you want two, name the second
+    spell_lightning.mp3 and register it separately.
+
+  spell_dark.mp3
+    Plays when casting Dark Bolt, Wither, or Life Drain.
+    Suggest: low, eerie resonance — a wisp of dark energy releasing.
+
+  spell_heal.mp3
+    Plays when casting Mend (in or out of combat).
+    Suggest: soft ascending shimmer or choir swell — soothing, brief.
+
+  spell_meditate.mp3
+    Plays when starting the Meditate action (mana restoration).
+    Suggest: a single soft singing bowl strike fading slowly.
+
+  spell_ward.mp3
+    Plays when a protective ward is woven (Ward spell success).
+    Suggest: a crystalline ping or bubble-formation sound.
+
+  spell_dark_sight.mp3
+    Plays when Dark Sight is cast (shadow whisper / map reveal).
+    Suggest: a low breath or susurrus — like darkness exhaling.
+
+  blood_ritual.mp3
+    Plays when a Blood Magic Ritual begins.
+    Suggest: slow heartbeat pulse, slightly unsettling.
+
+
+── FISHING ─────────────────────────────────────────────────────────────────────
+Folder: sounds/actions/
+
+  fish_bite.mp3
+    Plays at the "Something on the line — HOOK IT!" moment.
+    Suggest: a short line-tension twang or quiet water plop. Must be instantly
+    recognisable so the player knows to act fast.
+
+  fish_catch.mp3
+    Plays when the player successfully hooks and reels in a fish.
+    Suggest: a wet splash and quick reel-click, triumphant but brief.
+
+
+── HUNTING ─────────────────────────────────────────────────────────────────────
+Folder: sounds/actions/
+
+  hunt_kill.mp3
+    Plays on a successful clean kill or final arrow hit.
+    Suggest: distant thud of an animal falling through undergrowth — natural,
+    not gory. Keep it short and muted.
+
+
+── SOCIAL / TOWN ───────────────────────────────────────────────────────────────
+Folder: sounds/effects/
+
+  crowd_cheer.mp3
+    Plays on a busking or local-games high-tier success.
+    Suggest: small crowd applause and a cheer — maybe 1–2 seconds. Warm and
+    lively, not stadium-scale.
+
+  pickpocket_success.mp3
+    Plays when a pickpocket attempt succeeds (Thievery tier ≥ 4).
+    Suggest: very quiet coin jingle — subtle, conspiratorial.
+
+  pickpocket_fail.mp3
+    Plays when a pickpocket attempt is detected (tier 1–2).
+    Suggest: sharp gasp or a short "hey!" sting — brief social alarm.
+
+
+── ALCHEMY / COOKING ───────────────────────────────────────────────────────────
+Folder: sounds/actions/
+
+  brew_potion.mp3
+    Plays during the Brew / Quick Brew action while the potion completes.
+    Suggest: liquid bubbling in a glass vessel, gentle and rhythmic.
+
+  cooking_sizzle.mp3
+    Plays when food is placed on the campfire to cook.
+    Suggest: a satisfying meat-or-fish sizzle on a hot surface.
+
+
+── EXPLORATION / TRAVEL ────────────────────────────────────────────────────────
+Folder: sounds/effects/
+
+  discovery.mp3
+    Plays when a new map location is discovered for the first time.
+    Suggest: a quiet ascending chime or distant bell — a sense of wonder, not
+    a full fanfare (save that for quest_complete).
+
+  sail.mp3
+    Plays when a sailing / sea travel action begins.
+    Suggest: wind filling a sail, gentle creaking of wood, water rushing.
+
+
+── UI / FEEDBACK ───────────────────────────────────────────────────────────────
+Folder: sounds/ui/
+
+  critical_success.mp3
+    Plays on a natural 19–20 roll (tier 5 / critical success).
+    Suggest: a bright, punchy musical hit — sharper and shorter than
+    level_up. Something like a coin-flip-and-chime.
+
+  critical_fail.mp3
+    Plays on a natural 1–5 roll (tier 1 / critical failure).
+    Suggest: a low comedic or dramatic thud — a muted horn or dropped-
+    shield clang. Should feel weighty but not devastating.

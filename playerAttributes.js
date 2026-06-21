@@ -60,6 +60,9 @@ const gameSkills = {
   Navigation:        { description: 'Find your way by stars, maps, and landmarks.', survivalBonus: +2 },
   Artistry:          { description: 'Create paintings, sculptures, and decorative works.', socialBonus: +1 },
   Mysticism:         { description: 'Read omens, commune with unseen forces, and interpret fate.', magicBonus: +2 },
+
+  // ── Music ─────────────────────────────────────────────────────────────────────
+  Lute:              { description: 'Play the lute — notes, chords, scales, and original compositions.', socialBonus: +2 },
 };
 
 // ============================================================
@@ -115,6 +118,7 @@ const SKILL_TITLE_NOUNS = {
   'Navigation':      'Navigator',
   'Artistry':        'Artist',
   'Mysticism':       'Mystic',
+  'Lute':            'Lutenist',
 };
 
 // Hand-crafted titles: achievements, exploration, quests, origins, etc.
@@ -749,6 +753,20 @@ const CONDITION_DEFS = {
     name: 'Cursed',         icon: '🌑', defaultDuration: 999, harmful: true,
     rollBonus: -2, skillMods: {},
     staminaRegen: 0,
+  },
+  cursed_corruption: {
+    name: 'Corrupted',      icon: '🩸', defaultDuration: 999, harmful: true,
+    rollBonus: -1, skillMods: { Swordsmanship: -1, Archery: -1, Survival: -1 },
+    staminaRegen: -3,
+    // Progressive — corruptionStage on player object tracks severity (1–5).
+    // Stage advances each time tickConditions fires while this is active.
+    // Cure: only the Veldrite Cure Potion brewed by Davolar.
+  },
+  corruption_delayed: {
+    name: 'Stasis',         icon: '⏳', defaultDuration: 4, harmful: false,
+    rollBonus: 0,  skillMods: {},
+    staminaRegen: 0,
+    // Davolar's delay tincture — while active, corruption stage does not advance.
   },
 
   // ── Beneficial ───────────────────────────────────────────────────────────────

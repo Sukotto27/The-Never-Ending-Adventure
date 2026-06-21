@@ -274,7 +274,7 @@ const ESTABLISHMENT_STOCK = {
     'Empty Vial', 'Kindling', 'Stick Bundle', 'Fishing Pole', 'Animal Trap',
     'Compass',
     // Pouches
-    'Coin Pouch', 'Coin Pouch (Large)', 'Ingredient Pouch', 'Ingredient Pouch (Large)',
+    'Coin Pouch', 'Coin Pouch (Large)', 'Ingredient Pouch',
   ],
   alchemist: [
     'Health Potion', 'Greater Health Potion', 'Mana Potion',
@@ -311,14 +311,22 @@ const ESTABLISHMENT_STOCK = {
     'Health Potion', 'Rations', 'Rope', 'Torch', 'Arrow',
     'Dagger', 'Bandage', 'Empty Vial', 'Healing Herb',
     'Stamina Potion', 'Waterskin', 'Candle', 'Compass',
-    'Coin Pouch (Large)', 'Ingredient Pouch', 'Ingredient Pouch (Large)',
+    'Coin Pouch (Large)', 'Ingredient Pouch',
   ],
   herbalist: [
     'Healing Herb', 'Rare Herb', 'Moonbloom', 'Ginseng Root',
     'Milkweed', 'Ember Root', 'Eyebright', 'Valerian Root', 'Yarrow',
     'Wild Berries', 'Elderberry', 'Edible Mushrooms', 'Empty Vial',
     'Antidote', 'Health Potion',
-    'Herb Pouch', 'Herb Pouch (Large)', 'Ingredient Pouch',
+    'Herb Pouch', 'Ingredient Pouch',
+  ],
+  tailor: [
+    // Hides & materials
+    'Leather', 'Deer Hide', 'Boar Hide', 'Rabbit Hide', 'Cloth Roll', 'Needle and Thread', 'Rope',
+    // Finished leather goods
+    'Leather Armor', 'Leather Boots', 'Leather Gloves', 'Leather Bracers', 'Leather Helmet', 'Gambeson',
+    // Pouches (small only — large must be crafted)
+    'Herb Pouch', 'Ingredient Pouch', 'Coin Pouch',
   ],
   stable: [
     'Rope', 'Animal Trap', 'Bandage', 'Waterskin', 'Rations',
@@ -345,6 +353,7 @@ const SKILL_BOOK_STOCK = {
   ],
   alchemist: [
     'The Alchemist\'s Codex', 'Radiant Paths', 'Shadows and Power', 'The Unseen World',
+    'On the Six Schools of Arcane Thought', 'The Corrupted Spires: A Field Survey',
   ],
   apothecary: [
     'The Healer\'s Companion', 'The Green Compendium',
@@ -352,33 +361,78 @@ const SKILL_BOOK_STOCK = {
   herbalist: [
     'What the Forest Offers', 'Marks and Signs',
     'The Beastkeeper\'s Handbook', 'The Green Compendium', 'How to Live in the Wild',
+    'The Eater Oak: Fact or Fable',
   ],
   general_store: [
     'How to Live in the Wild', 'The Hunter\'s Code', 'The Fire Maker\'s Handbook',
     'Still Waters: A Fisher\'s Guide', 'A Craftsman\'s Guide', 'Working Wood', 'By Star and Compass',
+    'Trolls and Their Ways', 'The Seven Aspects: A Devotional',
   ],
   tavern: [
     'Bare Knuckle', 'The Wanderer\'s Cookbook', 'Ferment and Flavour', 'The Art of Persuasion',
+    'Heroes, Scoundrels & War the Goat', 'Merwin\'s Collected Misadventures',
+    'Encounters on the Trading Road', 'Strangers at the Bar', 'Songs from the Road',
   ],
   inn: [
     'The Wanderer\'s Cookbook', 'Ferment and Flavour',
+    'The Seven Aspects: A Devotional', 'Heroes, Scoundrels & War the Goat',
+    'Merwin\'s Collected Misadventures', 'Encounters on the Trading Road',
   ],
   market: [
     'Needle and Thread', 'Terms and Agreements', 'Form and Colour',
     'Flight of the Arrow', 'Bare Knuckle',
+    'Heroes, Scoundrels & War the Goat', 'Merwin\'s Collected Misadventures',
+    'The Seven Aspects: A Devotional', 'Trolls and Their Ways',
+    'The Fall of the Aegrim Empire', 'Songs from the Road',
   ],
   merchant: [
     'Shadows and Power', 'The Crimson Rites', 'Moving in Silence',
     'The Locksmith\'s Art', 'Sleight of Hand',
   ],
+  tailor: [
+    'Needle and Thread', 'Form and Colour',
+  ],
   stable: [
     'The Hunter\'s Code', 'Marks and Signs', 'The Beastkeeper\'s Handbook',
+    'Trolls and Their Ways', 'Winged Threats of the Northern Peaks',
   ],
   library: [
+    // Skill books
     'The Art of Persuasion', 'Terms and Agreements', 'The Healer\'s Companion',
     'Codes and Ciphers', 'By Star and Compass', 'Form and Colour',
     'The Unseen World', 'Radiant Paths',
+    // Lore books — history & kingdoms
+    'The Fall of the Aegrim Empire', 'Thirty Years of Silence',
+    'A Compact of Lords', 'The Iron Lords: A Ruling History', 'Harbour and Sword',
+    // Lore books — arcane
+    'On the Six Schools of Arcane Thought', 'The Corrupted Spires: A Field Survey',
+    // Lore books — bestiary
+    'Trolls and Their Ways', 'Winged Threats of the Northern Peaks',
+    // Lore books — legends & geography
+    'Songs from the Road', 'The Amber Moon Prophecies', 'Strangers at the Bar',
+    'The Eater Oak: Fact or Fable', 'The Sunken Reaches: A Surveyor\'s Memoir',
+    'The Seven Aspects: A Devotional',
   ],
+};
+
+// ── Recipe scroll skill filter per shop type ──────────────────────────────
+// Maps shop type (lowercase, underscores) → which recipe skill(s) may appear
+// as scrolls there. null means no filter (all skills eligible).
+const RECIPE_SCROLL_SKILLS = {
+  blacksmith:    ['Smithing', 'Smelting', 'Crafting'],
+  fletcher:      ['Fletching'],
+  alchemist:     ['Alchemy'],
+  apothecary:    ['Alchemy', 'Healing', 'Herbalism'],
+  herbalist:     ['Herbalism', 'Healing', 'Alchemy'],
+  tailor:        ['Sewing'],
+  general_store: ['Crafting', 'Fire-making', 'Survival'],
+  tavern:        ['Cooking'],
+  inn:           ['Cooking'],
+  market:        ['Crafting', 'Sewing', 'Cooking', 'Smithing'],
+  library:       null,
+  scribe:        null,
+  bookshop:      null,
+  merchant:      ['Crafting', 'Alchemy', 'Cooking', 'Sewing'],
 };
 
 // ── Travelling merchant stock pools ───────────────────────────────────────
@@ -411,6 +465,7 @@ const KINGDOM_VENDOR_ADDITIONS = {
     general_store: ['Ardren Ale', 'Map of Ardrenhold'],
     market:        ['Ardrenhold Tabard', 'Ardrenhold Cloak', 'Ardren Ale', 'Map of Ardrenhold'],
     merchant:      ['Ardrenhold Cloak', 'Ardrenhold Tabard', 'Map of Ardrenhold'],
+    library:       ['A Compact of Lords'],
     tavern:        ['Ardren Ale'],
     inn:           ['Ardren Ale'],
   },
@@ -455,6 +510,7 @@ const KINGDOM_VENDOR_ADDITIONS = {
     general_store: ['Naradreth Tabard', 'Map of Naradreth'],
     market:        ['Naradreth Tabard', 'Naradreth Leather Chest', 'Map of Naradreth'],
     merchant:      ['Naradreth Trader Chest', 'Map of Naradreth'],
+    library:       ['Harbour and Sword'],
     tavern:        [],
     inn:           [],
   },
@@ -463,6 +519,7 @@ const KINGDOM_VENDOR_ADDITIONS = {
     general_store: ['Map of Feldarún', 'Feldarún Tabard'],
     market:        ['Feldarún Tabard', 'Feldarún Mail Boots', 'Map of Feldarún'],
     merchant:      ['Feldarún Mail Boots', 'Map of Feldarún'],
+    library:       ['The Iron Lords: A Ruling History'],
     tavern:        [],
     inn:           [],
   },

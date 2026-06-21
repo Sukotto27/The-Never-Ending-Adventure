@@ -642,6 +642,87 @@ const LORE_ENTRIES = [
     biomes:   [],
   },
 
+  // ── THE QUIN ───────────────────────────────────────────────────────────────
+  // The true name and nature of the Arúvari people. Discovered in fragments —
+  // each entry deepens the revelation. Tone: ancient, elegiac, dangerous to know.
+
+  {
+    id:       'quin-the-name',
+    title:    'The Name They Gave Themselves',
+    category: 'The Arúvari',
+    text:     'The word appears in the oldest stratum of Arúvari inscription — the layer beneath the layer that scholars have been studying. It is not a place name or a title or a concept. It is, as best anyone can determine, what they called themselves: Quin. One syllable. It appears on foundation stones and grave markers and the insides of doorways, always in the position a people uses for their own name. The records that came after — the ones written by those who arrived later — do not use it. They use no name for the people they found here. The absence of a name for a conquered people is not unusual. What is unusual is that the name existed and was simply stopped.',
+    source:   'relic',
+    rarity:   'rare',
+    kingdoms: [],
+    biomes:   [],
+  },
+
+  {
+    id:       'quin-horns',
+    title:    'The Mark They Carried',
+    category: 'The Arúvari',
+    text:     'No living Quin has ever been formally documented. What has been documented: a particular kind of skeletal remains found in the oldest ruin sites, humanoid in proportion but with a growth pattern at the skull that no physician\'s anatomy covers. The bone is dense, curved, emerging from the temples in a gentle arc. Not a deformity — the structure is too regular, too bilateral, too clearly healthy. A feature, not a flaw. The remains found in settlements after the period of the feast do not share this structure. The shape of a people can be filed away. The memory of their shape, apparently, can be buried with them.',
+    source:   'site',
+    rarity:   'rare',
+    kingdoms: [],
+    biomes:   [],
+  },
+
+  {
+    id:       'quin-culture',
+    title:    'A People Who Built No Forges',
+    category: 'The Arúvari',
+    text:     'The absence of a smithing tradition in the Quin ruins is not an oversight of the archaeological record — the record is simply empty where smithing should be. No forge sites. No slag heaps. No tools that required iron to produce. The Quin shaped stone beautifully. They worked bone, antler, wood, and shell into objects of considerable precision. They did not mine metal ore. They did not smelt. In a civilisation that lasted, by most estimates, several thousand years, they never produced a sword. Scholars who have noted this tend to dismiss it as primitive, which is easier than the alternative conclusion: that they had no use for swords because they had never needed one.',
+    source:   'library',
+    rarity:   'uncommon',
+    kingdoms: [],
+    biomes:   [],
+  },
+
+  {
+    id:       'quin-and-mana',
+    title:    'Older Than the Schools',
+    category: 'The Arúvari',
+    text:     'The six schools of arcane study were codified roughly four hundred years ago. They are not, however, four hundred years old. They are an attempt to systematise something that existed long before the schools did — something that certain people access without training. Scholars of the arcane have occasionally noted, in private correspondence, that the quality of elven magic is not quite the same as human-learned magic. It does not feel constructed. It feels inherited. One mage, in her retirement, wrote that speaking to an elven mage about the technical mechanics of their casting was like asking a river to explain why it flows downhill. She speculated, without evidence she would stand behind publicly, that elvenkind had not learned magic at all — that they were descended from people for whom magic was simply the way things were. She did not name those people. She had clearly guessed the name.',
+    source:   'loremaster',
+    rarity:   'rare',
+    kingdoms: [],
+    biomes:   [],
+  },
+
+  {
+    id:       'quin-elven-lineage',
+    title:    'What the Elves Will Not Say',
+    category: 'The Arúvari',
+    text:     'Elven scholars are, across every kingdom and tradition, unwilling to discuss the origins of the elven lineage. This is itself notable. Elves are not, as a rule, reluctant scholars — they engage with uncomfortable subjects with a thoroughness that humans often find unsettling. On this one question, the response is consistently the same: a pause that lasts slightly too long, followed by a change of subject executed with great skill. Two scholars who pushed the point reported being politely shown out. One reports that the elf she questioned looked, for just a moment, grief-stricken. Then the expression was gone. The oldest elven word for ancestor translates not as one who came before, but as one who remained.',
+    source:   'loremaster',
+    rarity:   'rare',
+    kingdoms: [],
+    biomes:   [],
+  },
+
+  {
+    id:       'quin-hidden-among-us',
+    title:    'Those Who Filed Their Horns',
+    category: 'The Arúvari',
+    text:     'It is a surgical procedure, done young, when the bone is still soft enough to shape. The scarring heals. The hair covers the rest. A child raised this way would grow up not knowing what their parents had done to them, if their parents chose not to explain. Some chose not to explain. The evidence is in certain elven communities — a particular bone density at the temple, visible only on close examination or in old age when the filed edge sometimes shows through thinning skin. The elven physicians who know what they are looking at say nothing. There are families in every elven settlement in every kingdom who are not quite what they appear to be. They have been not quite what they appear to be for eight or nine centuries. The habit of hiding has had a long time to become ordinary.',
+    source:   'npc',
+    rarity:   'rare',
+    kingdoms: [],
+    biomes:   [],
+  },
+
+  {
+    id:       'quin-exiles',
+    title:    'The Deep Places',
+    category: 'The Arúvari',
+    text:     'The parts of the continent that remain untouched are not many, but they exist: old-growth forest where the canopy has not been opened in recorded memory, cave systems beneath the mountain roots that no survey has mapped, river-valley tangles in the deep interior that appear on no merchant\'s route. Hunters who range into these regions return with accounts that tend to share certain details. A sense of being watched that is never confirmed. Paths through old growth that appear well-maintained but show no signs of tools. A fire seen from distance on a hillside that is cold and out by the time the hunter reaches the site. Whether these are Quin or simply the movements of wildlife in unfamiliar dark, no one who has investigated has been able to say with certainty. Several investigators have not come back to say anything at all.',
+    source:   'exploration',
+    rarity:   'rare',
+    kingdoms: [],
+    biomes:   ['Forest', 'Ancient Forest', 'Mountains'],
+  },
+
   // ── ADD MORE ENTRIES BELOW ─────────────────────────────────────────────────
   //
   // Template:

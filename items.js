@@ -1813,130 +1813,132 @@ const Items = {
     },
 
     // ── weapons/mage/ ─────────────────────────────────────────────────────
+    // All staves include a manaVessel value — they act as conduits for non-magical
+    // races (humans, dwarves, etc.) who lack a natural mana pool.
     "Apprentice Staff": {
       description: "A plain wooden staff given to students of the arcane arts — unadorned but functional.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Common",
-      baseEffect: { damage: 8 }, weight: 2.0, value: 10,
+      manaVessel: 10, baseEffect: { damage: 8 }, weight: 2.0, value: 10,
       icon: _I.weapon("mage/staff_01.png")
     },
     "Oak Staff": {
       description: "A sturdy oak staff smoothed by long use — channels basic magic without resistance.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Common",
-      baseEffect: { damage: 9 }, weight: 2.5, value: 12,
+      manaVessel: 10, baseEffect: { damage: 9 }, weight: 2.5, value: 12,
       icon: _I.weapon("mage/staff_03.png")
     },
     "Carved Ironwood Staff": {
       description: "A staff of ironwood intricately carved with arcane symbols — more resistant to spellfire than plain oak.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Common",
-      baseEffect: { damage: 10 }, weight: 2.5, value: 14,
+      manaVessel: 12, baseEffect: { damage: 10 }, weight: 2.5, value: 14,
       icon: _I.weapon("mage/staff_04.png")
     },
     "Mage's Focus Staff": {
       description: "A staff designed to channel and focus spellcasting — a journeyman mage's first serious tool.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Uncommon",
-      baseEffect: { damage: 11 }, weight: 2.0, value: 20,
+      manaVessel: 18, baseEffect: { damage: 11 }, weight: 2.0, value: 20,
       icon: _I.weapon("mage/staff_05.png")
     },
     "Battle Staff": {
       description: "A heavy staff reinforced at both ends with iron — as dangerous as a spear in close quarters.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Uncommon",
-      baseEffect: { damage: 12 }, weight: 3.0, value: 22,
+      manaVessel: 10, baseEffect: { damage: 12 }, weight: 3.0, value: 22,
       icon: _I.weapon("mage/staff_06.png")
     },
     "Elder Staff": {
       description: "A staff carved from elder wood — draws on deep ley lines and amplifies focused intent.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Uncommon",
-      baseEffect: { damage: 13 }, weight: 2.5, value: 26,
+      manaVessel: 22, baseEffect: { damage: 13 }, weight: 2.5, value: 26,
       icon: _I.weapon("mage/staff_07.png")
     },
     "Arcane Staff": {
       description: "A staff suffused with arcane energy — crackles with potential even when not in use.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Rare",
-      baseEffect: { damage: 14 }, weight: 2.5, value: 35,
+      manaVessel: 28, baseEffect: { damage: 14 }, weight: 2.5, value: 35,
       icon: _I.weapon("mage/staff_08.png")
     },
     "Crystal-Tipped Staff": {
       description: "A staff topped with a focusing crystal — concentrates magic into sharp, precise bursts.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Rare",
-      baseEffect: { damage: 15 }, weight: 2.5, value: 40,
+      manaVessel: 30, baseEffect: { damage: 15 }, weight: 2.5, value: 40,
       icon: _I.weapon("mage/staff_09.png")
     },
     "Stormcaller Staff": {
       description: "A staff that hums in bad weather — in a storm it practically vibrates with lightning potential.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Rare",
-      baseEffect: { damage: 16 }, weight: 3.0, value: 45,
+      manaVessel: 28, baseEffect: { damage: 16 }, weight: 3.0, value: 45,
       icon: _I.weapon("mage/staff_10.png")
     },
     "Runic Staff": {
       description: "A staff covered head to toe in active runes — each rune a small spell waiting to be triggered.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Rare",
-      baseEffect: { damage: 17 }, weight: 2.5, value: 50,
+      manaVessel: 32, baseEffect: { damage: 17 }, weight: 2.5, value: 50,
       icon: _I.weapon("mage/staff_11.png")
     },
     "Void Staff": {
       description: "A staff of black polished wood that seems to absorb light — draws on magic from beyond the world.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Epic",
-      baseEffect: { damage: 18 }, weight: 2.5, value: 65,
+      manaVessel: 38, baseEffect: { damage: 18 }, weight: 2.5, value: 65,
       icon: _I.weapon("mage/staff_12.png")
     },
     "Grand Magister's Staff": {
       description: "The staff of a high-ranking magister — a symbol of authority and an instrument of devastating power.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Excellent", burnTime: 0, rarity: "Epic",
-      baseEffect: { damage: 20 }, weight: 3.0, value: 80,
+      manaVessel: 42, baseEffect: { damage: 20 }, weight: 3.0, value: 80,
       icon: _I.weapon("mage/staff_13.png")
     },
     "Worldtree Staff": {
       description: "A staff carved from a branch of the Worldtree itself — channels the living magic of the earth.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Excellent", burnTime: 0, rarity: "Legendary",
-      baseEffect: { damage: 22 }, weight: 3.0, value: 120,
+      manaVessel: 50, baseEffect: { damage: 22 }, weight: 3.0, value: 120,
       icon: _I.weapon("mage/staff_14.png")
     },
     "Ember Staff": {
       description: "A staff that is warm to the touch at all times — preferred by fire-inclined mages.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Uncommon",
-      baseEffect: { damage: 13 }, weight: 2.5, value: 28,
+      manaVessel: 20, baseEffect: { damage: 13 }, weight: 2.5, value: 28,
       icon: _I.weapon("mage/staff_15.png")
     },
     "Iron Shod Staff": {
       description: "A heavy wooden staff capped top and bottom with iron — favoured by mages who also know how to brawl.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Common",
-      baseEffect: { damage: 11 }, weight: 3.5, value: 16,
+      manaVessel: 8, baseEffect: { damage: 11 }, weight: 3.5, value: 16,
       icon: _I.weapon("mage/staff_43.png")
     },
     "Twisted Root Staff": {
       description: "A staff shaped from a naturally twisted root — raw and unworked, it channels wild magic unpredictably.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Common",
-      baseEffect: { damage: 10 }, weight: 2.0, value: 13,
+      manaVessel: 8, baseEffect: { damage: 10 }, weight: 2.0, value: 13,
       icon: _I.weapon("mage/staff_44.png")
     },
     "War Mage Staff": {
       description: "A reinforced staff designed for combat mages who fight in the front line — channels offensive spells at close range.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Epic",
-      baseEffect: { damage: 19 }, weight: 3.5, value: 72,
+      manaVessel: 30, baseEffect: { damage: 19 }, weight: 3.5, value: 72,
       icon: _I.weapon("mage/staff_v2_32.png")
     },
     "Enchanter's Wand": {
       description: "A slender wand used by enchanters and illusionists — precise, responsive, and delicately attuned.",
       type: "weapon", consumable: false, wearable: true,
       condition: "Good", burnTime: 0, rarity: "Uncommon",
-      baseEffect: { damage: 9 }, weight: 0.5, value: 30,
+      manaVessel: 20, baseEffect: { damage: 9 }, weight: 0.5, value: 30,
       icon: _I.weapon("mage/wand_v2_36.png")
     },
 
@@ -4509,6 +4511,284 @@ const Items = {
       baseEffect: { defense: 2 },
       weight: 1.2, value: 7,
       icon: _I.armor("common/all/small_cape_brown.png")
+    },
+
+    // ── Cloaks ──
+    "Green Cloak": {
+      description: "A full wool cloak dyed forest green — good for travel in wet weather or wooded country.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 2 }, weight: 1.5, value: 9,
+      icon: "images/icons/cloak_green.png"
+    },
+    "Dark Green Cloak": {
+      description: "A deep green cloak, almost black in poor light — popular with rangers and those who prefer not to be watched.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 2 }, weight: 1.5, value: 10,
+      icon: "images/icons/cloak_dark_green.png"
+    },
+    "Blue Cloak": {
+      description: "A full blue woollen cloak — sturdy against wind and drizzle, worn by merchants and travellers alike.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 2 }, weight: 1.5, value: 9,
+      icon: "images/icons/cloak_blue.png"
+    },
+    "Red Cloak": {
+      description: "A bold red cloak — practical enough for the road, but hard to pass without being noticed.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 2 }, weight: 1.5, value: 10,
+      icon: "images/icons/cloak_red.png"
+    },
+    "Black Cloak (White Trim)": {
+      description: "A black cloak finished with a thin white border — formal enough for a court, practical enough for the road.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 1.5, value: 15,
+      icon: "images/icons/cloak_black_white_trim.png"
+    },
+    "Black Cloak (Gold Trim)": {
+      description: "A black cloak edged with gold thread — expensive to make, unmistakable to those who know what they are looking at.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 1.5, value: 22,
+      icon: "images/icons/cloak_black_gold_trim.png"
+    },
+
+    // ── Worn Capes ──
+    "Worn Green Cape": {
+      description: "A faded green cape with unravelling edges — it has seen better days, but still turns a shoulder against the rain.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 1.0, value: 3,
+      icon: "images/icons/cape_worn_green.png"
+    },
+    "Worn Dark Green Cape": {
+      description: "A dark green cape worn thin at the hem — patched once or twice, but the colour still holds.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 1.0, value: 3,
+      icon: "images/icons/cape_worn_dark_green.png"
+    },
+    "Worn Burgundy Cape": {
+      description: "A burgundy cape faded to rust in places — once fine, now just serviceable.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 1.0, value: 3,
+      icon: "images/icons/cape_worn_burgundy.png"
+    },
+    "Worn Dark Brown Cape": {
+      description: "A dark brown travelling cape, creased and weathered from long use on the road.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 1.0, value: 3,
+      icon: "images/icons/cape_worn_dark_brown.png"
+    },
+    "Worn Black Cape": {
+      description: "A black cape greyed with road dust — still functional, though the dye has not survived the journey well.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 1.0, value: 3,
+      icon: "images/icons/cape_worn_black.png"
+    },
+    "Worn Red Cape": {
+      description: "A red cape washed to a dull rose — once probably striking, now simply lived-in.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 1.0, value: 3,
+      icon: "images/icons/cape_worn_red.png"
+    },
+
+    // ── Capelets ──
+    "Brown Capelet": {
+      description: "A short shoulder capelet of brown wool — doesn't reach far, but keeps the wind off the upper back.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 0.8, value: 5,
+      icon: "images/icons/capelet_brown.png"
+    },
+    "Green Capelet": {
+      description: "A short green capelet — common travelling wear, unassuming and practical.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 0.8, value: 5,
+      icon: "images/icons/capelet_green.png"
+    },
+    "Black Capelet": {
+      description: "A short black capelet — simple, neat, and gives nothing away.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 0.8, value: 5,
+      icon: "images/icons/capelet_black.png"
+    },
+    "Blue Capelet": {
+      description: "A short blue capelet of woven wool — unremarkable but presentable.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 0.8, value: 5,
+      icon: "images/icons/capelet_blue.png"
+    },
+    "Red Capelet": {
+      description: "A short red capelet — eye-catching but modest, the kind worn by couriers and minor officials.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 0.8, value: 6,
+      icon: "images/icons/capelet_red.png"
+    },
+    "Burgundy Capelet": {
+      description: "A short capelet in deep burgundy — richer in colour than the usual road fare, but still modest in cut.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 0.8, value: 6,
+      icon: "images/icons/capelet_burgundy.png"
+    },
+    "Tan Capelet": {
+      description: "A plain tan capelet — the colour of dust and pale stone, which suits most who wear it just fine.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 1 }, weight: 0.8, value: 4,
+      icon: "images/icons/capelet_tan.png"
+    },
+
+    // ── Noble Capelets ──
+    "Noble Blue Capelet": {
+      description: "A well-tailored blue capelet finished with braided cord — the kind worn by minor nobles and their household staff.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 0.9, value: 14,
+      icon: "images/icons/noble_capelet_blue.png"
+    },
+    "Noble Green Capelet": {
+      description: "A neatly cut green capelet with subtle embroidery along the edge — tasteful and clearly expensive.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 0.9, value: 14,
+      icon: "images/icons/noble_capelet_green.png"
+    },
+    "Noble Red Capelet": {
+      description: "A deep red capelet with a lined interior and pressed seams — made for someone who expects to be taken seriously.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 0.9, value: 15,
+      icon: "images/icons/noble_capelet_red.png"
+    },
+    "Noble Black Capelet": {
+      description: "A precisely cut black capelet with silk lining — worn by those with enough wealth to afford subtlety.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 0.9, value: 16,
+      icon: "images/icons/noble_capelet_black.png"
+    },
+    "Noble White Capelet": {
+      description: "A white capelet of fine-woven cloth, kept immaculate — impractical on the road, impressive everywhere else.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 0.9, value: 16,
+      icon: "images/icons/noble_capelet_white.png"
+    },
+    "Noble Violet Capelet": {
+      description: "A violet capelet with a deep lustre to the cloth — violet dye is not cheap, and whoever commissioned this knew it.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 2 }, weight: 0.9, value: 18,
+      icon: "images/icons/noble_capelet_violet.png"
+    },
+
+    // ── Noble Capes ──
+    "Noble Green Cape": {
+      description: "A full-length green cape of fine wool with a satin lining — the standard cut for minor nobility on formal travel.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 3 }, weight: 1.3, value: 20,
+      icon: "images/icons/noble_cape_green.png"
+    },
+    "Noble Red Cape": {
+      description: "A sweeping red cape with structured shoulders and a rich lining — worn to be seen, and effective at it.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 3 }, weight: 1.3, value: 22,
+      icon: "images/icons/noble_cape_red.png"
+    },
+    "Noble Black Cape": {
+      description: "A long black cape with clean lines and a heavy fall — severe, expensive, and hard to ignore.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 3 }, weight: 1.3, value: 22,
+      icon: "images/icons/noble_cape_black.png"
+    },
+    "Noble Dark Blue Cape": {
+      description: "A midnight blue cape with brass clasps and a wool-lined interior — understated authority made wearable.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 3 }, weight: 1.3, value: 24,
+      icon: "images/icons/noble_cape_dark_blue.png"
+    },
+    "Noble Blue Cape": {
+      description: "A bright blue noble's cape, well-pressed and generously cut — the sort of thing worn to reassure people that everything is fine.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 3 }, weight: 1.3, value: 20,
+      icon: "images/icons/noble_cape_blue.png"
+    },
+
+    // ── Ranger Cloaks (long; not wearable by Dwarves or Half-Goblins) ──
+    "Leather Ranger Cloak": {
+      description: "A full-length ranger's cloak of treated leather — waterproof, quiet in the undergrowth, and built to last a decade of hard use.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: { defense: 4 }, weight: 2.0, value: 28,
+      excludeRaces: ["Dwarf", "Half-Goblin"],
+      icon: "images/icons/leather_ranger_cloak.png"
+    },
+    "Worn Leather Ranger Cloak": {
+      description: "A long leather ranger's cloak, cracked at the seams and re-stitched in places — still functional, but clearly veteran.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Worn", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 2 }, weight: 2.0, value: 12,
+      excludeRaces: ["Dwarf", "Half-Goblin"],
+      icon: "images/icons/leather_ranger_cloak_worn.png"
+    },
+    "Green Ranger Cloak": {
+      description: "A long green cloak cut for movement in woodland — broad enough to conceal a pack, shaped to leave the arms free.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 3 }, weight: 1.8, value: 16,
+      excludeRaces: ["Dwarf", "Half-Goblin"],
+      icon: "images/icons/ranger_cloak_green.png"
+    },
+    "Brown Ranger Cloak": {
+      description: "A long brown travelling cloak, loose enough to move in and heavy enough to sleep under in a pinch.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 3 }, weight: 1.8, value: 14,
+      excludeRaces: ["Dwarf", "Half-Goblin"],
+      icon: "images/icons/ranger_cloak_brown.png"
+    },
+    "Olive Ranger Cloak": {
+      description: "A muted olive-coloured ranger's cloak — blends well in dry scrub and autumn woodland, which is precisely the point.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 3 }, weight: 1.8, value: 15,
+      excludeRaces: ["Dwarf", "Half-Goblin"],
+      icon: "images/icons/ranger_cloak_olive.png"
+    },
+    "Dark Green Ranger Cloak": {
+      description: "A long, dark green ranger's cloak — nearly invisible against forest shadow at dusk.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 3 }, weight: 1.8, value: 16,
+      excludeRaces: ["Dwarf", "Half-Goblin"],
+      icon: "images/icons/ranger_cloak_dark_green.png"
+    },
+    "Red Ranger Cloak": {
+      description: "A long red ranger's cloak — unusual for the profession, but some find the colour useful for entirely different reasons.",
+      type: "armor", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: { defense: 3 }, weight: 1.8, value: 14,
+      excludeRaces: ["Dwarf", "Half-Goblin"],
+      icon: "images/icons/ranger_cloak_red.png"
     },
 
     // ── Tabards ──
@@ -7576,14 +7856,14 @@ const Items = {
     "Stick Bundle": {
       description: "A bundle of sticks.",
       type: "material", consumable: false, wearable: false,
-      condition: "Dry", burnTime: 30, rarity: "Common",
+      condition: "Dry", burnTime: 60, rarity: "Common",
       baseEffect: {}, weight: 3.0, value: 5,
       icon: _I.icon("sticks.png")
     },
     "Firewood": {
       description: "A modest armful of chopped wood, enough to start or sustain a fire for a while.",
       type: "material", consumable: false, wearable: false,
-      condition: "Dry", burnTime: 60, rarity: "Common",
+      condition: "Dry", burnTime: 90, rarity: "Common",
       baseEffect: {}, weight: 3.0, value: 3,
       icon: _I.icon("firewood.png")
     },
@@ -8105,7 +8385,146 @@ const Items = {
       condition: "Good", burnTime: 0, rarity: "Rare",
       baseEffect: {}, weight: 1.3, value: 65, skillBook: "Mysticism",
       icon: _I.misc("parchment.png")
-    }
+    },
+
+    // ── Lore Books ───────────────────────────────────────────────────────────────
+    // History
+    "The Fall of the Aegrim Empire": {
+      description: "A scholarly account of the Aegrim Empire's collapse three centuries ago — how a succession war fractured the continent's greatest power into the ten kingdoms that remain today.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.3, value: 40, loreBook: "aegrim-empire-fall",
+      icon: _I.misc("parchment.png")
+    },
+    "Thirty Years of Silence": {
+      description: "A military history of the Sundering War — the grinding, generation-long conflict that remade the continent's borders and ended not with victory but with exhaustion.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 1.4, value: 55, loreBook: "the-sundering-war",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Kingdom Chronicles
+    "A Compact of Lords": {
+      description: "A chronicle of Ardrenhold's founding — the agreement between three noble families that shaped a kingdom built on pact rather than conquest.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 35, loreBook: "ardrenhold-founding-pact",
+      icon: _I.misc("parchment.png")
+    },
+    "The Iron Lords: A Ruling History": {
+      description: "An account of Feldarún's unusual ruling class — drawn not from warriors but from the mining engineers who keep the kingdom's deep veins from flooding or killing.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.2, value: 35, loreBook: "feldarun-iron-lords",
+      icon: _I.misc("parchment.png")
+    },
+    "Harbour and Sword": {
+      description: "A political account of how a forty-year tariff dispute between Naradreth's eastern and western lords hardened into the civil war now tearing the kingdom apart.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 35, loreBook: "naradreth-civil-war-roots",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Arcane Studies
+    "On the Six Schools of Arcane Thought": {
+      description: "A survey of the six magical traditions — Conjuration, Evocation, Divination, Illusion, Transmutation, and the rarely-discussed sixth school of Entropy.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.3, value: 40, loreBook: "six-schools-arcane",
+      icon: _I.misc("parchment.png")
+    },
+    "The Corrupted Spires: A Field Survey": {
+      description: "Notes from an expedition to three ancient towers in the northeast — structures that predate any known civilisation and which compasses behave strangely near.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 1.0, value: 50, loreBook: "corrupted-spires",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Bestiaries
+    "Trolls and Their Ways": {
+      description: "A practical field guide to hill troll behaviour — territorial habits, regeneration, ambush patterns, and why torches help more than swords.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.0, value: 25, loreBook: "hill-troll-behavior",
+      icon: _I.misc("parchment.png")
+    },
+    "Winged Threats of the Northern Peaks": {
+      description: "A study of the wyvern population in the Rendarost peaks — anatomy, hunting patterns, territorial nesting behaviour, and why the local militia maintains signal fires.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 30, loreBook: "wyverns-of-rendarost",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Legends & Folklore
+    "Songs from the Road": {
+      description: "A collection of travelling tales — including the legend of the Wandering Flame and the impossible accounts of Aldrath the Unbroken, a man who appeared in six kingdoms' histories across ninety years without aging.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.9, value: 22, loreBooks: ["the-wandering-flame", "aldrath-the-unbroken"],
+      icon: _I.misc("parchment.png")
+    },
+    "Heroes, Scoundrels & War the Goat": {
+      description: "Beloved bardic tales of War — a one-horned goat with a career more distinguished than most generals — and Bramblewim the Barbarimp, whose battleaxe is bigger than he is.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.9, value: 20, loreBooks: ["war-the-goat", "bramblewim-the-barbarimp"],
+      icon: _I.misc("parchment.png")
+    },
+    "Merwin's Collected Misadventures": {
+      description: "The documented magical disasters of Merwin the Lucky — a wizard whose spells have never done what he intended, yet who has survived everything the world has thrown at him.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.8, value: 18, loreBook: "merwin-the-lucky",
+      icon: _I.misc("parchment.png")
+    },
+    "Encounters on the Trading Road": {
+      description: "First-hand accounts of two improbable figures: Gundrow Blackfoot, who refuses to die, and Old Fenwick the Headless Merchant, whose goods are excellent and whose continued operation defies explanation.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 0.9, value: 20, loreBooks: ["gundrow-the-immortal-drunk", "old-fenwick-the-headless"],
+      icon: _I.misc("parchment.png")
+    },
+    "Strangers at the Bar": {
+      description: "Two unexplained figures who keep appearing across the continent: Aunt Margrit, who has apparently been old for centuries, and the Singing Sword of Dunmarch, which will not stop performing.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.0, value: 28, loreBooks: ["aunt-margrit-the-undying", "the-singing-sword-of-dunmarch"],
+      icon: _I.misc("parchment.png")
+    },
+    "The Eater Oak: Fact or Fable": {
+      description: "A careful investigation into the oldest tree in Elder Glade — the accounts of its voice, its hunger, and the consistent pattern of logging camps in the area going silent.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.0, value: 28, loreBook: "eater-oak-of-elder-glade",
+      icon: _I.misc("parchment.png")
+    },
+    "The Amber Moon Prophecies": {
+      description: "A scholarly analysis of the Amber Moon prophecy and the career of Crumblewick, son of Crumblewick — the chosen hero who is aware of the prophecy, finds it embarrassing, and maintains he is 'getting to it'.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 30, loreBook: "crumblewick-the-failed-hero",
+      icon: _I.misc("parchment.png")
+    },
+
+    // Religion & Geography
+    "The Seven Aspects: A Devotional": {
+      description: "A guide to the dominant faith of the continent — the seven Aspects of the divine, how temples honour them, and why the priests argue so much about what it all means.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      baseEffect: {}, weight: 1.0, value: 18, loreBook: "the-seven-aspects",
+      icon: _I.misc("parchment.png")
+    },
+    "The Sunken Reaches: A Surveyor's Memoir": {
+      description: "A surveyor's account of the lowland region that dropped several feet in living memory — a permanent wetland where paths change week to week and outside guides consider it the most dangerous terrain on the continent.",
+      type: "book", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      baseEffect: {}, weight: 1.1, value: 30, loreBook: "the-sunken-reaches",
+      icon: _I.misc("parchment.png")
+    },
   },
 
   Tools: {
@@ -8323,7 +8742,7 @@ const Items = {
       icon: _I.container("herb_pouch_small.png")
     },
     "Herb Pouch (Large)": {
-      description: "A generous herb pouch with divided compartments — holds a full herbalist's stock with room to spare.",
+      description: "A generous herb pouch with divided compartments — holds a full herbalist's stock with room to spare. Must be crafted from deer hide.",
       type: "misc", consumable: false, wearable: false,
       condition: "Good", burnTime: 0, rarity: "Uncommon",
       baseEffect: {}, weight: 0.6, value: 20,
@@ -8337,7 +8756,7 @@ const Items = {
       icon: _I.container("ingredient_pouch_small.png")
     },
     "Ingredient Pouch (Large)": {
-      description: "A large ingredient pouch with reinforced seams — a forager's best companion for extended trips.",
+      description: "A large ingredient pouch with reinforced seams — a forager's best companion for extended trips. Must be crafted from boar hide.",
       type: "misc", consumable: false, wearable: false,
       condition: "Good", burnTime: 0, rarity: "Uncommon",
       baseEffect: {}, weight: 0.8, value: 20,
@@ -8968,6 +9387,29 @@ const Items = {
       icon: _I.potion("potion_warmth_vial.png")
     },
 
+    // ── MANA VESSELS (for non-magical races) ────────────────────────────────────
+    "Arcane Talisman": {
+      description: "A flat tablet of pale grey stone etched with spiralling glyphs. Non-magical folk have long used these to store ambient arcane energy, drawing on it as needed. Warm to the touch near areas of magical activity.",
+      type: "accessory", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      manaVessel: 25, baseEffect: {}, weight: 0.2, value: 85,
+      icon: "images/icons/amulet_arcane.png"
+    },
+    "Mana Stone": {
+      description: "A rough-cut gem of compressed arcane essence — deep violet, almost black. Those with no natural mana pool can wear it to borrow its stored power. The charge fades slowly; it takes rest near ley lines to refill.",
+      type: "accessory", consumable: false, wearable: true,
+      condition: "Charged", burnTime: 0, rarity: "Rare",
+      manaVessel: 40, baseEffect: {}, weight: 0.3, value: 160,
+      icon: "images/icons/gem_mana.png"
+    },
+    "Runic Focus Amulet": {
+      description: "A carved bone amulet hung on a cord of twisted sinew. The runes channel ambient magical energy into a usable pool — a common tool among dwarven runepriests and human hedge-mages who lack innate arcane talent.",
+      type: "accessory", consumable: false, wearable: true,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      manaVessel: 20, baseEffect: {}, weight: 0.15, value: 65,
+      icon: "images/icons/amulet_runic.png"
+    },
+
     // ── ARÚVARI RELICS ──────────────────────────────────────────────────────────
     "Aelindra's Pendant": {
       description: "A pendant of carved dark stone, small enough to hold in a closed fist. The cord is old but unfrayed. Something about it resists easy description — the stone is neither warm nor cold, and the carved symbol on its face is not one you've seen in any map or book. It belonged to someone.",
@@ -8982,6 +9424,59 @@ const Items = {
       type: "tool", consumable: false, wearable: true, condition: "Good", burnTime: 0,
       rarity: "Rare", baseEffect: {}, weight: 0.3, value: 0, kingdom: null,
       icon: "images/icons/compass.png"
+    },
+
+    // ── QUEST: THE SLOW BECOMING ────────────────────────────────────────────────
+
+    "Moonwither Herb": {
+      description: "A small, pale-leafed herb that blooms only by moonlight. One of the sacred plants tended in the Grand Gardens of Sivanrift — it is forbidden to remove anything from those grounds. The herb emits a faint silver glow when dried. A key ingredient in an ancient corruption cure.",
+      type: "ingredient", consumable: false, wearable: false,
+      condition: "Fresh", burnTime: 0, rarity: "Rare",
+      questItem: true, baseEffect: {}, weight: 0.1, value: 0,
+      icon: "images/icons/herb_moonwither.png"
+    },
+    "Moonwither Seed": {
+      description: "A tiny seed of the Moonwither Herb, given freely by a grateful soul in Sivanrift. With patience and moonlit soil, it can be grown into the full herb. A slower path — but an honest one.",
+      type: "ingredient", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Uncommon",
+      questItem: true, baseEffect: {}, weight: 0.05, value: 0,
+      icon: "images/icons/seed_moonwither.png"
+    },
+    "Vial of Pure Elf Blood": {
+      description: "A small sealed vial of uncorrupted elven blood — deep crimson with a faint luminescence. Elven blood holds a trace of the ancient magic that makes their kind what they are. Essential for a corruption cure — and it must be pure. The corrupted cannot give what they no longer have.",
+      type: "ingredient", consumable: false, wearable: false,
+      condition: "Fresh", burnTime: 0, rarity: "Rare",
+      questItem: true, baseEffect: {}, weight: 0.1, value: 0,
+      icon: "images/icons/vial_elf_blood.png"
+    },
+    "Veldrite Crystal": {
+      description: "A deep-violet gem found only in the Ironback Mountains of Feldarún — prized by dwarven alchemists for its unique resonance with corrupted magical energy. Three were found. Only one is needed for the cure; the others are yours to keep or sell.",
+      type: "gem", consumable: false, wearable: false,
+      condition: "Intact", burnTime: 0, rarity: "Rare",
+      baseEffect: {}, weight: 0.2, value: 200,
+      icon: "images/icons/gem_veldrite.png"
+    },
+    "Ironbrand Family Ring": {
+      description: "A heavy iron ring engraved with a square-and-flame emblem — the mark of the Ironbrand clan of Feldarún. Crafted four generations ago by a master smith. The emblem is unmistakable to any dwarf who sees it. Whoever owns this would not have lost it willingly.",
+      type: "misc", consumable: false, wearable: false,
+      condition: "Good", burnTime: 0, rarity: "Common",
+      questItem: true, baseEffect: {}, weight: 0.1, value: 0,
+      icon: "images/icons/ring_ironbrand.png"
+    },
+    "Corruption Delay Tincture": {
+      description: "A dark, bitter liquid brewed by Davolar from ingredients found near the Crimson Valley. It does not cure corruption — it suspends it. Drinking it will buy several days before the corruption advances again. Davolar warned not to rely on it.",
+      type: "potion", consumable: true, wearable: false,
+      condition: "Fresh", burnTime: 0, rarity: "Rare",
+      baseEffect: { applyCondition: "corruption_delayed", duration: 4 }, weight: 0.3, value: 0,
+      questItem: true,
+      icon: "images/icons/potion_delay.png"
+    },
+    "Sarsett's Note": {
+      description: "A folded piece of paper, sealed with no wax. Your name is written on the outside in a hand you recognise. You found it on her.",
+      type: "misc", consumable: false, wearable: false,
+      condition: "Fragile", burnTime: 0, rarity: "Common",
+      questItem: true, baseEffect: {}, weight: 0,  value: 0,
+      icon: "images/icons/note_letter.png"
     },
   }
 

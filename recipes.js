@@ -92,11 +92,41 @@ const Recipes = {
       requires: [{ item: 'Thornleaf', qty: 2 }, { item: 'Lungwort', qty: 1 }],
       produces: { item: 'Bandage', qty: 3 } },
 
-    // Materials
+    // Materials & leatherwork
     { name: 'Leather Wrap',
       skill: 'Sewing',
       requires: [{ item: 'Deer Hide', qty: 1 }],
       produces: { item: 'Leather Wrap', qty: 1 } },
+
+    { name: 'Herb Pouch (Large)',
+      skill: 'Sewing',
+      requires: [{ item: 'Deer Hide', qty: 2 }, { item: 'Crafting Knife', qty: 1, tool: true }],
+      produces: { item: 'Herb Pouch (Large)', qty: 1 } },
+
+    { name: 'Ingredient Pouch (Large)',
+      skill: 'Sewing',
+      requires: [{ item: 'Boar Hide', qty: 2 }, { item: 'Crafting Knife', qty: 1, tool: true }],
+      produces: { item: 'Ingredient Pouch (Large)', qty: 1 } },
+
+    { name: 'Craft Leather Armor',
+      skill: 'Sewing',
+      requires: [{ item: 'Leather', qty: 3 }],
+      produces: { item: 'Leather Armor', qty: 1 } },
+
+    { name: 'Craft Leather Helmet',
+      skill: 'Sewing',
+      requires: [{ item: 'Leather', qty: 1 }],
+      produces: { item: 'Leather Helmet', qty: 1 } },
+
+    { name: 'Craft Leather Bracers',
+      skill: 'Sewing',
+      requires: [{ item: 'Leather', qty: 1 }],
+      produces: { item: 'Leather Bracers', qty: 1 } },
+
+    { name: 'Craft Gambeson',
+      skill: 'Sewing',
+      requires: [{ item: 'Cloth Roll', qty: 2 }, { item: 'Leather', qty: 1 }],
+      produces: { item: 'Gambeson', qty: 1 } },
 
     { name: 'Stick Bundle',
       skill: 'Crafting',
@@ -652,26 +682,6 @@ const Recipes = {
       produces: { item: 'Iron Kite Shield', qty: 1 } },
 
     // ─ Armor ─────────────────────────────────────────────────────────────────
-    { name: 'Craft Leather Armor',
-      skill: 'Sewing',
-      requires: [{ item: 'Leather', qty: 3 }],
-      produces: { item: 'Leather Armor', qty: 1 } },
-
-    { name: 'Craft Leather Helmet',
-      skill: 'Sewing',
-      requires: [{ item: 'Leather', qty: 1 }],
-      produces: { item: 'Leather Helmet', qty: 1 } },
-
-    { name: 'Craft Leather Bracers',
-      skill: 'Sewing',
-      requires: [{ item: 'Leather', qty: 1 }],
-      produces: { item: 'Leather Bracers', qty: 1 } },
-
-    { name: 'Craft Gambeson',
-      skill: 'Sewing',
-      requires: [{ item: 'Cloth Roll', qty: 2 }, { item: 'Leather', qty: 1 }],
-      produces: { item: 'Gambeson', qty: 1 } },
-
     { name: 'Craft Chainmail Shirt',
       skill: 'Smithing',
       requires: [{ item: 'Iron Ingot', qty: 4 }, { item: 'Hammer', qty: 1, tool: true }],

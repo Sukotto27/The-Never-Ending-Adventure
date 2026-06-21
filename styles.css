@@ -282,6 +282,19 @@ h4 {
 #life-bar    { background-color: #c0281a; }
 #stamina-bar { background-color: #1e8a42; }
 #mana-bar    { background-color: #1a4acc; }
+#mana-bar.mana-bar-temp {
+  background-color: #8b2020;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent, transparent 8px,
+    rgba(220,60,60,0.25) 8px, rgba(220,60,60,0.25) 10px
+  );
+  animation: mana-pulse 1.8s ease-in-out infinite;
+}
+@keyframes mana-pulse {
+  0%, 100% { filter: brightness(1); }
+  50%       { filter: brightness(1.3); }
+}
 
 /* center the text inside the colored bar */
 #life-bar span,
@@ -474,19 +487,19 @@ h4 {
   max-width: 100%;
   position: relative;                 /* needed for the pseudo borders */
   z-index: 1;                         /* stay above body::after night vignette (z-index:0) */
-  border: 1px solid silver;
+  border: 1px solid rgba(212,168,48,0.22);
   background: rgba(0, 0, 0, 0.5);
   box-sizing: border-box;
   padding-right: 30px;
   height: 70vh;
 }
 
-/* Duplicate the double-offset borders */
+/* Triple-offset borders */
 #main-content::before,
 #main-content::after {
   content: '';
   position: absolute;
-  border: 1px solid silver;
+  border: 1px solid rgba(212,168,48,0.22);
   pointer-events: none;               /* borders never block clicks */
 }
 
@@ -1515,6 +1528,16 @@ h4 {
 .inventory-item.equipped {
     background-color: rgba(0, 0, 128, 0.5);
     border: 2px solid blue;
+}
+
+.inventory-item.race-restricted,
+.trade-item.race-restricted {
+    opacity: 0.35;
+    filter: grayscale(0.5);
+}
+.inventory-item.race-restricted:hover,
+.trade-item.race-restricted:hover {
+    opacity: 0.55;
 }
 
 .inventory-item {
@@ -4625,12 +4648,47 @@ h4 {
   border-radius: 3px;
   padding: 1.6rem 3.8rem 1.6rem 2.8rem;
   min-width: 300px;
+  position: relative;
   /* Glass blur over the image */
   backdrop-filter: blur(7px) brightness(0.85);
   -webkit-backdrop-filter: blur(7px) brightness(0.85);
   box-shadow:
     0 8px 40px rgba(0,0,0,0.6),
     inset 0 0 0 1px rgba(255,255,255,0.04);
+  /* Hidden until first interaction */
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+/* Triple-offset borders on the title menu — mirrors #main-content */
+#ts-menu::before,
+#ts-menu::after {
+  content: '';
+  position: absolute;
+  border: 1px solid rgba(212,168,48,0.22);
+  pointer-events: none;
+}
+
+#ts-menu::before {
+  top: -10px;
+  left: 10px;
+  right: 10px;
+  bottom: -10px;
+}
+
+#ts-menu::after {
+  top: 10px;
+  left: -10px;
+  right: -10px;
+  bottom: 10px;
+}
+
+#ts-menu.ts-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .ts-btn {
@@ -4689,6 +4747,53 @@ h4 {
   color: rgba(220,200,155,0.45);
   letter-spacing: 0.2em;
   text-shadow: 0 1px 5px rgba(0,0,0,0.9);
+  opacity: 0;
+  transition: opacity 0.8s ease 0.3s;
+}
+
+#ts-tagline.ts-visible {
+  opacity: 1;
+}
+
+/* ── Dark entry vignette ────────────────────────────────── */
+
+#ts-dark-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: rgba(4, 1, 0, 0.94);
+  pointer-events: none;
+  transition: opacity 2.2s ease;
+}
+
+#ts-dark-vignette.ts-revealed {
+  opacity: 0;
+}
+
+/* ── "Press any button" prompt ──────────────────────────── */
+
+#ts-press-prompt {
+  font-family: 'CelticHand', serif;
+  font-size: 1.05rem;
+  color: rgba(220, 195, 140, 0.9);
+  letter-spacing: 0.26em;
+  text-shadow:
+    0 0 28px rgba(220,175,70,0.55),
+    0 1px 5px rgba(0,0,0,0.95);
+  animation: ts-prompt-pulse 1.6s ease-in-out infinite;
+  transition: opacity 0.45s ease;
+  user-select: none;
+}
+
+#ts-press-prompt.ts-hidden {
+  opacity: 0;
+  pointer-events: none;
+  animation: none;
+}
+
+@keyframes ts-prompt-pulse {
+  0%, 100% { opacity: 1;    }
+  50%       { opacity: 0.15; }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -4936,6 +5041,200 @@ h4 {
   color: #c09050;
   line-height: 1.45;
   opacity: 0.9;
+}
+
+/* ── Bonus attribute slide ──────────────────────────────── */
+.cc-slide-attrs {
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.cc-attr-slide-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 24px;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(178,136,46,0.4) transparent;
+}
+
+.cc-attr-header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.cc-attr-count {
+  font-size: 0.78rem;
+  color: rgba(201,168,76,0.65);
+  letter-spacing: 0.05em;
+  font-style: italic;
+}
+
+.cc-attr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 680px;
+}
+
+.cc-attr-card {
+  background: linear-gradient(155deg, #3a1a08 0%, #271205 100%);
+  border: 1px solid rgba(178,136,46,0.22);
+  border-radius: 5px;
+  padding: 11px 12px 11px 10px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.18s, transform 0.14s, background 0.18s;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  box-sizing: border-box;
+}
+
+.cc-attr-card:hover {
+  border-color: rgba(178,136,46,0.55);
+  transform: translateY(-2px);
+}
+
+.cc-attr-card.cc-selected {
+  border-color: rgba(220,185,60,0.85);
+  background: linear-gradient(155deg, #4a220a 0%, #371608 100%);
+  box-shadow: 0 0 10px rgba(220,185,60,0.2), inset 0 0 8px rgba(220,185,60,0.07);
+}
+
+.cc-attr-card.cc-attr-disabled {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
+}
+
+.cc-attr-check {
+  position: absolute;
+  top: 7px;
+  right: 9px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(178,136,46,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  color: transparent;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.cc-attr-card.cc-selected .cc-attr-check {
+  background: rgba(220,185,60,0.88);
+  border-color: rgba(220,185,60,0.88);
+  color: #1a0800;
+}
+
+.cc-attr-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+  flex-shrink: 0;
+  padding-top: 1px;
+  opacity: 0.85;
+}
+
+.cc-attr-body {
+  flex: 1;
+  min-width: 0;
+  padding-right: 18px;
+}
+
+.cc-attr-name {
+  font-family: CelticHand, serif;
+  font-size: 0.92rem;
+  color: #d4a830;
+  margin-bottom: 2px;
+  line-height: 1.2;
+}
+
+.cc-attr-effect {
+  font-size: 0.66rem;
+  color: rgba(220,185,60,0.75);
+  margin-bottom: 4px;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+}
+
+.cc-attr-desc {
+  font-size: 0.68rem;
+  color: #9a7038;
+  line-height: 1.38;
+}
+
+/* ── Quiz slide (step 6) ────────────────────────────────── */
+.cc-quiz-slide-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  max-width: 660px;
+  padding: 4px 2px 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(178,136,46,0.4) transparent;
+}
+
+.cc-quiz-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.cc-quiz-q {
+  font-family: CelticHand, serif;
+  font-size: 0.86rem;
+  color: #d4a830;
+  text-align: center;
+  letter-spacing: 0.02em;
+  padding: 0 6px;
+  line-height: 1.35;
+}
+
+.cc-quiz-answers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.cc-ans-card {
+  background: linear-gradient(155deg, #3a1a08 0%, #271205 100%);
+  border: 1px solid rgba(178,136,46,0.22);
+  border-radius: 5px;
+  padding: 10px 13px;
+  font-size: 0.71rem;
+  color: #9a7038;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.12s, color 0.15s;
+}
+
+.cc-ans-card:hover {
+  border-color: rgba(178,136,46,0.55);
+  color: #b8922a;
+  transform: translateY(-1px);
+}
+
+.cc-ans-card.cc-selected {
+  border-color: rgba(220,185,60,0.85);
+  background: linear-gradient(155deg, #4a220a 0%, #371608 100%);
+  color: #d4a830;
+  box-shadow: 0 0 8px rgba(220,185,60,0.15);
 }
 
 /* ── Profession two-phase layout ───────────────────────── */
@@ -5829,6 +6128,11 @@ h4 {
   padding: 0.4rem 0.5rem;
 }
 
+#bksec-char-creation .cc-slide-attrs {
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
 /* ═══════════════════════════════════════════════════════════
    CHARACTER CREATION MODAL OVERLAY
    Full-screen centered dialog, blurs everything behind it.
@@ -5924,12 +6228,23 @@ h4 {
   scrollbar-color: rgba(178,136,46,0.4) transparent;
 }
 
-/* Confirm slide (step 7) delegates scrolling to inner .cc-sheet-scroll */
+/* Confirm slide (step 8) delegates scrolling to inner .cc-sheet-scroll */
 #cc-modal-overlay .cc-slide-confirm {
   flex: 1 !important;
   min-height: 0 !important;
   flex-direction: column !important;
   align-items: stretch !important;
+  justify-content: flex-start !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+/* Attributes slide (step 7) delegates scrolling to inner .cc-attr-slide-inner */
+#cc-modal-overlay .cc-slide-attrs {
+  flex: 1 !important;
+  min-height: 0 !important;
+  flex-direction: column !important;
+  align-items: center !important;
   justify-content: flex-start !important;
   overflow: hidden !important;
   padding: 0 !important;
@@ -6554,3 +6869,626 @@ h4 {
   margin-top: 4px;
 }
 .ss-cancel:hover { background: rgba(138,96,48,0.5); }
+
+/* ═══════════════════════════════════════════════════════════════
+   LUTE PANE
+   ═══════════════════════════════════════════════════════════════ */
+
+#bksec-lute {
+  overflow-y: auto;
+  padding: 0;
+}
+
+.lute-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* ─── Header ─────────────────────────────────────────────────── */
+.lute-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(92,58,30,0.25);
+}
+.lute-title {
+  font-family: 'CelticHand', serif;
+  font-size: 1.1em;
+  color: #5c3a1e;
+  flex-shrink: 0;
+}
+.lute-xp-track {
+  flex: 1;
+  height: 5px;
+  background: rgba(92,58,30,0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.lute-xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b6040, #c8a96e);
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+.lute-xp-label {
+  font-size: 0.7em;
+  color: #8b6040;
+  flex-shrink: 0;
+}
+
+/* ─── Empty state ────────────────────────────────────────────── */
+.lute-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #7a5030;
+}
+.lute-empty-icon { font-size: 2.5em; margin-bottom: 10px; }
+.lute-empty p   { margin: 6px 0; font-size: 0.9em; }
+.lute-empty-hint { opacity: 0.65; font-size: 0.82em !important; font-style: italic; }
+
+/* ─── Mode tabs ──────────────────────────────────────────────── */
+.lute-tabs {
+  display: flex;
+  gap: 3px;
+  background: rgba(92,58,30,0.07);
+  border-radius: 5px;
+  padding: 3px;
+}
+.lute-tab {
+  flex: 1;
+  padding: 4px 4px;
+  font-size: 0.72em;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #8b6040;
+  font-family: inherit;
+  transition: all 0.13s;
+  white-space: nowrap;
+}
+.lute-tab:hover:not(:disabled) { background: rgba(92,58,30,0.13); }
+.lute-tab--on {
+  background: #c8a96e !important;
+  color: #1a0a00 !important;
+  border-color: #8b6040 !important;
+  font-weight: bold;
+}
+.lute-tab--locked { opacity: 0.45; cursor: not-allowed; }
+
+/* ─── Fretboard ──────────────────────────────────────────────── */
+.lute-mode-body { flex-shrink: 0; }
+
+.lute-fb {
+  display: grid;
+  grid-template-columns: 34px repeat(8, 1fr);
+  gap: 2px;
+  background: #100804;
+  border: 2px solid #3a1e08;
+  border-radius: 5px;
+  padding: 4px;
+}
+
+/* Generic fret cell */
+.lf {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: center;
+  font-size: 0.63em;
+  padding: 5px 2px;
+  color: #b89060;
+  transition: background 0.1s, color 0.1s, box-shadow 0.1s;
+  user-select: none;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lf:hover { background: #4a2810; color: #f0c070; }
+
+/* Header row */
+.lf-hdr {
+  background: transparent;
+  border: none;
+  cursor: default;
+  color: #6a4020;
+  font-size: 0.58em;
+  font-weight: bold;
+}
+.lf-hdr:hover { background: transparent; color: #6a4020; }
+
+/* String label */
+.lf-str {
+  background: transparent;
+  border: none;
+  cursor: default;
+  color: #8a5828;
+  font-style: italic;
+  font-size: 0.6em;
+  text-align: right;
+  padding-right: 3px;
+}
+.lf-str:hover { background: transparent; color: #8a5828; }
+
+/* States */
+.lf--lit {
+  background: #c8a96e !important;
+  color: #0a0500 !important;
+  box-shadow: 0 0 8px rgba(200,169,110,0.7);
+}
+.lf--chord {
+  background: #072812 !important;
+  color: #48c878 !important;
+  border-color: #1a7040 !important;
+}
+.lf--chord:hover { background: #0f3a1c !important; }
+.lf--scale {
+  background: #1a1400 !important;
+  color: #f5c540 !important;
+  border-color: #7a6000 !important;
+}
+.lf--scale:hover { background: #262000 !important; }
+.lf--x {
+  background: #0a0604;
+  border-color: #1a0c06;
+  cursor: default;
+}
+.lf--x:hover { background: #0a0604; }
+
+/* ─── Chord row ──────────────────────────────────────────────── */
+.lute-chord-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.lc-chord {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  color: #b89060;
+  border-radius: 4px;
+  padding: 3px 9px;
+  cursor: pointer;
+  font-size: 0.78em;
+  font-family: inherit;
+  transition: all 0.13s;
+}
+.lc-chord:hover { background: #4a2810; color: #f0c070; }
+.lc-chord--on {
+  background: #072812 !important;
+  color: #48c878 !important;
+  border-color: #1a7040 !important;
+}
+
+/* ─── Scale row ──────────────────────────────────────────────── */
+.lute-scale-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 5px;
+  font-size: 0.78em;
+  color: #7a5030;
+}
+.lute-scale-row select {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  color: #b89060;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: 0.9em;
+}
+.lute-scale-tog {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  color: #b89060;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 0.85em;
+  font-family: inherit;
+  transition: all 0.13s;
+}
+.lute-scale-tog--on { background: #1a1400 !important; color: #f5c540 !important; border-color: #7a6000 !important; }
+
+/* ─── Key legend ─────────────────────────────────────────────── */
+.lute-legend {
+  background: rgba(20,10,4,0.4);
+  border: 1px solid rgba(92,58,30,0.2);
+  border-radius: 4px;
+  padding: 5px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lute-legend-row { display: flex; gap: 3px; flex-wrap: wrap; }
+.lk {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.58em;
+  color: #8a6030;
+  font-family: 'Courier New', monospace;
+}
+
+/* ─── Action buttons ─────────────────────────────────────────── */
+.lute-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.lute-act-btn {
+  flex: 1;
+  background: #4a2810;
+  border: 1px solid #7a5030;
+  color: #f0c880;
+  border-radius: 5px;
+  padding: 7px 8px;
+  cursor: pointer;
+  font-size: 0.78em;
+  font-family: inherit;
+  transition: all 0.14s;
+}
+.lute-act-btn:hover:not(:disabled) { background: #7a5030; color: #fff5d0; }
+.lute-act-btn:disabled, .lute-act-btn--off { opacity: 0.38; cursor: not-allowed; }
+.lute-act-btn--minor {
+  background: #2a1106;
+  color: #b89060;
+}
+.lute-act-btn--minor:hover:not(:disabled) { background: #3a1a0a; color: #f0c070; }
+
+/* ─── Composer ───────────────────────────────────────────────── */
+.lc-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lc-controls {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.76em;
+  color: #7a5030;
+}
+.lc-controls label { display: flex; align-items: center; gap: 3px; }
+.lc-controls select {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  color: #b89060;
+  border-radius: 3px;
+  padding: 2px 3px;
+  font-family: inherit;
+  font-size: 0.9em;
+}
+.lc-name-in {
+  flex: 1;
+  min-width: 80px;
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  color: #b89060;
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-family: inherit;
+  font-size: 0.9em;
+}
+.lc-name-in:focus { outline: 1px solid #8b6040; }
+.lc-btn {
+  background: #4a2810;
+  border: 1px solid #7a5030;
+  color: #f0c880;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 0.82em;
+  font-family: inherit;
+  transition: all 0.13s;
+  white-space: nowrap;
+}
+.lc-btn:hover { background: #7a5030; }
+.lc-btn--danger { background: #2a0a0a; border-color: #7a2020; color: #d07070; }
+.lc-btn--danger:hover { background: #4a1515; }
+
+.lc-beats-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+}
+.lc-beat {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  border-radius: 4px;
+  padding: 4px 2px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 0.68em;
+  color: #b89060;
+  transition: all 0.13s;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.lc-beat:hover { background: #3a1a0a; border-color: #7a5030; }
+.lc-beat--editing { border-color: #c8a96e !important; background: #3a2510 !important; }
+.lc-beat--playing {
+  background: #072812 !important;
+  color: #48c878 !important;
+  border-color: #1a7040 !important;
+  box-shadow: 0 0 6px rgba(72,200,120,0.4);
+}
+.lc-beat-n { font-size: 0.7em; opacity: 0.45; }
+.lc-beat-v { font-weight: bold; color: #f0c880; font-size: 0.95em; }
+
+/* Beat picker */
+.lc-picker {
+  background: rgba(10,5,2,0.96);
+  border: 1px solid #7a5030;
+  border-radius: 5px;
+  padding: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  animation: lute-in 0.13s ease;
+}
+@keyframes lute-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+.lc-picker-hd {
+  width: 100%;
+  font-size: 0.75em;
+  color: #8a6030;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+}
+.lc-picker-hd button {
+  background: none;
+  border: none;
+  color: #8a6030;
+  cursor: pointer;
+  font-size: 1em;
+  padding: 0 3px;
+}
+.lc-pick-sec {
+  width: 100%;
+  font-size: 0.62em;
+  color: #6a4020;
+  border-top: 1px solid rgba(92,58,30,0.25);
+  padding-top: 3px;
+  margin-top: 2px;
+}
+.lc-pick {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  color: #b89060;
+  border-radius: 3px;
+  padding: 3px 7px;
+  cursor: pointer;
+  font-size: 0.73em;
+  font-family: inherit;
+  transition: all 0.1s;
+}
+.lc-pick:hover { background: #4a2810; color: #f0c070; }
+.lc-pick--clear { color: #d07070; border-color: #7a2020; }
+
+/* Saved songs */
+.lc-saved {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(92,58,30,0.18);
+  padding-top: 5px;
+  font-size: 0.75em;
+}
+.lc-saved-lbl { color: #6a4020; flex-shrink: 0; }
+.lc-saved-btn {
+  background: #2a1106;
+  border: 1px solid #4a2810;
+  color: #b89060;
+  border-radius: 3px;
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-family: inherit;
+  transition: all 0.1s;
+}
+.lc-saved-btn:hover { background: #4a2810; color: #f0c070; }
+/* ═══════════════════════════════════════════════════════════════
+   CHARACTER CREATION — Body Type, Pronouns, Appearance
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Culture cards with silhouette background ─────────────── */
+.cc-culture-has-silhouette .cc-card-inner {
+  position: relative;
+  overflow: hidden;
+}
+.cc-culture-has-silhouette .cc-card-inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--cc-sil);
+  background-size: contain;
+  background-position: center center;
+  background-repeat: no-repeat;
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+/* ── Body Type cards ──────────────────────────────────────── */
+.cc-body-type-row {
+  gap: 24px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.cc-body-card {
+  width: 140px;
+  min-height: 180px;
+  cursor: pointer;
+  border: 2px solid #7a4820;
+  border-radius: 8px;
+  background: rgba(180,120,60,0.08);
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  position: relative;
+  overflow: hidden;
+}
+.cc-body-card:hover {
+  border-color: #c08040;
+  background: rgba(180,120,60,0.14);
+  transform: translateY(-2px);
+}
+.cc-body-card.cc-selected {
+  border-color: #d4a060;
+  background: rgba(180,120,60,0.22);
+  box-shadow: 0 0 10px rgba(180,120,60,0.3);
+}
+
+.cc-body-card-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-height: 180px;
+  padding: 12px 8px;
+  position: relative;
+}
+.cc-body-card-inner.cc-body-has-sil::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--cc-body-sil);
+  background-size: contain;
+  background-position: center 30%;
+  background-repeat: no-repeat;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.cc-body-icon {
+  font-size: 24px;
+  margin-bottom: 6px;
+  position: relative;
+}
+.cc-body-label {
+  font-size: 14px;
+  font-weight: bold;
+  color: #3a2010;
+  font-family: CelticHand, serif;
+  position: relative;
+}
+
+/* ── Pronoun row ──────────────────────────────────────────── */
+.cc-pronoun-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cc-pronoun-label {
+  font-size: 12px;
+  color: #6b3c1a;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: CelticHand, serif;
+}
+.cc-pronoun-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.cc-pronoun-btn {
+  padding: 5px 14px;
+  border: 1.5px solid #8a5028;
+  border-radius: 20px;
+  background: transparent;
+  color: #3a2010;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cc-pronoun-btn:hover {
+  border-color: #c08040;
+  background: rgba(180,120,60,0.1);
+}
+.cc-pronoun-btn.cc-pronoun-sel {
+  border-color: #d4a060;
+  background: rgba(180,120,60,0.2);
+  color: #1a0c04;
+  font-weight: bold;
+}
+
+/* ── Appearance slide ─────────────────────────────────────── */
+.cc-slide-appearance {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  overflow-y: auto !important;
+  padding: 4px 2px !important;
+}
+
+.cc-appearance-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.cc-app-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cc-app-label {
+  font-size: 11px;
+  font-weight: bold;
+  color: #6b3c1a;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-family: CelticHand, serif;
+}
+
+.cc-app-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cc-app-pill {
+  padding: 4px 11px;
+  border: 1.5px solid #9a6030;
+  border-radius: 16px;
+  background: transparent;
+  color: #3a2010;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.cc-app-pill:hover {
+  border-color: #c08040;
+  background: rgba(180,120,60,0.1);
+}
+.cc-app-pill.cc-app-sel {
+  border-color: #d4a060;
+  background: rgba(180,120,60,0.22);
+  color: #1a0c04;
+  font-weight: bold;
+}

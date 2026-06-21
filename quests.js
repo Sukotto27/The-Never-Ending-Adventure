@@ -165,7 +165,7 @@ const quests = [
       },
       {
         id: 'sleep',
-        text: 'Sleep for the night. [Survival → Camp → Sleep, or Survival → Rest if exhausted]',
+        text: 'Sleep for the night. Build a Simple Shelter first (Encampment → Shelter → Build Simple Shelter), then choose Sleep. Alternatively, use Survival → Rest.',
         type: 'sleep',
         target: {},
         completion: { type: 'slept' },
@@ -2386,6 +2386,118 @@ const quests = [
         },
       ],
       special: [],
+    },
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE SLOW BECOMING
+  // ══════════════════════════════════════════════════════════════════════════
+
+  {
+    id: 'the_slow_becoming',
+    name: 'The Slow Becoming',
+    type: 'main',
+    categories: ['Mysteries/Unexplainable Events', 'Helping those in need', 'Missing persons', 'Exploration'],
+    description: 'A woman calling herself Ithris has crossed your path — beautiful, clever, and clearly keeping something from you. She wants something. Whether she\'ll admit that before it\'s too late remains to be seen.',
+    kingdom: null,
+    acquisition: {
+      description: 'Encountered while traveling. Triggered automatically by a scripted random event.',
+      trigger: { type: 'scripted', handler: '_meetIthris' },
+    },
+    objectives: [
+      {
+        id: 'meet_ithris',
+        text: 'You\'ve met a woman calling herself Ithris. There is something she isn\'t saying. Spend time with her — she seems willing to travel.',
+        type: 'complete',
+        target: {},
+        completion: { type: 'flag', key: 'met_ithris', value: true },
+        onComplete: { setFlag: { key: 'met_ithris', value: true } },
+      },
+      {
+        id: 'build_rapport',
+        text: 'Get to know Ithris. [Talk to her via the Actions wheel while she travels with you]',
+        type: 'complete',
+        target: { hint: 'Speak with her several times. She doesn\'t open up easily.' },
+        completion: { type: 'flag', key: 'rapport_built', value: true },
+        onComplete: { setFlag: { key: 'rapport_built', value: true } },
+      },
+      {
+        id: 'the_truth',
+        text: 'Something has shifted between you. The truth is close — one way or another.',
+        type: 'complete',
+        target: { hint: 'How this plays out depends on what she believes about you.' },
+        completion: { type: 'flag', key: 'truth_moment_passed', value: true },
+        onComplete: { setFlag: { key: 'truth_moment_passed', value: true } },
+      },
+      {
+        id: 'find_moonwither_herb',
+        text: 'Travel to Sivanrift and obtain the Moonwither Herb from the Grand Gardens. Taking from these gardens is forbidden — but there may be another way.',
+        type: 'acquire',
+        target: { item: 'Moonwither Herb', hint: 'The Grand Gardens of Sivanrift. Ask around — or find your own way in.' },
+        completion: { type: 'hasItem', item: 'Moonwither Herb', qty: 1 },
+        onComplete: { setFlag: { key: 'herb_obtained', value: true } },
+      },
+      {
+        id: 'find_elf_blood',
+        text: 'Obtain a vial of pure, uncorrupted elf blood. Any full-blooded elf will do — so long as they are untainted.',
+        type: 'acquire',
+        target: { item: 'Vial of Pure Elf Blood', hint: 'She cannot give her own. Her blood is no longer what it was.' },
+        completion: { type: 'hasItem', item: 'Vial of Pure Elf Blood', qty: 1 },
+        onComplete: { setFlag: { key: 'blood_obtained', value: true } },
+      },
+      {
+        id: 'enter_feldarun_mine',
+        text: 'Travel to Feldarún and recover a Veldrite Crystal from the Ironback Mountains. Elves are not welcome there — and Sarsett cannot follow.',
+        type: 'acquire',
+        target: { item: 'Veldrite Crystal', hint: 'The mine entrance is guarded. There is more than one way past a guard.' },
+        completion: { type: 'hasItem', item: 'Veldrite Crystal', qty: 1 },
+        onComplete: { setFlag: { key: 'crystal_obtained', value: true } },
+      },
+      {
+        id: 'find_davolar',
+        text: 'Find the hermit alchemist Davolar, who lives somewhere near the Crimson Valley. He is the only one who can brew what you need.',
+        type: 'travel',
+        target: { area: 'Davolar\'s Workshop', hint: 'Ask travelers near the Crimson Valley. Few know of him — but some do.' },
+        completion: { type: 'flag', key: 'davolar_found', value: true },
+        onComplete: { setFlag: { key: 'davolar_found', value: true } },
+      },
+      {
+        id: 'deliver_to_davolar',
+        text: 'Deliver all three ingredients to Davolar and ask him to brew the cure.',
+        type: 'deliver',
+        target: { npc: 'Davolar', item: 'ingredients', hint: 'He will need the Moonwither Herb, the Vial of Pure Elf Blood, and the Veldrite Crystal.' },
+        completion: { type: 'flag', key: 'ingredients_delivered', value: true },
+        onComplete: { setFlag: { key: 'ingredients_delivered', value: true } },
+      },
+      {
+        id: 'wait_for_brew',
+        text: 'Wait three days for Davolar to complete the cure. He works alone. Return when the time has passed.',
+        type: 'sleep',
+        target: { hint: 'Rest and wait. Three days is not so long — though for her it may feel otherwise.' },
+        completion: { type: 'flag', key: 'brew_complete', value: true },
+        onComplete: { setFlag: { key: 'brew_complete', value: true } },
+      },
+      {
+        id: 'administer_cure',
+        text: 'Return to Davolar and collect the cure. Then find Sarsett before it is too late.',
+        type: 'complete',
+        target: {},
+        completion: { type: 'flag', key: 'quest_resolved', value: true },
+        onComplete: {
+          setFlag: { key: 'quest_resolved', value: true },
+          setPlayerFlag: { key: 'corruptionImmune', value: false },
+        },
+      },
+    ],
+    rewards: {
+      experience: 800,
+      gold: 0,
+      items: [],
+      skills: { Persuasion: 4, Mysticism: 3 },
+      special: [
+        { type: 'flag', key: 'completed_slow_becoming', value: true },
+        { type: 'reputation', kingdom: 'Nithrond', value: 20 },
+      ],
     },
   },
 

@@ -115,6 +115,22 @@ const NPCGenerator = (() => {
       ],
     },
 
+    // Quin: ancient progenitors of elvenkind. Names carry nature-root sounds,
+    // older and more primal than elven. Not in RACE_TABLE or ALL_RACES —
+    // generated only via lore-gated discovery encounters.
+    Quin: {
+      m: [
+        'Quael',   'Aevran',  'Ilvaeth', 'Sylvaer',  'Naerith',
+        'Quelaer', 'Eluven',  'Aethviel','Ilvandor', 'Sylvindel',
+        'Quavel',  'Naevelon','Aevindel','Ithvael',  'Quelindor',
+      ],
+      f: [
+        'Quaela',  'Aevrin',  'Ilveth',  'Sylvael',  'Naeritha',
+        'Quelaera','Eluvia',  'Aethviel','Ilvindra', 'Sylvindra',
+        'Quaveth', 'Naeveth', 'Aevindra','Ithvael',  'Queliveth',
+      ],
+    },
+
   };
 
   // ============================================================
@@ -128,6 +144,70 @@ const NPCGenerator = (() => {
     ...Array(2).fill('Halfling'),
     'Orc', 'Goblin', 'Dragonkin',
   ];
+
+  // All playable races for outsider pool construction.
+  const ALL_RACES = ['Human', 'Elf', 'Dwarf', 'Halfling', 'Orc', 'Goblin', 'Dragonkin'];
+
+  // Kingdoms marked as especially unwelcoming to outsiders.
+  // Checked via keyword scan of the kingdoms global; this set is the manual override.
+  const XENOPHOBIC_KINGDOMS = new Set(['Naradreth', 'Feldarún', 'Rendarost']);
+
+  // Kingdoms that are cosmopolitan trade hubs — outsiders blend in more easily.
+  const COSMOPOLITAN_KINGDOMS = new Set(['Brythwen', 'Sivanrift']);
+
+  // Reasons an outsider NPC might have for being in a foreign kingdom.
+  const OUTSIDER_REASONS = [
+    'passing through on the trade road, not planning to stay long',
+    'here on a merchant errand — not entirely comfortable with the looks they get',
+    'travelling through on personal business they keep to themselves',
+    'arrived some time ago and found a reason to linger despite the cold welcome',
+    'seeking work that their home region couldn\'t offer',
+    'on a long road far from home, grateful enough for an inn bed',
+    'escorting a caravan through and waiting for the return journey',
+    'studying this culture at arm\'s length — a scholar\'s mission',
+    'following a rumour of coin or opportunity that brought them here',
+    'in exile from their own people, making do where they can',
+  ];
+
+  // Xenophobic-kingdom-specific reasons (more terse and wary).
+  const OUTSIDER_REASONS_HOSTILE = [
+    'here under a rare trade permit, watched closely by the locals',
+    'tolerated — barely — on account of a specific skill the locals need',
+    'keeping a low profile; being an outsider here is not comfortable',
+    'allowed entry as a diplomatic gesture, however grudging',
+    'an unusual sight in these parts, drawing suspicious glances',
+  ];
+
+  // Build a weighted race table for a given kingdom using its population field.
+  function buildRaceTable(kingdomName) {
+    if (!kingdomName || typeof kingdoms === 'undefined') return RACE_TABLE;
+    const kData = kingdoms.find(k => k.name === kingdomName);
+    if (!kData || !Array.isArray(kData.population) || !kData.population.length) return RACE_TABLE;
+
+    const localRaces   = kData.population;
+    const isXenophobic = XENOPHOBIC_KINGDOMS.has(kingdomName);
+    const isCosmo      = COSMOPOLITAN_KINGDOMS.has(kingdomName);
+
+    // Outsider slot ratio: 5% hostile, 20% cosmopolitan, 12% normal.
+    const outsiderRatio = isXenophobic ? 0.05 : isCosmo ? 0.20 : 0.12;
+    const totalSlots    = 20;
+    const outsiderSlots = Math.max(1, Math.round(totalSlots * outsiderRatio));
+    const localSlots    = totalSlots - outsiderSlots;
+    const perLocal      = Math.floor(localSlots / localRaces.length);
+
+    const table = [];
+    localRaces.forEach(r => { for (let i = 0; i < perLocal; i++) table.push(r); });
+
+    // Top up with outsider races (exclude locals).
+    const outsiders = ALL_RACES.filter(r => !localRaces.includes(r));
+    for (let i = 0; i < outsiderSlots && outsiders.length; i++) {
+      table.push(outsiders[Math.floor(Math.random() * outsiders.length)]);
+    }
+    // Fill any rounding gaps back with a random local race.
+    while (table.length < totalSlots) table.push(localRaces[Math.floor(Math.random() * localRaces.length)]);
+
+    return table;
+  }
 
   // ============================================================
   // APPEARANCE POOLS (per race)
@@ -190,6 +270,17 @@ const NPCGenerator = (() => {
       'Lithe, with iridescent blue-green scales',
       'Old and scarred, scales faded to ash-grey',
       'Young, with bright copper scales still unmarred',
+    ],
+    // Quin appearance — those living openly carry filed horn stumps hidden in their hair;
+    // those in the wilds may still bear their full, curving horns.
+    Quin: [
+      'Slender and still, with silver-green eyes that seem to look slightly past you',
+      'Ageless and unhurried, hair worn long over the temples to conceal old scars',
+      'Tall and lean, moving without sound, with a quality of calm that feels ancient',
+      'Dark-haired and sharp-featured, eyes like still water over deep stone',
+      'Pale as birchwood, with a faint luminescence to the skin in low light',
+      'Quietly powerful, bearing small curved horns rising through unbound hair',
+      'Weathered by centuries rather than years, carrying the stillness of old forest',
     ],
   };
 
@@ -1077,7 +1168,9 @@ const NPCGenerator = (() => {
   // ============================================================
 
   function generate(opts = {}) {
-    const race        = opts.race   || pick(RACE_TABLE);
+    const kingdomName = opts.kingdom || null;
+    const raceTable   = kingdomName ? buildRaceTable(kingdomName) : RACE_TABLE;
+    const race        = opts.race   || pick(raceTable);
     const gRoll       = Math.random();
     const gender      = opts.gender || (gRoll < 0.48 ? 'Male' : gRoll < 0.96 ? 'Female' : 'Non-Binary');
     const socialClass = opts.socialClass || pick(Object.keys(PROFESSIONS_BY_CLASS));
@@ -1112,12 +1205,25 @@ const NPCGenerator = (() => {
     const items       = buildItems(profession);
     const flags       = buildFlags(socialClass, profession);
 
+    // Determine if this NPC is an outsider in the current kingdom.
+    let outsiderNote = null;
+    if (kingdomName && typeof kingdoms !== 'undefined') {
+      const kData      = kingdoms.find(k => k.name === kingdomName);
+      const localRaces = kData?.population || [];
+      if (localRaces.length && !localRaces.includes(race)) {
+        const hostile  = XENOPHOBIC_KINGDOMS.has(kingdomName);
+        const pool     = hostile ? OUTSIDER_REASONS_HOSTILE : OUTSIDER_REASONS;
+        outsiderNote   = pick(pool);
+      }
+    }
+
     return {
       name, alias, race, gender, socialClass, appearance, profession,
       skills, traits,
       relationToPlayer: 'Neutral',
       morality,
       backstory, description, whereMet,
+      outsiderNote,
       friends: [], enemies: [],
       alive: true,
       goals, motives,
