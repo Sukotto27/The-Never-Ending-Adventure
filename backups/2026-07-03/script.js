@@ -5619,7 +5619,7 @@ function pulseD20(times = 3) {
 						roots:   { label: '🌱 Search for Roots',    skill: 'Foraging',  items: [['Gnarled Root',3],['Ginseng Root',2]] },
 					}
 				},
-				Mountains: {
+				Mountain: {
 					summary: 'ore seams, stone deposits, alpine herbs, and cave roots',
 					categories: {
 						stones:   { label: '🪨 Search for Stone',     skill: 'Survival',  items: [['Stone Fragments',4],['Loose Stones',3],['Pebbles',2]] },
@@ -5677,6 +5677,7 @@ function pulseD20(times = 3) {
 					}
 				},
 			};
+			BIOME_FORAGE['Mountains'] = BIOME_FORAGE['Mountain'];
 
 			async function _wheelSearchArea() {
 				_buildWheel([{ label: '🔍 Searching…', action: () => {} }]);
@@ -6300,7 +6301,7 @@ function pulseD20(times = 3) {
 					Wetlands: 8, Swamp: 9,
 					Forest: 10,
 					Hills: 12, Plains: 12, Grassland: 12,
-					Mountains: 14, Cave: 13,
+					Mountain: 14, Cave: 13,
 					Tundra: 16, Desert: 19,
 				};
 				const dc    = DC_MAP[biome] ?? 12;
@@ -6314,7 +6315,7 @@ function pulseD20(times = 3) {
 					const failLines = {
 						Desert:  'The cracked earth offers nothing. No water anywhere.',
 						Tundra:  'Everything is frozen. You can\'t extract usable water.',
-						Mountains:'The rock faces yield no springs here.',
+						Mountain:'The rock faces yield no springs here.',
 						Swamp:   'There\'s moisture everywhere but none you\'d dare drink.',
 					};
 					addStory(`💧 ${failLines[biome] || 'You search the area but find no water source.'}`);
@@ -6329,7 +6330,7 @@ function pulseD20(times = 3) {
 					Wetlands: 'A clear spring bubbles up among the reeds.',
 					Swamp:    'After careful searching you find a surprisingly clean spring.',
 					Forest:   'A hidden stream winds through the roots. You fill your skin.',
-					Mountains: 'Snowmelt trickles down a rockface into a clean pool.',
+					Mountain: 'Snowmelt trickles down a rockface into a clean pool.',
 					Cave:     'A dripping stalactite fills your waterskin drop by drop.',
 					Tundra:   'You melt enough clean ice to fill your waterskin.',
 					Desert:   'Against all odds you spot a desert spring. You fill up quickly.',
@@ -14593,7 +14594,7 @@ function initializeQuickSlots() {
 // 12.5 · Biome Colors
 const biomeColors = {
 				Forest: 'rgba(34,139,34,0.5)',
-				Mountains: 'rgba(139,137,137,0.5)',
+				Mountain: 'rgba(139,137,137,0.5)',
 				Hills: 'rgba(205,133,63,0.5)',
 				Wetlands: 'rgba(70,130,180,0.5)',
 				Coastal: 'rgba(135,206,235,0.5)',

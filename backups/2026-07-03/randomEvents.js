@@ -596,7 +596,7 @@ const randomEvents = [
     polarity: 'bad',
     weight: 5,
     trigger: {
-      biomes: ['Mountains'],
+      biomes: ['Mountain'],
       timeOfDay: null,
       weather: ['Rain', 'Storm'],
       kingdoms: null,
@@ -650,7 +650,7 @@ const randomEvents = [
     polarity: 'bad',
     weight: 8,
     trigger: {
-      biomes: ['Mountains', 'Tundra'],
+      biomes: ['Mountain', 'Tundra'],
       timeOfDay: ['🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: ['Rendarost', 'Wistravael', 'Feldarún'],
@@ -814,7 +814,7 @@ const randomEvents = [
     polarity: 'bad',
     weight: 7,
     trigger: {
-      biomes: ['Mountains', 'Hills'],
+      biomes: ['Mountain', 'Hills'],
       timeOfDay: null,
       weather: null,
       kingdoms: null,
@@ -1082,7 +1082,7 @@ const randomEvents = [
     polarity: 'good',
     weight: 3,
     trigger: {
-      biomes: ['Forest', 'Hills', 'Mountains'],
+      biomes: ['Forest', 'Hills', 'Mountain'],
       timeOfDay: null,
       weather: null,
       kingdoms: null,
@@ -1105,7 +1105,7 @@ const randomEvents = [
     polarity: 'good',
     weight: 4,
     trigger: {
-      biomes: ['Mountains', 'Forest', 'Hills'],
+      biomes: ['Mountain', 'Forest', 'Hills'],
       timeOfDay: null,
       weather: null,
       kingdoms: null,
@@ -1368,7 +1368,7 @@ const randomEvents = [
     polarity: 'mixed',
     weight: 3,
     trigger: {
-      biomes: ['Forest', 'Mountains', 'Hills'],
+      biomes: ['Forest', 'Mountain', 'Hills'],
       timeOfDay: ['🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: null,
@@ -1541,7 +1541,7 @@ const randomEvents = [
     polarity: 'neutral',
     weight: 5,
     trigger: {
-      biomes: ['Forest', 'Mountains', 'Hills'],
+      biomes: ['Forest', 'Mountain', 'Hills'],
       timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: null,
       kingdoms: null,

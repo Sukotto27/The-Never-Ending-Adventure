@@ -86,11 +86,6 @@ function initWorldEconomy() {
 // When _buildWheel fires and this is true, a divider is inserted to separate scene-groups.
 let _storyDirtySinceWheel = false;
 
-// Gold tracking for coin sounds — null means not yet initialised
-let _prevGoldForSound = null;
-// Throttle timestamp for log_entry sound (ms)
-let _logEntrySoundTime = 0;
-
 // 1.3e · Book State (open-book UI)
 const bookState = {
   activeSection:   'story',
@@ -289,10 +284,10 @@ const player = {
 					}
 				},
 				traits: [],
-				backstory: '',
-				morality: 0,
-				hope: 0,
-				inventory: {},
+				inventory: {
+					'Health Potion': { ...Items.Potions['Health Potion'], quantity: 3 },
+					'Iron Sword':    { ...Items.Weapons['Iron Sword'],    quantity: 1 },
+				},
 				equipped: {},
 				journal: {
 					locations: [],
@@ -348,7 +343,6 @@ const player = {
 			learnedLore: [],            // [{ id, source, learnedAt }]
 			pouchContents:  { herb: {}, ingredient: {} }, // items stored inside pouches
 			activePouches:  { herb: null, ingredient: null, coin: null }, // null | item name string
-			relations:      {},   // { [npcName]: { score, unlockedTopics, knownFields, conversationLog, romanceTrack, npcMemory, sessionTopicsFired } }
 			};
 
 // 2.2 · Known Locations
@@ -466,7 +460,6 @@ function outcomeLabel(tier) { return _OUTCOME_LABELS[tier] ?? _OUTCOME_LABELS[3]
 function classifyRoll(roll) {
   if (window.d20ShowNumber) window.d20ShowNumber(roll);
   const tier = roll <= 5 ? 1 : roll <= 10 ? 2 : roll <= 14 ? 3 : roll <= 18 ? 4 : 5;
-  if (tier === 1) SoundManager?.play('error');
   const ol = outcomeLabel(tier);
   addStory(`🎲 Rolled ${roll} — <span class="outcome-tag ${ol.css}">${ol.text}</span>`);
   return tier;
@@ -670,28 +663,23 @@ overlay.addEventListener('click', () => {
 });
 
 async function rollDice(sides) {
-  const result = Math.floor(Math.random() * sides) + 1;
-
-  // Skip animation entirely during tutorial hints or when auto-roll is on
-  if (autoRoll || _tutActive) {
-    if (!_tutActive) addStory(`Rolled: ${result}`);
-    return result;
-  }
-
-  // 1) show "Rolling…" and wait one tick so _queueStory flushes it into the DOM
+  // 1) show "Rolling..."
   addStory('Rolling…');
-  await new Promise(r => setTimeout(r, 0));
   const story = document.getElementById('story');
   const lastP = story.lastElementChild;
-
-  // 2) play the matching animation full-screen
+  
+  // 2) determine the roll
+  const result = Math.floor(Math.random() * sides) + 1;
+  
+  // 3) play the matching animation full-screen (skipped when auto-roll is on)
   const src = diceAnimations[result];
-  if (src) {
+  if (src && !autoRoll) {
     video.src = src;
     video.muted = false;
     video.volume = 1.0;
     overlay.classList.add('active');
 
+    // wait for the clip to end (or user to click away)
     await new Promise(resolve => {
       function cleanup() {
         overlay.classList.remove('active');
@@ -707,27 +695,9 @@ async function rollDice(sides) {
     });
   }
 
-  // 3) update the "Rolling…" paragraph with the result
-  if (lastP) lastP.textContent = `Rolled: ${result}`;
+  // 4) finally show the result
+  lastP.textContent = `Rolled: ${result}`;
   return result;
-}
-
-// Manual-roll resolver — set when performSkillCheck is waiting for a player D20 click
-let _manualRollResolver = null;
-
-// _rollBase20: used by performSkillCheck when autoRoll is OFF.
-// Plays the full dice animation (no story text) and returns the result.
-// If autoRoll is ON or a tutorial hint is active, resolves immediately.
-async function _rollBase20() {
-  const result = Math.floor(Math.random() * 20) + 1;
-  if (autoRoll || _tutActive) {
-    if (window.d20ShowNumber) window.d20ShowNumber(result);
-    return result;
-  }
-  // Manual mode: pulse the D20 and wait for the player to click it
-  pulseD20?.(3);
-  addStory('🎲 <em>Click the dice to roll!</em>');
-  return new Promise(resolve => { _manualRollResolver = resolve; });
 }
 
 // 4.6 · Fire Catalog Normalization & Helpers
@@ -780,8 +750,6 @@ function startFireWithWood(selectedWoodType) {
   }
 
   player.hasFire = true;
-  if (starting) SoundManager?.play('fire_start');
-  SoundManager?.updateAmbience();
   updateComfortProtection?.();
 
   fireTimer.style.display = 'block';
@@ -792,13 +760,11 @@ function startFireWithWood(selectedWoodType) {
 
   clearInterval(fireTimerInterval);
   fireTimerInterval = setInterval(() => {
-    if (_tutActive) return; // pause fire timer while a tutorial hint is showing
     if (fireTimeRemaining <= 0) {
       clearInterval(fireTimerInterval);
       addStory('🔥 Your fire has died out.');
       if (fireTimer) fireTimer.style.display = 'none';
       player.hasFire = false;
-      SoundManager?.updateAmbience();
       updateComfortProtection?.();
       if (buildFireButton) buildFireButton.disabled = false;
       if (cookButton)      cookButton.disabled      = true;
@@ -970,45 +936,22 @@ function renderWaypointBar() {
 
   document.getElementById('waypoint-go-btn').onclick = () => {
     if (!fromMatch || !toMatch) return;
-    const weightRatio = calculateTotalWeight() / Math.max(1, player.maxCarryWeight);
+    if (staminaCost > player.maxStamina) {
+      addStory('⛔ That distance is too far to travel in a single journey.');
+      return;
+    }
+    if (player.stamina < staminaCost) {
+      addStory('⚠️ You are too exhausted for that journey. Rest and recover first.');
+      return;
+    }
     const destKnown = !!(player.knownLocations?.[player.waypoint]?.nameKnown);
     const destLabel = destKnown ? (destCell.cityVillage || 'this location') : 'this location';
-    const fromX = +fromMatch[1] + GRID_SIZE / 2, fromY = +fromMatch[2] + GRID_SIZE / 2;
-
-    // Partial travel — go as far as stamina allows instead of blocking
-    let travelGrids = gridSquares, travelCost = staminaCost;
-    let travelKey = player.waypoint, travelToX = toX, travelToY = toY;
-    let partialWarning = '';
-    if (player.stamina < staminaCost) {
-      let g = 0;
-      while (g < gridSquares) {
-        const c = (g + 1) * 3 + Math.round(weightRatio * (g + 1));
-        if (c > player.stamina) break;
-        g++;
-      }
-      if (g === 0) {
-        addStory('⚠️ You are too exhausted to travel. Rest and recover first.');
-        return;
-      }
-      travelGrids = g;
-      travelCost  = travelGrids * 3 + Math.round(weightRatio * travelGrids);
-      const dx = toX - fromX, dy = toY - fromY;
-      const ratio = (travelGrids * GRID_SIZE) / Math.hypot(dx, dy);
-      const midCX = fromX + dx * ratio, midCY = fromY + dy * ratio;
-      const midKeyX = Math.round((midCX - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      const midKeyY = Math.round((midCY - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      travelKey  = `x${midKeyX}_y${midKeyY}`;
-      travelToX  = midKeyX + GRID_SIZE / 2;
-      travelToY  = midKeyY + GRID_SIZE / 2;
-      partialWarning = `\n⚠️ Stamina will run out before reaching ${destLabel}. You will stop when exhausted.`;
-    }
-
-    confirmText.textContent = `Travel to ${destLabel}? (~${travelGrids}h · ${travelCost} stamina)${partialWarning}`;
+    confirmText.textContent = `Travel to ${destLabel}? (~${gridSquares}h · ${staminaCost} stamina)`;
     confirmModal.style.display = 'block';
     confirmYesBtn.onclick = async () => {
       confirmModal.style.display = 'none';
       window.__contentPanel.open('pane-story');
-      await executeTravelTo(travelKey, travelToX, travelToY, travelGrids, travelCost);
+      await executeTravelTo(player.waypoint, toX, toY, gridSquares, staminaCost);
     };
     confirmNoBtn.onclick = () => { confirmModal.style.display = 'none'; };
   };
@@ -1058,11 +1001,6 @@ function updateTopStats() {
   const _goldCap = player.inventory?.['Coin Pouch (Large)'] ? Infinity : 200;
   if (player.gold > _goldCap) player.gold = _goldCap;
   document.getElementById('player-gold').textContent = player.gold;
-  if (typeof SoundManager !== 'undefined' && typeof _prevGoldForSound === 'number' && player.gold !== _prevGoldForSound) {
-    if (player.gold > _prevGoldForSound) SoundManager.play('receive_coin');
-    else SoundManager.play('spend_coin');
-  }
-  _prevGoldForSound = player.gold;
   document.getElementById('player-name').textContent = player.name;
   document.getElementById('player-level').textContent = `Level: ${player.level}`;
   const _lvlPip = document.getElementById('player-level-num');
@@ -1094,18 +1032,14 @@ function updateTopStats() {
     [100, 'Fully Rested'], [75, 'Well Rested'], [50, 'Winded'], [25, 'Weary'], [0, 'Exhausted']
   ]);
 
-  // Mana bar — accounts for natural, equipped-vessel, and potion/ritual temp pools
-  const _effMaxMana  = getEffMaxMana();
-  const _hasTempMana = !player.maxMana && _effMaxMana > 0; // non-magical race with borrowed mana
-  const manaPct = _effMaxMana ? Math.min(100, Math.round(((player.mana || 0) / _effMaxMana) * 100)) : 0;
+  // Mana bar
+  const manaPct = player.maxMana ? Math.min(100, Math.round(((player.mana || 0) / player.maxMana) * 100)) : 0;
   const manaBar = document.getElementById('mana-bar');
-  if (manaBar) {
-    manaBar.style.width = manaPct + '%';
-    manaBar.classList.toggle('mana-bar-temp', _hasTempMana);
-  }
+  if (manaBar) manaBar.style.width = manaPct + '%';
   const manaStatus = document.getElementById('mana-status');
-  if (manaStatus) manaStatus.textContent = !_effMaxMana ? 'None'
-    : statusText(manaPct, [[100,'Full'],[75,'Ample'],[50,'Half'],[25,'Low'],[0,'Empty']]);
+  if (manaStatus) manaStatus.textContent = statusText(manaPct, [
+    [100, 'Full'], [75, 'Ample'], [50, 'Half'], [25, 'Low'], [0, 'Empty']
+  ]);
 
   _renderPartyHud?.();
   if (typeof updateCampStatusBar === 'function') updateCampStatusBar();
@@ -1114,7 +1048,7 @@ function updateTopStats() {
   // Night vignette on body background
   const _tod = player.timeOfDay || '';
   const _isFullNight = /Night|Late Night/i.test(_tod);
-  const _isEvening   = /Evening/i.test(_tod);
+  const _isEvening   = /Evening|Mid-Evening/i.test(_tod);
   const _isDusk      = /Dusk|Late Afternoon/i.test(_tod);
   document.body.classList.toggle('night-mode',   _isFullNight);
   document.body.classList.toggle('evening-mode', !_isFullNight && _isEvening);
@@ -1133,10 +1067,11 @@ function updateXpRing() {
 function updateTimeDial() {
   const dot = document.getElementById('time-indicator-dot');
   if (!dot) return;
-  // 12 periods: 6 day (left arc) then 6 night (right arc) — Early Morning at 210°, +30° each
+  // 12 periods: 6 day (left arc, clockwise upward) then 6 night (right arc, clockwise downward)
+  // Early Morning anchored at 210° (7 o'clock), each period +30° clockwise
   const _periods = [
-    '🌅 Early Morning','☀️ Morning','🌞 Midday','🌤️ Afternoon','⛅ Mid-Afternoon','🌇 Late Afternoon',
-    '🌆 Evening','🌃 Mid-Evening','🌌 Late Evening','🌙 Dusk','🌑 Night','⭐ Late Night',
+    '🌅 Early Morning','🌄 Mid-Morning','☀️ Morning','🌞 Midday','🌤️ Afternoon','⛅ Mid-Afternoon',
+    '🌇 Late Afternoon','🌆 Evening','🌃 Mid-Evening','🌙 Dusk','🌑 Night','⭐ Late Night',
   ];
   const idx = _periods.indexOf(player.timeOfDay);
   const angleDeg = ((idx < 0 ? 0 : idx) * 30 + 210) % 360;
@@ -1570,7 +1505,6 @@ function gainSkillXp(skillName, tier) {
     const prevLevel = sk.level || 1;
     sk.level = prevLevel + 1;
     if (sk.level === 99) queueMasterGuildEncounters(skillName);
-    SoundManager?.play('notice');
     addStory(`<strong>⭐ ${skillName} reached Level ${sk.level}!</strong>`);
     addWorldEvent(`${skillName} increased to Level ${sk.level}.`, 'player');
     if (!player.traitCounters) player.traitCounters = {};
@@ -1650,10 +1584,9 @@ function degradeItemWear(itemName, amount) {
   }
 }
 
-async function performSkillCheck(skillName, situationalMod = 0, reason = null) {
-  SoundManager?.play('dice_roll');
-  const base = !player.flags?.tutorialComplete ? 19 : await _rollBase20();
-  // d20ShowNumber is called inside _rollBase20 (auto path) and wheelD20 handler (manual path)
+function performSkillCheck(skillName, situationalMod = 0) {
+  const base       = !player.flags?.tutorialComplete ? 19 : Math.floor(Math.random() * 20) + 1;
+  if (window.d20ShowNumber) window.d20ShowNumber(base);
   const skillMod   = getSkillBonus(skillName);
   const condMod    = getConditionModifier(skillName);
   const titleMod   = getTitleBonus(skillName);
@@ -1666,22 +1599,20 @@ async function performSkillCheck(skillName, situationalMod = 0, reason = null) {
   const traitMod   = getTraitRollBonus(skillName);
   const adjusted   = Math.min(20, Math.max(1, base + skillMod + condMod + titleMod + campMod + equipMod + situationalMod + hopeMod + pendantMod + traitMod));
   const lvl        = player.skills[skillName]?.level;
-  const skillLabel = lvl ? `${skillName} Lv${lvl}` : skillName;
   const parts      = [];
-  if (skillMod   !== 0) parts.push(`${skillMod   > 0 ? '+' : ''}${skillMod} (${skillLabel})`);
-  if (condMod    !== 0) parts.push(`${condMod    > 0 ? '+' : ''}${condMod} (effects)`);
-  if (titleMod   !== 0) parts.push(`${titleMod   > 0 ? '+' : ''}${titleMod} (title)`);
-  if (campMod    !== 0) parts.push(`+${campMod} (camp)`);
-  if (equipMod   !== 0) parts.push(`${equipMod   > 0 ? '+' : ''}${equipMod} (gear)`);
+  const skillLabel = lvl ? `${skillName} Lv${lvl}` : skillName;
+  parts.push(skillMod !== 0 ? `${skillMod > 0 ? '+' : ''}${skillMod} (${skillLabel})` : `(${skillLabel})`);
+  if (condMod        !== 0) parts.push(`${condMod        > 0 ? '+' : ''}${condMod} (effects)`);
+  if (titleMod       !== 0) parts.push(`${titleMod       > 0 ? '+' : ''}${titleMod} (title)`);
+  if (campMod        !== 0) parts.push(`+${campMod} (camp)`);
+  if (equipMod       !== 0) parts.push(`${equipMod       > 0 ? '+' : ''}${equipMod} (gear)`);
   if (situationalMod !== 0) parts.push(`${situationalMod > 0 ? '+' : ''}${situationalMod} (weather)`);
-  if (hopeMod    !== 0) parts.push(`${hopeMod    > 0 ? '+' : ''}${hopeMod} (spirit)`);
-  if (traitMod   !== 0) parts.push(`${traitMod   > 0 ? '+' : ''}${traitMod} (traits)`);
+  if (hopeMod        !== 0) parts.push(`${hopeMod        > 0 ? '+' : ''}${hopeMod} (spirit)`);
+  if (traitMod       !== 0) parts.push(`${traitMod       > 0 ? '+' : ''}${traitMod} (traits)`);
   const tier = adjusted <= 5 ? 1 : adjusted <= 10 ? 2 : adjusted <= 14 ? 3 : adjusted <= 18 ? 4 : 5;
-  if (tier === 1) SoundManager?.play('error');
-  const ol      = outcomeLabel(tier);
-  const suffix  = parts.length ? ` ${parts.join(' ')} = ${adjusted}` : '';
-  const heading = reason ? `${skillLabel} (${reason})` : skillLabel;
-  addStory(`🎲 ${heading} — Rolled ${base}${suffix} — <span class="outcome-tag ${ol.css}">${ol.text}</span>`);
+  const ol   = outcomeLabel(tier);
+  const suffix = parts.length ? ` ${parts.join(' ')} = ${adjusted}` : '';
+  addStory(`🎲 Rolled ${base}${suffix} — <span class="outcome-tag ${ol.css}">${ol.text}</span>`);
   gainSkillXp(skillName, tier);
   const _hopeShift = tier === 1 ? -2 : tier === 2 ? -1 : tier === 4 ? 1 : tier === 5 ? 2 : 0;
   if (_hopeShift !== 0) changeHope(_hopeShift);
@@ -2033,18 +1964,19 @@ function _calcTraitAffinity(playerTraits, npcRevealedTraits) {
   return Math.max(-3, Math.min(3, mod));
 }
 
-// Returns the net modifier from traits the NPC has specifically observed about the player
-// (populated via dialog interactions — see playerTraitsKnown in _doNpcDialog).
+// Returns the net modifier from player's known traits (traits the NPC has observed through repeated interaction).
+// NPCs "learn" the player after interactionCount > 3 — before that, player is a stranger.
 function _calcNpcKnowsPlayer(npc) {
-  const known = npc.playerTraitsKnown || [];
-  if (!known.length) return 0;
+  const count = npc.interactionCount || 0;
+  if (count < 3) return 0;
   const gT   = typeof gameTraits !== 'undefined' ? gameTraits : {};
   const npcT = npc.traits || [];
+  const pT   = player.traits || [];
   let mod = 0;
-  for (const pt of known) {
-    if (npcT.includes(pt)) mod += 1;
-    const opp = gT[pt]?.opposite;
-    if (opp && npcT.includes(opp)) mod -= 1;
+  for (const nt of npcT) {
+    if (pT.includes(nt)) mod += 1;
+    const opp = gT[nt]?.opposite;
+    if (opp && pT.includes(opp)) mod -= 1;
   }
   return Math.max(-3, Math.min(3, mod));
 }
@@ -2143,54 +2075,19 @@ async function _doNpcDialog(npc, tone) {
   if (AGGRESSIVE_TONES.has(tone) && ['valiant','heroic'].includes(npcMorality)) toneClash = -1;
   if (HEROIC_TONES.has(tone)     && ['malicious','malevolent'].includes(npcMorality)) toneClash = -1;
   npc.disposition = Math.max(-10, Math.min(10, (npc.disposition || 0) + dispShift + toneClash));
-  // Sync all social state back to the world registry so it persists across re-encounters
+  // Sync back to world registry so relationship persists across re-encounters
   if (npc._worldId && worldNPCs?.registry?.[npc._worldId]) {
-    const _reg = worldNPCs.registry[npc._worldId];
-    _reg.relationship      = Math.max(-5, Math.min(5, Math.round(npc.disposition / 2)));
-    _reg.disposition       = npc.disposition       || 0;
-    _reg.interactionCount  = npc.interactionCount  || 0;
-    _reg.revealedTraits    = npc.revealedTraits    || [];
-    _reg.playerTraitsKnown = npc.playerTraitsKnown || [];
+    worldNPCs.registry[npc._worldId].relationship = Math.max(-5, Math.min(5, Math.round(npc.disposition / 2)));
   }
 
-  // Show dialog outcome — try AI first, fall back to DIALOG_OUTCOMES pool
-  const _tierLabel   = ['critical failure', 'failure', 'neutral', 'success', 'critical success'][tier - 1];
-  const _aiDialogCtx = buildActionContext({
-    npc: {
-      name:        npc.name,
-      race:        npc.race,
-      profession:  npc.profession,
-      morality:    npc.morality,
-      disposition: npc.disposition,
-      traits:      npc.revealedTraits || [],
-      backstory:   npc.backstory,
-      description: npc.description,
-    },
-    dialog: {
-      tone,
-      tier,
-      tierLabel:  _tierLabel,
-      roll:       adjusted,
-    },
-  });
-  const _aiDialogSystem = `You write a single line of NPC dialogue for a medieval fantasy RPG.
-The player approached the NPC with a ${tone} tone and the interaction was a ${_tierLabel} (roll ${adjusted}/20).
-Write exactly one line of spoken dialogue from the NPC's perspective that fits this outcome naturally.
-The line should reflect the NPC's personality (morality: ${npc.morality || 'neutral'}, profession: ${npc.profession || 'unknown'}).
-Current setting: ${_aiDialogCtx.location.name}, ${_aiDialogCtx.location.timeOfDay}, ${_aiDialogCtx.location.weather}.
-Return ONLY the spoken line — no name prefix, no quotes, no explanation.`;
-  const _aiLine = await callGameAI(_aiDialogSystem, _aiDialogCtx, {
-    mode:     'narrative',
-    fallback: _dialogOutcome(tone, tier),
-    maxTokens: 80,
-  });
-  addStory(`<em>"${_aiLine}"</em>`);
+  // Show dialog outcome
+  addStory(`<em>"${_dialogOutcome(tone, tier)}"</em>`);
 
   // Disposition feedback
   const dispLabel = _dispositionLabel(npc);
   addStory(`${npc.name} now seems <strong>${dispLabel}</strong> toward you.`);
 
-  // World event comment — NPCs mention local situation on successful talks
+  // World event comment — NPCs in affected kingdoms mention local situation on successful talks
   if (tier >= 3) {
     const npcKingdom = player.currentKingdom;
     const localEvs = (worldEconomy?.activeEvents || []).filter(e => !e.kingdom || e.kingdom === npcKingdom);
@@ -2212,15 +2109,16 @@ Return ONLY the spoken line — no name prefix, no quotes, no explanation.`;
     if (revealed) {
       const def = (typeof gameTraits !== 'undefined' && gameTraits[revealed]) || {};
       addStory(`🔍 You sense something about ${npc.name}: they seem <strong>${revealed}</strong>. ${def.description || ''}`);
-      // NPC also reads one of the player's traits — chance scales with tier (mirrors reveal system)
-      const npcLearnChance = [0, 0, 0.15, 0.35, 0.75][tier - 1] ?? 0;
-      if (Math.random() < npcLearnChance && (player.traits || []).length) {
+      // On critical success, NPC also "reads" one of your traits — update their awareness
+      if (tier === 5 && (player.traits || []).length) {
         const unknownToNpc = (player.traits || []).filter(t => !(npc.playerTraitsKnown || []).includes(t));
         if (unknownToNpc.length) {
           const learned = unknownToNpc[Math.floor(Math.random() * unknownToNpc.length)];
           if (!npc.playerTraitsKnown) npc.playerTraitsKnown = [];
           npc.playerTraitsKnown.push(learned);
+          const pDef = (typeof gameTraits !== 'undefined' && gameTraits[learned]) || {};
           addStory(`${npc.name} has taken notice of your <strong>${learned}</strong> nature.`);
+          // Check if they share or oppose that trait — show reaction
           const npcHasMatch = (npc.traits || []).includes(learned);
           const npcOpp      = (typeof gameTraits !== 'undefined' && gameTraits[learned]?.opposite);
           const npcHasOpp   = npcOpp && (npc.traits || []).includes(npcOpp);
@@ -2417,7 +2315,7 @@ async function _doMastersTrial() {
   await waitForEnter();
   addStory('The Grand Trial of ' + skillName + ' begins. You must demonstrate the pinnacle of your craft before these peers.');
   await runInlineProgress('Competing in the Grand Trial…', 5000);
-  const tier = await performSkillCheck(skillName);
+  const tier = performSkillCheck(skillName);
 
   if (tier >= 4) {
     addStory('🎉 The hall erupts! Your performance is extraordinary — a display of mastery that silences even the most seasoned critics.');
@@ -2478,15 +2376,6 @@ function inferSkillFromInput(text) {
     if (re.test(text)) return skill;
   }
   return 'Survival';
-}
-
-function pluralize(name, qty) {
-  if (qty === 1) return name;
-  const parenMatch = name.match(/^(.+?)(\s*\([^)]+\))$/);
-  if (parenMatch) return pluralize(parenMatch[1].trimEnd(), qty) + parenMatch[2];
-  if (/[^aeiou]y$/i.test(name)) return name.slice(0, -1) + 'ies';
-  if (/(s|sh|ch|x|z)$/i.test(name)) return name + 'es';
-  return name + 's';
 }
 
 // Dialog tone → tier-indexed outcomes
@@ -2609,7 +2498,6 @@ function applyCondition(id, durationOverride) {
   } else {
     player.conditions.push({ id, duration: dur });
     addStory(`${def.icon} You are now ${def.name}.`);
-    SoundManager?.play('notice');
   }
   renderConditions();
   updateTopStats();
@@ -2723,21 +2611,11 @@ function tickConditions(silent = false) {
     if (!silent) addStory('💀 Starvation is taking its toll. You must eat something.');
   }
 
-  // Bleeding life drain + escalation to bleeding_out after 3 untreated ticks
-  const isBleeding = !!player.conditions.find(c => c.id === 'bleeding');
-  if (isBleeding) {
+  // Bleeding life drain
+  if (player.conditions.find(c => c.id === 'bleeding')) {
     player.life = Math.max(1, (player.life || 1) - 2);
     updateTopStats();
     if (!silent) addStory('🩸 You are bleeding. Treat your wounds soon.');
-    player.bleedingTicks = (player.bleedingTicks || 0) + 1;
-    if (player.bleedingTicks >= 3 && !player.conditions.find(c => c.id === 'bleeding_out')) {
-      removeCondition('bleeding');
-      applyCondition('bleeding_out');
-      player.bleedingTicks = 0;
-      if (!silent) addStory('🫀 You have been bleeding too long. You are now bleeding out!');
-    }
-  } else {
-    player.bleedingTicks = 0;
   }
 
   // Fatally wounded life drain
@@ -2781,26 +2659,6 @@ function tickConditions(silent = false) {
   }
 
   if (toRemove.length) updateTopStats();
-
-  // Corruption stage advancement
-  if (typeof _tickCorruption === 'function') _tickCorruption();
-
-  // Temp mana decay (from potions and blood rituals)
-  if ((player.tempManaTicks || 0) > 0) {
-    player.tempManaTicks--;
-    if (player.tempManaTicks <= 0) {
-      player.tempManaPool  = 0;
-      player.tempManaTicks = 0;
-      const _effAfterDecay = getEffMaxMana();
-      if ((player.mana || 0) > _effAfterDecay) player.mana = _effAfterDecay;
-      if (!player.maxMana && !player.equippedManaBonus) {
-        player.mana = 0;
-        if (!silent) addStory('✨ The borrowed mana fades. Your arcane power is spent.');
-      }
-      updateTopStats();
-    }
-  }
-
   tickWorldEconomy();
   tickWorldNPCs();
 
@@ -2890,8 +2748,8 @@ function consumeFood(itemName) {
 				if (!el) return;
 				if (!player.name) { el.innerHTML = '<p><em>No character yet.</em></p>'; return; }
 
-				const originLabels    = Object.fromEntries(Object.entries(ORIGIN_DATA).map(([k,v]) => [k, v.label || k]));
-				const motivLabels     = Object.fromEntries(Object.entries(MOTIVATION_DATA).map(([k,v]) => [k, v.label || k]));
+				const originLabels    = { noble: 'Noble house', village: 'Common village', wilderness: 'The wilderness', port: 'Port town' };
+				const motivLabels     = { vengeance: 'Seeking vengeance', knowledge: 'Pursuing knowledge', law: 'Running from the law', honor: 'Answering a call to arms', fortune: 'Chasing fortune' };
 				const originLabel     = originLabels[player.origin]     || player.origin     || '—';
 				const motivLabel      = motivLabels[player.motivation]  || player.motivation || '—';
 				const traitArr        = Array.isArray(player.traits) ? player.traits : [];
@@ -2902,8 +2760,7 @@ function consumeFood(itemName) {
 					<div class="profile-grid">
 						<div class="profile-field"><span class="profile-label">Name</span><span class="profile-value">${player.name}</span></div>
 						<div class="profile-field"><span class="profile-label">Culture</span><span class="profile-value">${player.culture || '—'}</span></div>
-						<div class="profile-field"><span class="profile-label">Body Type</span><span class="profile-value">${player.gender || '—'}</span></div>
-						<div class="profile-field"><span class="profile-label">Pronouns</span><span class="profile-value">${(player.pronouns && player.pronouns.label) || '—'}</span></div>
+						<div class="profile-field"><span class="profile-label">Gender</span><span class="profile-value">${player.gender || '—'}</span></div>
 						<div class="profile-field"><span class="profile-label">Profession</span><span class="profile-value">${player.profession || '—'}</span></div>
 						<div class="profile-field"><span class="profile-label">Social Class</span><span class="profile-value">${player.socialClass || '—'}</span></div>
 						<div class="profile-field"><span class="profile-label">Origin</span><span class="profile-value">${originLabel}</span></div>
@@ -3039,7 +2896,6 @@ function consumeFood(itemName) {
 				'Navigation':      '🧭',
 				'Artistry':        '🎨',
 				'Mysticism':       '🔮',
-				'Lute':            '🎸',
 			};
 
 			function updateSkillsGrid() {
@@ -3105,26 +2961,9 @@ function changeLife(amount) {
   }
 }
 
-function _calcEquippedManaBonus() {
-  if (!player.equipped) return 0;
-  let _bonus = 0;
-  for (const _itemName of Object.values(player.equipped)) {
-    if (!_itemName) continue;
-    const _db  = (typeof findItemInDatabase === 'function') ? findItemInDatabase(_itemName) : null;
-    const _inv = player.inventory?.[_itemName];
-    _bonus += (_db?.manaVessel || 0) + (_inv?.manaVessel || 0);
-  }
-  return _bonus;
-}
-
-function getEffMaxMana() {
-  return (player.maxMana || 0) + (player.tempManaPool || 0) + (player.equippedManaBonus || 0);
-}
-
 function changeMana(amount) {
-  const effMax = getEffMaxMana();
-  if (effMax <= 0 && amount > 0) return; // no mana capacity at all
-  player.mana = Math.max(0, Math.min(effMax, (player.mana || 0) + amount));
+  if (!player.maxMana) player.maxMana = 50;
+  player.mana = Math.max(0, Math.min(player.maxMana, (player.mana || 0) + amount));
   updateTopStats();
   if (amount > 0)      addStory(`+${amount} mana.`);
   else if (amount < 0) addStory(`${amount} mana.`);
@@ -3138,11 +2977,6 @@ function findItemInDatabase(name) {
   return null;
 }
 
-function _isRaceRestricted(itemName) {
-  const ex = (findItemInDatabase(itemName) || {}).excludeRaces || [];
-  return ex.length > 0 && ex.includes(player.race);
-}
-
 function formatEffect(effect) {
   if (!effect || typeof effect !== 'object') return 'None';
   return Object.entries(effect)
@@ -3152,11 +2986,6 @@ function formatEffect(effect) {
 
 // 6.6 · Update Inventory UI
 			function updateInventory() {
-				// Recalculate equipped mana vessel bonus whenever inventory view refreshes
-				player.equippedManaBonus = _calcEquippedManaBonus();
-				// Cap current mana to effective max in case an item was unequipped
-				if ((player.mana || 0) > getEffMaxMana()) player.mana = getEffMaxMana();
-
 				const inv = document.getElementById('inventory-list'),
 					campView = document.getElementById('camp-supplies-inv-view'),
 					arrowBtn = document.getElementById('inv-view-arrow'),
@@ -3277,11 +3106,8 @@ function formatEffect(effect) {
 					const eqd = Object.values(player.equipped).includes(it) ? 'equipped' : '';
 					const iconSrc = _getItemIcon(it);
 					const qty = player.inventory[it].quantity;
-					const _rr  = _isRaceRestricted(it);
-					const _rrClass = _rr ? ' race-restricted' : '';
-					const _rrTitle = _rr ? ` title="Cannot be worn by ${player.race}s"` : '';
-					return `<div class="inventory-item ${selectedItem===it?'selected':''} ${eqd}${_rrClass}"
-                   data-item="${it}" data-index="${i}" draggable="true"${_rrTitle}>
+					return `<div class="inventory-item ${selectedItem===it?'selected':''} ${eqd}"
+                   data-item="${it}" data-index="${i}" draggable="true">
                 <img src="${iconSrc}" alt="${it}" class="inv-item-icon" onerror="this.style.display='none'">
                 ${qty > 1 ? `<span class="inv-qty-badge">${qty}</span>` : ''}
               </div>`;
@@ -3340,7 +3166,7 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
     const type   = d.type || dbItem.type || '';
     const wearable = d.wearable || dbItem.wearable || (type === 'weapon' || type === 'armor');
     const isEquipped = Object.values(player.equipped || {}).includes(it);
-    const isConsumable = type === 'food' || type === 'potion' || type === 'recipe_scroll' || (type === 'material' && !!(d.consumable || dbItem.consumable)) || /waterskin.*full/i.test(it);
+    const isConsumable = type === 'food' || type === 'potion' || type === 'recipe_scroll' || (type === 'material' && !!(d.consumable || dbItem.consumable));
 
     const addOpt = (label, fn) => {
       const div = document.createElement('div');
@@ -3362,7 +3188,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
         addOpt('↩ Unequip', () => {
           Object.keys(player.equipped).filter(s => player.equipped[s] === it).forEach(s => { player.equipped[s] = null; });
           addStory(`Unequipped ${it}.`);
-          SoundManager?.play('equip');
           updateInventory();
         });
       } else {
@@ -3371,7 +3196,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
           Object.keys(player.equipped).filter(s => player.equipped[s] === it).forEach(s => { player.equipped[s] = null; });
           player.equipped[slot] = it;
           addStory(`Equipped ${it}.`);
-          SoundManager?.play('equip');
           updateInventory();
         });
       }
@@ -3387,10 +3211,7 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
 
     // Use / Eat / Drink
     if (isConsumable) {
-      const useLabel = type === 'food' ? '🍽️ Eat'
-                     : type === 'recipe_scroll' ? '📜 Read'
-                     : /waterskin.*full/i.test(it) ? '💧 Drink'
-                     : '🧪 Drink';
+      const useLabel = type === 'food' ? '🍽️ Eat' : type === 'recipe_scroll' ? '📜 Read' : '🧪 Drink';
       addOpt(useLabel, () => {
         if (type === 'recipe_scroll') {
           const recipeName = d.recipeName || it.replace(/^Recipe:\s*/i, '');
@@ -3419,7 +3240,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
 
     // Drop
     addOpt('🗑 Drop', () => {
-      SoundManager?.play('drop_item');
       Object.keys(player.equipped).filter(s => player.equipped[s] === it).forEach(s => { player.equipped[s] = null; });
       removeItem(it, 1);
       updateInventory();
@@ -3478,7 +3298,7 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
         <div class="equipped-item-slot" id="footwear"    data-slot="footwear">Footwear</div>
         <div class="equipped-item-slot" id="rightHand"   data-slot="rightHand">Right Hand</div>
       </div>
-      <div class="equip-character"><img id="inv-char-silhouette" src="images/character.png" alt=""></div>
+      <div class="equip-character"><img src="images/character.png" alt=""></div>
       <div class="equip-col equip-col-right">
         <div class="equipped-item-slot" id="shoulderwear" data-slot="shoulderwear">Shoulderwear</div>
         <div class="equipped-item-slot" id="cape"         data-slot="cape">Cape</div>
@@ -3490,27 +3310,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
       <div class="equip-pendant-row">
         <div class="equipped-item-slot" id="pendant" data-slot="pendant">Pendant</div>
       </div>`;
-
-				// Show Lute tab only when the player owns one
-				const _hasLuteItem = Object.keys(player.inventory || {}).some(k => /lute/i.test(k));
-				const _luteTab = document.querySelector('.bk-stab[data-bksec="lute"]');
-				if (_luteTab) {
-					_luteTab.style.display = _hasLuteItem ? '' : 'none';
-					if (!_hasLuteItem && bookState?.activeSection === 'lute') bookSwitchSection('story');
-				}
-
-				// Update silhouette to match culture + body type after rebuilding the equipped section
-				const _silEl = document.getElementById('inv-char-silhouette');
-				if (_silEl) {
-					const _silMap = { Human: 'human', Elf: 'elf', 'Half-Elf': 'elf', Dwarf: 'dwarf', 'Half-Orc': 'human', 'Half-Goblin': 'human' };
-					const _race = _silMap[player.culture];
-					const _isFem = /feminine/i.test(player.gender);
-					if (_race) {
-						const _suffix = _isFem ? '_f' : '_m';
-						_silEl.src = 'images/characters/' + _race + _suffix + '.png';
-						_silEl.onerror = function () { _silEl.src = 'images/character.png'; _silEl.onerror = null; };
-					}
-				}
 
 				const _SLOT_LABELS = {
 					headwear: 'Head', torsoLayer1: 'Torso 1', torsoLayer2: 'Torso 2', torsoLayer3: 'Torso 3',
@@ -3580,17 +3379,13 @@ renderMapsPanel();
 				const wearable   = d.wearable ?? dbItem.wearable ?? (type === 'weapon' || type === 'armor');
 
 				const btns = [];
-				if (type === 'food')                       btns.push(`<button class="inv-action-btn" data-action="use">🍽️ Eat</button>`);
-				if (type === 'potion')                     btns.push(`<button class="inv-action-btn" data-action="use">🧪 Drink</button>`);
-				if (type === 'recipe_scroll')              btns.push(`<button class="inv-action-btn" data-action="use">📜 Read</button>`);
-				if (/waterskin.*full/i.test(name))         btns.push(`<button class="inv-action-btn" data-action="use">💧 Drink</button>`);
+				if (type === 'food')          btns.push(`<button class="inv-action-btn" data-action="use">🍽️ Eat</button>`);
+				if (type === 'potion')        btns.push(`<button class="inv-action-btn" data-action="use">🧪 Drink</button>`);
+				if (type === 'recipe_scroll') btns.push(`<button class="inv-action-btn" data-action="use">📜 Read</button>`);
 				if (type === 'map')           btns.push(`<button class="inv-action-btn" data-action="study">🗺️ Study</button>`);
 				if (wearable) {
-					const _exRaces     = dbItem.excludeRaces || [];
-					const _raceBlocked = _exRaces.length && _exRaces.includes(player.race);
-					if (isEquipped)        btns.push(`<button class="inv-action-btn" data-action="unequip">↩ Unequip</button>`);
-					else if (_raceBlocked) btns.push(`<button class="inv-action-btn" disabled title="Cannot be worn by ${player.race}s">⚔ Equip</button>`);
-					else                   btns.push(`<button class="inv-action-btn" data-action="equip">⚔ Equip</button>`);
+					if (isEquipped) btns.push(`<button class="inv-action-btn" data-action="unequip">↩ Unequip</button>`);
+					else            btns.push(`<button class="inv-action-btn" data-action="equip">⚔ Equip</button>`);
 				}
 				btns.push(`<button class="inv-action-btn inv-action-drop" data-action="drop">🗑 Drop</button>`);
 
@@ -3687,18 +3482,12 @@ renderMapsPanel();
 							selectedItem = selectedItemIndex = null;
 							details.innerHTML = '';
 						} else if (action === 'equip') {
-							const _eqDbItem  = findItemInDatabase(name) || {};
-							const _eqExRaces = _eqDbItem.excludeRaces || [];
-							if (_eqExRaces.includes(player.race)) {
-								addStory(`⛔ ${name} cannot be worn by ${player.race}s.`);
-							} else {
-								const slot = _getEquipSlot(name, type);
-								Object.keys(player.equipped).filter(s => player.equipped[s] === name).forEach(s => { player.equipped[s] = null; });
-								player.equipped[slot] = name;
-								addStory(`Equipped ${name}.`);
-								selectedItem = selectedItemIndex = null;
-								updateInventory();
-							}
+							const slot = _getEquipSlot(name, type);
+							Object.keys(player.equipped).filter(s => player.equipped[s] === name).forEach(s => { player.equipped[s] = null; });
+							player.equipped[slot] = name;
+							addStory(`Equipped ${name}.`);
+							selectedItem = selectedItemIndex = null;
+							updateInventory();
 						} else if (action === 'unequip') {
 							Object.keys(player.equipped).filter(s => player.equipped[s] === name).forEach(s => { player.equipped[s] = null; });
 							addStory(`Unequipped ${name}.`);
@@ -3719,7 +3508,7 @@ function renderMapsPanel() {
   if (!listEl) return;
   const maps = Object.entries(player.inventory).filter(([, v]) => v.type === 'map');
   if (!maps.length) {
-    listEl.innerHTML = '<span class="maps-empty">No maps acquired.<br><small>Maps can be purchased from traders and merchants in cities, discovered while exploring ruins, or looted from enemies. Travel to a settlement and look for vendors.</small></span>';
+    listEl.innerHTML = '<span class="maps-empty">No maps acquired.</span>';
     return;
   }
   listEl.innerHTML = maps.map(([name]) => {
@@ -3748,7 +3537,6 @@ function _updateCarryConditions(carryPct) {
     else if (_wasEnc) addStory('⚖️ You are no longer encumbered.');
   }
   renderConditions();
-  updateTopStats();
 }
 
 function calculateTotalWeight() {
@@ -3801,11 +3589,7 @@ function addStory(txt) {
   const s = document.getElementById('story');
   if (!player.storyLog) player.storyLog = [];
   player.storyLog.push(txt);
-  if (!bookState.silentMode) {
-    _storyDirtySinceWheel = true;
-    const _now = Date.now();
-    if (_now - _logEntrySoundTime > 180) { SoundManager?.play('log_entry'); _logEntrySoundTime = _now; }
-  }
+  if (!bookState.silentMode) _storyDirtySinceWheel = true;
   _queueStory(s, `<p>&gt; ${txt}</p>`);
 }
 
@@ -3831,46 +3615,31 @@ function addNarration(txt) {
 				userInput.value = '';
 			}
 
-async function handleUserInput(input) {
+function handleUserInput(input) {
   const [cmd, ...rest] = input.toLowerCase().split(' ');
   const arg = rest.join(' ');
-
-  // additem: is always intercepted so it never falls through to a skill check
-  if (input.trim().toLowerCase().startsWith('additem:')) {
-    if (!developerMode) {
-      addStory(`⚠️ <em>additem:</em> is a dev command. Enable Developer Mode first (Dev button in the menu).`);
-      return;
-    }
-    const devParts = input.trim().split(/\s+/).slice(1); // drop "additem:"
-    // quantity is optional — last token is qty if it parses as a number
-    const lastToken = devParts[devParts.length - 1];
-    const parsedQty = parseInt(lastToken, 10);
-    let qty, rawName;
-    if (!isNaN(parsedQty) && devParts.length >= 2) {
-      qty     = parsedQty || 1;
-      rawName = devParts.slice(0, -1).join(' ');
-    } else {
-      qty     = 1;
-      rawName = devParts.join(' ');
-    }
-    if (!rawName) { addStory(`⚠️ Usage: additem: &lt;name&gt; [qty]`); return; }
-
-    // Find item in Items database regardless of case
-    const matchedName = Object.entries(Items)
-      .flatMap(([category, items]) => Object.keys(items))
-      .find(dbName => dbName.toLowerCase() === rawName.toLowerCase());
-
-    if (!matchedName) {
-      addStory(`⚠️ Item "${rawName}" not found in database. Check spelling or capitalization.`);
-    } else {
-      addItem(matchedName, qty);
-    }
-    return;
-  }
 
   if (developerMode) {
     const devParts = input.trim().split(/\s+/);
     const devCmd = devParts.shift().toLowerCase();
+
+    if (devCmd === 'additem:' && devParts.length >= 2) {
+      const qty = parseInt(devParts.pop(), 10) || 1;
+      const rawName = devParts.join(' ');
+
+      // Find item in Items database regardless of case
+      const matchedName = Object.entries(Items)
+        .flatMap(([category, items]) => Object.keys(items))
+        .find(dbName => dbName.toLowerCase() === rawName.toLowerCase());
+
+      if (!matchedName) {
+        addStory(`⚠️ Item "${rawName}" not found in database. Check spelling or capitalization.`);
+      } else {
+        addItem(matchedName, qty);
+      }
+
+      return;
+    }
 
     if (devCmd === 'economy') {
       _devShowEconomy();
@@ -3897,7 +3666,7 @@ changeStamina(player.maxStamina - player.stamina);
   }
 
   const skillName = inferSkillFromInput(input);
-  const tier = await performSkillCheck(skillName);
+  const tier = performSkillCheck(skillName);
   const tierDesc = ['a disaster', 'poorly', 'adequately', 'well', 'masterfully'][tier - 1];
   addStory(`[${skillName}] You attempt to ${input} — and fare ${tierDesc}.`);
 
@@ -3925,7 +3694,7 @@ function refreshEncampmentBuiltStates() {
 
 // 7.2 · Supplies Found at Camp Setup
 async function grantSetupFinds() {
-  const tier = await performSkillCheck('Survival', 0, 'scavenging supplies');
+  const tier = performSkillCheck('Survival');
 
   const found = [];
   const give = (name, qty) => {
@@ -3982,9 +3751,7 @@ async function handleGatherAttempt(opt) {
 
   const gatherSkill = opt.label.includes('Forage')   ? 'Foraging'    :
                       opt.label.includes('Kindling')  ? 'Fire-making' : 'Survival';
-  const gatherReason = opt.label.includes('Forage') ? 'foraging for food' :
-                       opt.label.includes('Kindling') ? 'gathering kindling' : 'gathering materials';
-  const tier = await performSkillCheck(gatherSkill, 0, gatherReason);
+  const tier = performSkillCheck(gatherSkill);
   const fail = (tier === 1);
   const qty  = fail ? 0 : (tier >= 4 ? 3 : 1 + Math.floor(tier / 2));
   let itemName = null;
@@ -4012,7 +3779,7 @@ async function handleGatherAttempt(opt) {
 
   if (!fail && itemName) {
     addCampSupply(itemName, qty);
-    addStory(`🔹 Gathered ${qty} ${pluralize(itemName, qty)}.`);
+    addStory(`🔹 Gathered ${qty} ${itemName}(s).`);
     awardProfessionXp('gather');
   } else {
     addStory('❌ Came back empty-handed.');
@@ -4051,7 +3818,7 @@ async function performSleep() {
   }, sleepDuration - fadeDuration);
   await sleepPromise;
 
-  const tierS = await performSkillCheck('Survival', 0, 'resting through the night');
+  const tierS = performSkillCheck('Survival');
   let gain = 0;
   if (tierS === 1) {
     addStory('😱 Nightmares haunt you. No rest gained.');
@@ -4433,7 +4200,7 @@ case 'rest': {
           await runProgressBar(barEl ? barEl.id : 'rest-progress', 10000);
           if (barEl) barEl.style.display = 'none';
 
-          const tierR = await performSkillCheck('Survival', 0, 'resting');
+          const tierR = performSkillCheck('Survival');
           const _restCell2 = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
           const _inTown2 = ['City','CapitalCity','Village'].includes(_restCell2.zone || '');
           if (tierR === 1) {
@@ -4583,7 +4350,7 @@ if (!hasPit) {
             bar.style.display = 'none';
           }
 
-          const tierR = await performSkillCheck('Survival', 0, 'resting');
+          const tierR = performSkillCheck('Survival');
           const _restCell3 = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
           const _inTown3 = ['City','CapitalCity','Village'].includes(_restCell3.zone || '');
 
@@ -4873,7 +4640,7 @@ case 'campfire': {
   }
 
   // Outcome roll
-  const tier = await performSkillCheck('Fire-making', 0, 'lighting the fire');
+  const tier = performSkillCheck('Fire-making');
 
   // Failure → report + clear mini
   if (tier <= 2) {
@@ -4958,7 +4725,6 @@ case 'campfire': {
       } else {
         player.hasFire = false;
         player.fireTimer = 0;
-        SoundManager?.updateAmbience();
       }
       if (mini) mini.textContent = '';
       restLog.textContent = 'You extinguish the fire.';
@@ -5281,31 +5047,9 @@ if (wheelD20 && typeof THREE !== 'undefined') {
 }
 
 // Clicking the D20 in the wheel center triggers a manual dice roll.
-// If a skill check is pending (autoRoll=false), this click resolves it.
 if (wheelD20) {
   wheelD20.addEventListener('click', async () => {
-    if (_manualRollResolver) {
-      // A performSkillCheck is waiting for this click — roll and hand the result over
-      const result = Math.floor(Math.random() * 20) + 1;
-      if (window.d20ShowNumber) window.d20ShowNumber(result);
-      const src = (typeof diceAnimations !== 'undefined') ? diceAnimations[result] : null;
-      if (src) {
-        video.src = src; video.muted = false; video.volume = 1.0;
-        overlay.classList.add('active');
-        await new Promise(resolve => {
-          const cleanup = () => { overlay.classList.remove('active'); resolve(); };
-          video.addEventListener('ended', cleanup, { once: true });
-          overlay.addEventListener('click', () => { video.pause(); cleanup(); }, { once: true });
-          video.play();
-        });
-      }
-      const resolver = _manualRollResolver;
-      _manualRollResolver = null;
-      resolver(result);
-    } else {
-      // No pending skill check — standalone roll for the player
-      await rollDice(20);
-    }
+    await rollDice(20);
   });
 }
 
@@ -5391,8 +5135,7 @@ function pulseD20(times = 3) {
 					spoke.style.left      = leftPct + '%';
 					spoke.style.textAlign = side === 'right' ? 'right' : 'left';
 					spoke.style.transform = side === 'right' ? 'translate(-100%,-50%)' : 'translate(0,-50%)';
-					spoke.addEventListener('mouseenter', () => SoundManager?.play('option_hover'));
-					spoke.addEventListener('click', () => { SoundManager?.play('button_press'); opt.action(); });
+					spoke.addEventListener('click', opt.action);
 					wheel.appendChild(spoke);
 				});
 			}
@@ -5431,9 +5174,6 @@ function pulseD20(times = 3) {
 					const tierName = PROFESSION_TIER_DATA?.[p]?.tiers?.[tier];
 				return tierName ? `🎯 ${p} · ${tierName}` : `🎯 ${p}`;
 				})();
-				const _sbOpts     = (typeof _getSlowBecomingWheelOptions === 'function') ? _getSlowBecomingWheelOptions() : [];
-				const _romanceOpts = (typeof _getRomanceWheelOptions === 'function')    ? _getRomanceWheelOptions()    : [];
-				const _hasLute    = Object.keys(player.inventory || {}).some(k => /lute/i.test(k));
 				_buildWheel([
 					{ label: 'Survival',    icon: 'images/icons/poneti/tools/tool_axe.png',     action: () => { _wheelStack.push(_showActionsWheel); _showSurvivalWheel(); },   disabled: _townEngaged },
 					{ label: 'Exploration', icon: 'images/icons/map_icon.png',                action: () => { _wheelStack.push(_showActionsWheel); _showExplorationWheel(); }, disabled: _townEngaged },
@@ -5443,9 +5183,6 @@ function pulseD20(times = 3) {
 					{ label: '🏛️ Guild Trial', action: _doMastersTrial, disabled: !trialQuest },
 					{ label: `⚔️ Party${hasParty ? ` (${player.party.length})` : ''}`, action: () => { _wheelStack.push(_showActionsWheel); _showManagePartyWheel(); }, disabled: !hasParty },
 					{ label: _profTierLabel,   action: () => { _wheelStack.push(_showActionsWheel); _showProfessionWheel(); } },
-					...(_hasLute ? [{ label: '🎸 Lute', action: () => { bookSwitchSection('lute'); } }] : []),
-					..._sbOpts,
-					..._romanceOpts,
 				], 'Actions');
 				if (typeof _tutCheckActionsForWater === 'function') _tutCheckActionsForWater();
 				if (typeof _tutCheckActionsForSearch === 'function') _tutCheckActionsForSearch();
@@ -5498,7 +5235,7 @@ function pulseD20(times = 3) {
 				_buildWheel([{ label: '🏕️ Scouting…', action: () => {} }]);
 				await runInlineProgress('Scouting for a camp spot…', 4000);
 				changeStamina(-COST);
-				const tier = await performSkillCheck('Survival');
+				const tier = performSkillCheck('Survival');
 				if (tier <= 2) {
 					addStory('🏕️ The ground here is too exposed or uneven. Try a different area.');
 					_goBack(); return;
@@ -5555,35 +5292,16 @@ function pulseD20(times = 3) {
 				const weightRatio = (typeof calculateTotalWeight === 'function' ? calculateTotalWeight() : 0) / Math.max(1, player.maxCarryWeight || 50);
 				const carryExtra  = Math.round(weightRatio * gridSquares);
 				const staminaCost = gridSquares * 3 + carryExtra;
-
-				// Partial travel — go as far as stamina allows instead of blocking
-				let travelGrids = gridSquares, travelCost = staminaCost;
-				let travelKey = destKey, travelToX = toX, travelToY = toY;
+				if (staminaCost > player.maxStamina) {
+					addStory('⛔ That distance is too far to travel in a single journey.');
+					_goBack(); return;
+				}
 				if (player.stamina < staminaCost) {
-					let g = 0;
-					while (g < gridSquares) {
-						const c = (g + 1) * 3 + Math.round(weightRatio * (g + 1));
-						if (c > player.stamina) break;
-						g++;
-					}
-					if (g === 0) {
-						addStory('⚠️ You are too exhausted to travel. Rest first.');
-						_goBack(); return;
-					}
-					travelGrids = g;
-					travelCost  = travelGrids * 3 + Math.round(weightRatio * travelGrids);
-					const dx = toX - fromX, dy = toY - fromY;
-					const ratio = (travelGrids * GRID_SIZE) / Math.hypot(dx, dy);
-					const midCX = fromX + dx * ratio, midCY = fromY + dy * ratio;
-					const midKeyX = Math.round((midCX - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-					const midKeyY = Math.round((midCY - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-					travelKey  = `x${midKeyX}_y${midKeyY}`;
-					travelToX  = midKeyX + GRID_SIZE / 2;
-					travelToY  = midKeyY + GRID_SIZE / 2;
-					addStory(`⚠️ Not enough stamina to reach your destination. You push on as far as you can…`);
+					addStory('⚠️ You are too exhausted for that journey. Rest first.');
+					_goBack(); return;
 				}
 				window.__contentPanel.open('pane-story');
-				await executeTravelTo(travelKey, travelToX, travelToY, travelGrids, travelCost);
+				await executeTravelTo(destKey, toX, toY, gridSquares, staminaCost);
 			}
 
 			// ── Biome Forage Profiles ──────────────────────────────────────────────
@@ -5619,7 +5337,7 @@ function pulseD20(times = 3) {
 						roots:   { label: '🌱 Search for Roots',    skill: 'Foraging',  items: [['Gnarled Root',3],['Ginseng Root',2]] },
 					}
 				},
-				Mountains: {
+				Mountain: {
 					summary: 'ore seams, stone deposits, alpine herbs, and cave roots',
 					categories: {
 						stones:   { label: '🪨 Search for Stone',     skill: 'Survival',  items: [['Stone Fragments',4],['Loose Stones',3],['Pebbles',2]] },
@@ -5677,11 +5395,12 @@ function pulseD20(times = 3) {
 					}
 				},
 			};
+			BIOME_FORAGE['Mountains'] = BIOME_FORAGE['Mountain'];
 
 			async function _wheelSearchArea() {
 				_buildWheel([{ label: '🔍 Searching…', action: () => {} }]);
 				await runInlineProgress('Searching the area…', 4000);
-				const tier = await performSkillCheck('Tracking');
+				const tier = performSkillCheck('Tracking');
 				checkQuestObjectives?.('surroundings_checked');
 
 				const cell   = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
@@ -5776,7 +5495,7 @@ function pulseD20(times = 3) {
 				_buildWheel([{ label: '⏳ Searching…', action: () => {} }]);
 				await runInlineProgress(`${cat.label.replace(/^[^ ]+ /, '')}…`, 3000);
 				changeStamina(-2);
-				const tier = await performSkillCheck(cat.skill);
+				const tier = performSkillCheck(cat.skill);
 
 				if (tier <= 1) {
 					addStory('🔍 You search carefully but find nothing of the sort here.');
@@ -5796,8 +5515,6 @@ function pulseD20(times = 3) {
 					const bonus = tier === 5 ? randomInt(1, 2) : 0;
 					for (const [name, qty] of found) addItem(name, qty + bonus);
 					gainSkillXp(cat.skill, tier);
-					const _woodCat = /wood|log|branch|stick/i.test(cat.label);
-					SoundManager?.play(_woodCat ? 'chop_wood' : 'gather');
 				}
 				_goBack();
 			}
@@ -5809,7 +5526,7 @@ function pulseD20(times = 3) {
 				addStory(`🏛️ You approach <strong>${ruin.name}</strong>.`);
 				if (ruin.description) addStory(ruin.description);
 				await runInlineProgress('Searching the ruins…', 4000);
-				const tier = await performSkillCheck('Decrypting', 0, 'interpreting ancient inscriptions');
+				const tier = performSkillCheck('Lore');
 				addWorldEvent(`Explored ruins: ${ruin.name}.`, 'exploration');
 				if (tier >= 2) {
 					player.flags[`ruin_explored_${coordKey}`] = ruin.name;
@@ -5818,13 +5535,7 @@ function pulseD20(times = 3) {
 						: { type: 'misc', consumable: false, wearable: false, burnTime: 0, condition: 'None', rarity: 'Rare', weight: 0.2, value: 0, description: 'A fragment of an ancient device covered in runic inscriptions unlike any known script. One of twelve.' };
 					addItem('Ancient Artifact Fragment', 1, fragDef);
 					const fragCount = player.inventory?.['Ancient Artifact Fragment']?.quantity || 0;
-					const _ruinCtx = buildActionContext({ ruin: { name: ruin.name, biome: (mapData[player.currentLocation] || {}).biome } });
-					const _ruinNarr = await callGameAI(
-						`One evocative sentence describing a traveller uncovering an ancient artifact fragment in ${ruin.name} (${_ruinCtx.location.biome}). The fragment is covered in runic inscriptions. ${_ruinCtx.location.timeOfDay}. Max 25 words, sense of mystery.`,
-						_ruinCtx,
-						{ mode: 'narrative', fallback: 'Among the debris you uncover a strange carved fragment covered in runic inscriptions unlike any you\'ve seen before.', maxTokens: 60 }
-					);
-					addStory(`🏺 ${_ruinNarr}`);
+					addStory(`🏺 Among the debris you uncover a strange carved fragment covered in runic inscriptions unlike any you've seen before.`);
 					addStory(`📦 <em>Ancient Artifact Fragment — ${fragCount} of 12 found.</em>`);
 					if (fragCount === 1) {
 						if (!player.journal.quests) player.journal.quests = [];
@@ -5836,6 +5547,7 @@ function pulseD20(times = 3) {
 					}
 					learnRandomLore('site', { source: 'site' });
 					gainExperience(35);
+					gainSkillXp('Lore', tier);
 					// Ruins often contain old texts — 30% chance of a recipe scroll
 					if (Math.random() < 0.30) awardRecipeScroll();
 					if (fragCount >= 12) {
@@ -5853,13 +5565,7 @@ function pulseD20(times = 3) {
 					updateJournal();
 					updateTopStats();
 				} else {
-					const _ruinFailCtx = buildActionContext({ ruin: { name: ruin.name } });
-					const _ruinFailNarr = await callGameAI(
-						`One sentence describing a traveller finding ${ruin.name} too damaged and overgrown to yield anything useful. ${_ruinFailCtx.location.biome}, ${_ruinFailCtx.location.weather}. Max 20 words, resigned or frustrated tone.`,
-						_ruinFailCtx,
-						{ mode: 'narrative', fallback: 'The ruins are too badly damaged and overgrown. You find nothing you can retrieve.', maxTokens: 50 }
-					);
-					addStory(`🏛️ ${_ruinFailNarr}`);
+					addStory(`🏛️ The ruins are too badly damaged and overgrown. You find nothing you can retrieve.`);
 				}
 				_goBack();
 			}
@@ -5875,9 +5581,7 @@ function pulseD20(times = 3) {
 				const inSettlement = ['City','CapitalCity','Village'].includes(survCell.zone || '');
 				const atCamp       = campSetup && player.campLocation === player.currentLocation;
 				const hasFoods     = Object.values(player.inventory || {}).some(v => (v?.type === 'food' || v?.type === 'potion') && (v.quantity ?? 0) > 0);
-				const hasMagicSkill = (player.skills?.['Light Magic']?.level || 0) > 0
-					|| (player.skills?.['Black Magic']?.level || 0) > 0
-					|| (player.skills?.['Blood Magic']?.level || 0) > 0;
+				const hasMagicSkill = (player.skills?.['Light Magic']?.level || 0) > 0 || (player.skills?.['Black Magic']?.level || 0) > 0;
 				_buildWheel([
 					{ label: 'Eat',     action: () => { _wheelStack.push(_showSurvivalWheel); _wheelEat(); }, disabled: !hasFoods },
 					{ label: 'Rest',    icon: 'images/icons/bedroll.png',                          action: _wheelRest },
@@ -5914,20 +5618,9 @@ function pulseD20(times = 3) {
 			function applyItemEffect(itemName, itemData) {
 				const dbData = (typeof findItemInDatabase === 'function') ? findItemInDatabase(itemName) : null;
 				const fx     = dbData?.baseEffect || itemData?.baseEffect || {};
-				if (fx.life)   changeLife(fx.life);
-				if (fx.stamina) changeStamina(fx.stamina);
-				if (fx.mana) {
-					if (fx.mana > 0 && !(player.maxMana || 0) && !(player.equippedManaBonus || 0)) {
-						// Non-magical race drinking a mana potion: create temporary pool
-						player.tempManaPool  = (player.tempManaPool  || 0) + fx.mana;
-						player.tempManaTicks = Math.max((player.tempManaTicks || 0), 4);
-						player.mana = Math.min(getEffMaxMana(), (player.mana || 0) + fx.mana);
-						addStory(`✨ Arcane energy surges through you — borrowed power, but real. (+${fx.mana} temporary mana)`);
-						updateTopStats?.();
-					} else {
-						changeMana(fx.mana);
-					}
-				}
+				if (fx.life)            changeLife(fx.life);
+				if (fx.stamina)         changeStamina(fx.stamina);
+				if (fx.mana)            changeMana(fx.mana);
 				if (fx.removeCondition) removeCondition(fx.removeCondition);
 				if (fx.applyCondition)  applyCondition(fx.applyCondition, fx.duration);
 			}
@@ -5981,22 +5674,6 @@ function pulseD20(times = 3) {
 
 				// Generic skill book — look up the skillBook field from the item database
 				const dbItem = typeof findItemInDatabase === 'function' ? findItemInDatabase(bookName) : null;
-
-				// Lore book — teaches one or more lore entries
-				const _loreId  = dbItem?.loreBook;
-				const _loreIds = dbItem?.loreBooks;
-				if (_loreId || _loreIds) {
-					const ids = _loreIds || [_loreId];
-					let learned = 0;
-					ids.forEach(id => { if (typeof learnLore === 'function' && learnLore(id, 'library')) learned++; });
-					if (learned > 0) {
-						addStory(`📖 You read <em>${bookName}</em> and learn something new about the world.`);
-					} else {
-						addStory(`📖 You read <em>${bookName}</em>. Nothing in it surprises you.`);
-					}
-					updatePlayerStats(); return;
-				}
-
 				const skill = dbItem?.skillBook;
 				if (!skill) {
 					gainSkillXp('Decrypting', 2);
@@ -6032,20 +5709,6 @@ function pulseD20(times = 3) {
 			function eatItem(itemName) {
 				const item = player.inventory[itemName];
 				if (!item || (item.quantity ?? 0) < 1) { addStory(`⛔ No ${itemName} to eat.`); return; }
-				SoundManager?.play(/waterskin.*full/i.test(itemName) || item?.type === 'potion' ? 'drink' : 'eat');
-
-				// Waterskin (Full) — drink, restore empty skin, remove thirst
-				if (/waterskin.*full/i.test(itemName)) {
-					removeItem(itemName, 1);
-					addItem('Waterskin', 1, { type: 'tool', weight: 0.5, rarity: 'Common', consumable: false, description: 'An empty leather waterskin.' });
-					const _wsStam = item.baseEffect?.stamina ?? 5;
-					changeStamina(_wsStam);
-					removeCondition('thirsty');
-					updateTopStats?.();
-					addStory(`💧 You drink deeply from your waterskin. (+${_wsStam} stamina)`);
-					checkQuestObjectives?.('water_refilled');
-					return;
-				}
 
 				if (item.type === 'potion') {
 					removeItem(itemName, 1);
@@ -6119,7 +5782,7 @@ function pulseD20(times = 3) {
 				const _restInTown = ['City','CapitalCity','Village'].includes(_restCell.zone || '');
 				_buildWheel([{ label: '⏳ Resting…', action: () => {} }]);
 				await runInlineProgress('Resting…', 10000);
-				const tier = await performSkillCheck('Survival');
+				const tier = performSkillCheck('Survival');
 				let gain = 0;
 				if (tier === 1) {
 					addStory(_restInTown ? '🔔 A commotion outside jolts you awake. No rest gained.' : '⚔️ Ambushed! Rest interrupted.');
@@ -6142,7 +5805,7 @@ function pulseD20(times = 3) {
 				// Snare check
 				if (player.snarePlaced) {
 					player.snarePlaced = false;
-					const snareTier = await performSkillCheck('Tracking');
+					const snareTier = performSkillCheck('Tracking');
 					if (snareTier === 5) applyCondition?.('focused', 3);
 					if (snareTier >= 3) {
 						const qty = snareTier >= 5 ? 2 : 1;
@@ -6153,8 +5816,6 @@ function pulseD20(times = 3) {
 						addStory('🪤 Your snare was empty — either missed or sprung without catching anything.');
 					}
 				}
-				// Rest satisfies the tutorial sleep objective (short rest counts)
-				checkQuestObjectives?.('slept');
 				// Random event during rest (20% camp, 10% town)
 				const _restEventChance = _restInTown ? 0.10 : 0.20;
 				if (Math.random() < _restEventChance) {
@@ -6210,7 +5871,6 @@ function pulseD20(times = 3) {
 				setBuiltIcon?.('shelter-button',  false);
 				setBuiltIcon?.('defenses-button', false);
 				updateComfortProtection?.();
-				SoundManager?.updateAmbience();
 				updateCampSuppliesGrid?.();
 				addStory('🎒 Camp broken. Campsite removed from map.');
 				renderMapsPanel?.();
@@ -6273,7 +5933,6 @@ function pulseD20(times = 3) {
 				addStory(nearWater
 					? '💧 You find a clear stream and drink your fill.'
 					: '💧 You locate a small hidden spring and refill your water.');
-				SoundManager?.play('fill_water');
 				const _gatherEmptyKey = Object.keys(player.inventory || {}).find(k => /waterskin/i.test(k) && !/full/i.test(k));
 				if (_gatherEmptyKey) removeItem(_gatherEmptyKey, 1);
 				addItem('Waterskin (Full)', 1, { type: 'misc', weight: 1, rarity: 'Common', consumable: true, description: 'A waterskin filled with fresh water.' });
@@ -6300,7 +5959,7 @@ function pulseD20(times = 3) {
 					Wetlands: 8, Swamp: 9,
 					Forest: 10,
 					Hills: 12, Plains: 12, Grassland: 12,
-					Mountains: 14, Cave: 13,
+					Mountain: 14, Cave: 13,
 					Tundra: 16, Desert: 19,
 				};
 				const dc    = DC_MAP[biome] ?? 12;
@@ -6314,7 +5973,7 @@ function pulseD20(times = 3) {
 					const failLines = {
 						Desert:  'The cracked earth offers nothing. No water anywhere.',
 						Tundra:  'Everything is frozen. You can\'t extract usable water.',
-						Mountains:'The rock faces yield no springs here.',
+						Mountain:'The rock faces yield no springs here.',
 						Swamp:   'There\'s moisture everywhere but none you\'d dare drink.',
 					};
 					addStory(`💧 ${failLines[biome] || 'You search the area but find no water source.'}`);
@@ -6329,13 +5988,13 @@ function pulseD20(times = 3) {
 					Wetlands: 'A clear spring bubbles up among the reeds.',
 					Swamp:    'After careful searching you find a surprisingly clean spring.',
 					Forest:   'A hidden stream winds through the roots. You fill your skin.',
-					Mountains: 'Snowmelt trickles down a rockface into a clean pool.',
+					Mountain: 'Snowmelt trickles down a rockface into a clean pool.',
 					Cave:     'A dripping stalactite fills your waterskin drop by drop.',
 					Tundra:   'You melt enough clean ice to fill your waterskin.',
 					Desert:   'Against all odds you spot a desert spring. You fill up quickly.',
 				};
 				addStory(`💧 ${successLines[biome] || 'You locate a small spring and fill your waterskin.'}`);
-				SoundManager?.play('fill_water');
+
 				removeItem(emptyKey, 1);
 				addItem('Waterskin (Full)', 1, { type: 'misc', weight: 1, rarity: 'Common', consumable: true, description: 'A waterskin filled with fresh water.' });
 				checkQuestObjectives?.('water_refilled');
@@ -6360,7 +6019,6 @@ function pulseD20(times = 3) {
 			function _doDrinkWaterskin() {
 				const fullKey = Object.keys(player.inventory || {}).find(k => /waterskin/i.test(k) && /full/i.test(k));
 				if (!fullKey) { addStory('⛔ You have no filled waterskin.'); _goBack(); return; }
-				SoundManager?.play('drink');
 				removeItem(fullKey, 1);
 				addItem('Waterskin', 1, { type: 'misc', weight: 0.5, rarity: 'Common', consumable: false, description: 'An empty waterskin.' });
 				applyCondition('hydrated', 5);
@@ -6387,7 +6045,6 @@ function pulseD20(times = 3) {
 						Wetlands: 'A clear spring among the reeds offers clean water.',
 						Ocean:    'You find a trickle of fresh water running down to the sea.',
 					};
-					SoundManager?.play('drink');
 					applyCondition('hydrated', 5);
 					addStory(`💧 ${sourceLines[cell.biome] || 'You drink from the source.'}`);
 				}
@@ -6405,7 +6062,7 @@ function pulseD20(times = 3) {
 				changeStamina(-STAMINA_COST);
 				await runInlineProgress('Searching the area for anything useful…', 5000);
 
-				const tier = await performSkillCheck('Foraging', 0, 'searching the area for food and herbs');
+				const tier = performSkillCheck('Foraging');
 				checkQuestObjectives?.('surroundings_checked');
 
 				if (tier === 1) {
@@ -6493,11 +6150,9 @@ function pulseD20(times = 3) {
 				player.hasCampfire = true;
 				setBuiltIcon?.('campfire-button', true);
 				updateComfortProtection?.();
-				SoundManager?.play('craft_with_hammer');
 				addStory('🔥 Campfire built. (−8 Stones)');
 				gainSkillXp('Fire-making', 3);
 				_goBack();
-				if (typeof _tutAfterBuildCampfire === 'function') _tutAfterBuildCampfire();
 			}
 
 			async function _doLightFire() {
@@ -6519,13 +6174,13 @@ function pulseD20(times = 3) {
 				// Apply weather penalty to fire-making roll (max -3 in severe weather, sheltered halves penalty)
 				const _firePenalty = _fireSev >= 4 ? (player.hasShelter ? -1 : -3)
 				                   : _fireSev >= 2 ? (player.hasShelter ? 0 : -2) : 0;
-				const tier = await performSkillCheck('Fire-making', _firePenalty, 'lighting the campfire');
+				const tier = performSkillCheck('Fire-making', _firePenalty);
 				if (tier <= 2) { addStory('⚠️ The tinder smolders and dies. Kindling spent.'); _goBack(); return; }
 				// startFireWithWood handles the success message and fire timer itself
 				startFireWithWood('Stick Bundle');
 				checkQuestObjectives?.('fire_started');
 				updateComfortProtection?.();
-				_wheelCampfire(); // stay in campfire menu so Cook is immediately accessible
+				_goBack();
 			}
 
 			async function _doExtinguishFire() {
@@ -6533,7 +6188,6 @@ function pulseD20(times = 3) {
 				await runInlineProgress('Extinguishing fire…', 1000);
 				if (typeof extinguishFire === 'function') await extinguishFire();
 				else { player.hasFire = false; player.fireTimer = 0; clearInterval(fireTimerInterval); fireTimeRemaining = 0; }
-				SoundManager?.updateAmbience();
 				updateComfortProtection?.();
 				addStory('💨 Fire extinguished.');
 				_goBack();
@@ -6565,7 +6219,6 @@ function pulseD20(times = 3) {
 			}
 
 							function _wheelCook() {
-					if (!(player?.hasFire && fireTimeRemaining > 0)) { addStory('⛔ The fire has gone out. Light it again to cook.'); _goBack(); return; }
 					const cookables = Object.entries(player.inventory || {})
 						.filter(([, v]) => v?.type === 'food' && (v.quantity ?? 0) > 0);
 					if (!cookables.length) { addStory('⛔ No cookable food in inventory.'); _goBack(); return; }
@@ -6632,7 +6285,7 @@ function _wheelShelter() {
 				const stick = player.campSupplies.find(i => i.name === 'Stick Bundle');
 				stick.quantity -= needed;
 				updateCampSuppliesGrid?.();
-				const tier = await performSkillCheck('Crafting');
+				const tier = performSkillCheck('Crafting');
 				const restored = tier >= 4 ? 40 : tier >= 3 ? 25 : tier >= 2 ? 15 : 8;
 				player.shelterDurability = Math.min(100, (player.shelterDurability ?? 0) + restored);
 				gainSkillXp('Crafting', tier);
@@ -6678,7 +6331,7 @@ function _wheelShelter() {
 				_buildWheel([{ label: '🔍 Scouting…', action: () => {} }]);
 				await bar.wait(6000);
 
-				const scoutTier = await performSkillCheck('Hunting', _huntMod, 'scouting for game');
+				const scoutTier = performSkillCheck('Hunting', _huntMod);
 				if (scoutTier === 1) {
 					bar.finish();
 					addStory('🏹 No signs of animals in this area.');
@@ -6688,7 +6341,6 @@ function _wheelShelter() {
 				const animal = (typeof randomAnimal === 'function') ? randomAnimal() : 'Deer';
 				currentHunt = { tier: 3, animal, wounded: false, arrowsUsed: 0 };
 				addStory(`🏹 You spot signs of a ${animal}!`);
-				if (animal === 'Wolf') SoundManager?.play('wolf');
 
 				// Pause bar while player chooses
 				bar.pause();
@@ -6709,7 +6361,7 @@ function _wheelShelter() {
 				_buildWheel([{ label: '🐾 Tracking…', action: () => {} }]);
 				await bar.wait(5000);
 
-				const trackTier = await performSkillCheck('Tracking', _huntMod, 'following tracks');
+				const trackTier = performSkillCheck('Tracking', _huntMod);
 				if (trackTier <= 2) {
 					bar.finish();
 					player.consecutiveHuntFailures = (player.consecutiveHuntFailures || 0) + 1;
@@ -6749,10 +6401,9 @@ function _wheelShelter() {
 				if ((player.inventory['Arrow']?.quantity || 0) <= 0) {
 					addStory('⛔ Out of arrows!'); huntActive = false; _goBack(); return;
 				}
-				SoundManager?.play('fire_arrow');
 				removeItem('Arrow', 1);
 
-				const shotTier = await performSkillCheck('Archery', _huntMod, 'taking the shot');
+				const shotTier = performSkillCheck('Archery', _huntMod);
 				if (shotTier <= 2) {
 					addStory(`🏹 You miss! The ${animal} flees.`);
 					huntActive = false; _goBack(); return;
@@ -6764,7 +6415,7 @@ function _wheelShelter() {
 					addStory(`🩸 You wound the ${animal}! Following blood trail…`);
 					_buildWheel([{ label: '🩸 Tracking…', action: () => {} }]);
 					await bloodBar.wait(3000);
-					const bloodTier = await performSkillCheck('Tracking', _huntMod, 'following the blood trail');
+					const bloodTier = performSkillCheck('Tracking', _huntMod);
 					if (bloodTier <= 2) {
 						player.consecutiveHuntFailures = (player.consecutiveHuntFailures || 0) + 1;
 						addStory(`🏹 You lose the trail. The ${animal} escapes.`);
@@ -6858,7 +6509,7 @@ function _wheelShelter() {
 				addStory(`🎣 You find a quiet spot along the ${biome.toLowerCase()} and cast your line.`);
 
 				// Fishing skill check determines quality before the bite delay so skill matters
-				const tier = await performSkillCheck('Fishing', 0, 'reading the water');
+				const tier = performSkillCheck('Fishing');
 
 				if (tier === 1) {
 					await runInlineProgress('Waiting for a bite…', 5000);
@@ -7016,7 +6667,7 @@ function _wheelShelter() {
 				}
 
 				const skillName = recipe.skill || 'Crafting';
-				const tier = await performSkillCheck(skillName);
+				const tier = performSkillCheck(skillName);
 
 				// Look up base item data from the database if available
 				const dbData = (typeof findItemInDatabase === 'function' && findItemInDatabase(recipe.produces.item)) || {};
@@ -7055,8 +6706,6 @@ function _wheelShelter() {
 					awardProfessionXp('craft');
 					checkQuestObjectives?.('crafted', { item: recipe.produces.item });
 					if (_craftCat === 'Cooking') checkQuestObjectives?.('food_cooked');
-					const _craftSound = (_craftCat === 'Carpentry') ? 'craft_with_saw' : 'craft_with_hammer';
-					SoundManager?.play(_craftSound);
 				}
 				updateInventory();
 				saveGame(true);
@@ -7152,7 +6801,7 @@ if (!huntActive) {
   return;
 }
 
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier === 1) {
     document.getElementById('hunt-phase-status').textContent = "Hunt Failed.";
     restLog.textContent = "You find no signs of animals.";
@@ -7192,7 +6841,7 @@ if (!huntActive) {
   return;
 }
 
-    const trackRoll = await performSkillCheck('Tracking');
+    const trackRoll = performSkillCheck('Tracking');
     if (trackRoll <= 2) {
       document.getElementById('hunt-phase-status').textContent = "Hunt Failed.";
       restLog.textContent = "You lose the tracks. The prey escapes.";
@@ -7402,7 +7051,7 @@ function awardHuntLoot() {
     addItem(`${animal} Hide`, 1, { type: 'material', weight: 3, rarity: 'Uncommon' });
   }
 
-  addStory(`🥩 You obtain ${quantity} ${pluralize(meatItem, quantity)}.`);
+  addStory(`🥩 You obtain ${quantity} ${meatItem}(s).`);
   if (currentHunt.tier >= 4) changeHope(1, 'successful hunt');
   checkQuestObjectives?.('food_hunted');
   // Chance to find a recipe scroll near the kill — poacher's cache, hunter's notes, etc.
@@ -7832,7 +7481,7 @@ function consumeSupply(name, qty = 1) {
   }
 
   updateCampSuppliesGrid?.();
-  addStory?.(`-${qty} ${pluralize(name, qty)} consumed from camp supplies.`);
+  addStory?.(`-${qty} ${name}(s) consumed from camp supplies.`);
   return true;
 }
 
@@ -8017,7 +7666,6 @@ function _enemyCounterattack() {
     combatState.defending = false;
     return;
   }
-  SoundManager?.play('armor_impact');
   changeLife(-dmg);
   // Armor degrades slightly when hit
   for (const [slot, name] of Object.entries(player.equipped || {})) {
@@ -8032,7 +7680,7 @@ async function _doCombatAttack() {
   await runInlineProgress('Attacking…', 1500);
   const e       = combatState.enemy;
   const skill   = _getBestCombatSkill();
-  let tier = await performSkillCheck(skill);
+  let tier = performSkillCheck(skill);
   if (combatState.eagleEye && skill === 'Archery') tier = Math.max(3, tier);
   if (skill === 'Archery' && player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
   const wepBonus    = _getEquippedWeaponDamage();
@@ -8044,16 +7692,7 @@ async function _doCombatAttack() {
   const wepNote    = wepBonus > 0 ? ` (weapon: +${Math.floor(wepBonus * 0.4)})` : '';
   const markedNote = markedBonus ? ' 🎯+3' : '';
   const bhdNote    = broadheadBonus ? ' 🏹+4' : '';
-  const _atkStatLine = `⚔️ ${dmg} damage${wepNote}${markedNote}${bhdNote} — ${e.name} ${e.life}/${e.maxLife} HP`;
-  const _atkCtx = buildActionContext({
-    combat: { enemy: e.name, enemyLife: `${e.life}/${e.maxLife}`, weapon: player.equipped?.rightHand || player.equipped?.leftHand || 'bare hands', skill, tier, round: combatState.round, dmg },
-  });
-  const _atkNarr = await callGameAI(
-    `One vivid sentence describing the player's ${skill} attack hitting the ${e.name} for ${dmg} damage (tier ${tier}/5). Weapon used: ${player.equipped?.rightHand || player.equipped?.leftHand || 'bare hands'}. Enemy has ${e.life}/${e.maxLife} HP left. No damage numbers in the narrative — those appear separately. Max 20 words.`,
-    _atkCtx,
-    { mode: 'narrative', fallback: '', maxTokens: 60 }
-  );
-  addStory(`⚔️ ${_atkNarr ? _atkNarr + ` <em>(${_atkStatLine})</em>` : _atkStatLine}`);
+  addStory(`⚔️ You hit the ${e.name} for ${dmg} damage${wepNote}${markedNote}${bhdNote}. (${e.life}/${e.maxLife} HP)`);
   // Weapon degrades slightly each attack
   const wep = player.equipped?.rightHand || player.equipped?.leftHand;
   if (wep && player.inventory?.[wep]) degradeItemWear(wep, randomInt(2, 4));
@@ -8083,28 +7722,14 @@ async function _doCombatDefend() {
 async function _doCombatFlee() {
   _buildWheel([{ label: '🏃 Fleeing…', action: () => {} }]);
   await runInlineProgress('Fleeing…', 1500);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier >= 3) {
-    const _fleeName = combatState.enemy.name;
-    const _fleeCtx  = buildActionContext({ combat: { enemy: _fleeName, biome: (mapData[player.currentLocation] || {}).biome } });
-    const _fleeNarr = await callGameAI(
-      `One sentence (max 20 words) describing the player successfully escaping from a ${_fleeName}. Biome: ${_fleeCtx.location.biome}. Breathless and vivid.`,
-      _fleeCtx,
-      { mode: 'narrative', fallback: 'You break away and escape!', maxTokens: 50 }
-    );
-    addStory(`🏃 ${_fleeNarr}`);
+    addStory('🏃 You break away and escape into the wilderness!');
     changeStamina(-15);
     combatState = null;
     _showDefaultWheel();
   } else {
-    const _cutoffName = combatState.enemy.name;
-    const _cutoffCtx  = buildActionContext({ combat: { enemy: _cutoffName } });
-    const _cutoffNarr = await callGameAI(
-      `One sentence (max 20 words) describing the player's escape being cut off by a ${_cutoffName}. Tense, urgent.`,
-      _cutoffCtx,
-      { mode: 'narrative', fallback: 'They cut off your escape!', maxTokens: 50 }
-    );
-    addStory(`🏃 ${_cutoffNarr}`);
+    addStory('🏃 They cut off your escape!');
     _enemyCounterattack();
     if (player.life <= 0) { _resolveCombatDefeat(); return; }
     _showCombatWheel();
@@ -8146,7 +7771,7 @@ async function _castSpell(id) {
   }
   await runInlineProgress(`${sp.label}…`, 1500);
   changeMana(-sp.cost);
-  const tier = await performSkillCheck(sp.skill);
+  const tier = performSkillCheck(sp.skill);
 
   // Healing spell — no attack roll, just restore life then take a counter
   if (id === 'mend') {
@@ -8190,16 +7815,14 @@ async function _castSpell(id) {
 }
 
 function _showOutOfCombatMagicWheel() {
-  const mana      = player.mana || 0;
-  const effMax    = getEffMaxMana();
-  const lightLvl  = player.skills?.['Light Magic']?.level  || 0;
-  const darkLvl   = player.skills?.['Black Magic']?.level   || 0;
-  const bloodLvl  = player.skills?.['Blood Magic']?.level   || 0;
-  const spells    = [];
-  if (effMax > 0 && mana > 0) spells.push({
+  const mana     = player.mana || 0;
+  const lightLvl = player.skills?.['Light Magic']?.level || 0;
+  const darkLvl  = player.skills?.['Black Magic']?.level  || 0;
+  const spells   = [];
+  if (mana > 0) spells.push({
     label:    '🧘 Meditate',
     action:   _doMeditateSpell,
-    disabled: mana >= effMax,
+    disabled: mana >= (player.maxMana || 100),
   });
   if (lightLvl > 0) spells.push({
     label:    `💫 Mend Self (12)`,
@@ -8220,95 +7843,19 @@ function _showOutOfCombatMagicWheel() {
     label:    `☠️ Curse Self (0)`,
     action:   _doCurseSelfSpell,
   });
-  if (bloodLvl > 0) spells.push({
-    label:    '🩸 Blood Ritual',
-    action:   _doBloodMagicRitual,
-  });
   spells.push({ label: '← Back', action: _goBack, isBack: true });
-  const _manaLabel = effMax ? `Mana: ${mana}/${effMax}` : 'No Mana Pool';
-  _buildWheel(spells, _manaLabel);
+  _buildWheel(spells, `Mana: ${mana}`);
 }
 
 async function _doMeditateSpell() {
   _buildWheel([{ label: '🧘 Meditating…', action: () => {} }]);
   await runInlineProgress('Meditating…', 4000);
-  const tier    = await performSkillCheck('Mysticism');
-  const effMax  = getEffMaxMana();
-  const restore = Math.min(tier * 10 + randomInt(0, 5), effMax - (player.mana || 0));
-  if (restore > 0) changeMana(restore);
+  const tier    = performSkillCheck('Mysticism');
+  const maxMana = player.maxMana || 100;
+  const restore = Math.min(tier * 10 + randomInt(0, 5), maxMana - (player.mana || 0));
+  changeMana(restore);
   changeStamina(-5);
   addStory(`🧘 You meditate and restore ${restore} mana. (−5 stamina)`);
-  _goBack();
-}
-
-async function _doBloodMagicRitual() {
-  const _hasBM = (player.skills?.['Blood Magic']?.level || 0) > 0;
-  if (!_hasBM) { addStory('⛔ You have no knowledge of blood magic.'); _goBack(); return; }
-
-  // Check ingredients
-  const _hasCandle   = (player.inventory?.['Candle']?.quantity   || 0) > 0;
-  const _hasBoneDust = (player.inventory?.['Bone Dust']?.quantity || 0) > 0;
-  if (!_hasCandle || !_hasBoneDust) {
-    addStory(`🩸 The ritual requires a Candle and Bone Dust.${!_hasCandle ? ' (missing: Candle)' : ''}${!_hasBoneDust ? ' (missing: Bone Dust)' : ''}`);
-    _goBack(); return;
-  }
-  if ((player.life || 0) <= 10) {
-    addStory('🩸 You are too wounded to make the blood sacrifice safely.');
-    _goBack(); return;
-  }
-
-  _buildWheel([{ label: '🩸 Performing ritual…', action: () => {} }]);
-  await runInlineProgress('Drawing the circle…', 4000);
-
-  // Consume ingredients + life sacrifice
-  removeItem('Candle', 1);
-  removeItem('Bone Dust', 1);
-  const _sacrifice = 8;
-  player.life = Math.max(1, (player.life || 1) - _sacrifice);
-  updateTopStats();
-  addStory(`🩸 You cut your palm and let blood fall onto the bone dust. The candle flame turns deep crimson. (−${_sacrifice} life)`);
-
-  const tier = await performSkillCheck('Blood Magic');
-  gainSkillXp('Blood Magic', tier);
-
-  const _gains   = [0, 0, 20, 35, 50];
-  const _ticks   = [0, 0, 2,  4,  6 ];
-  const _manaGain = _gains[tier] || 0;
-  const _newTicks = _ticks[tier] || 0;
-
-  if (tier >= 5) {
-    player.tempManaPool  = (player.tempManaPool  || 0) + _manaGain;
-    player.tempManaTicks = Math.max((player.tempManaTicks || 0), _newTicks);
-    player.mana = Math.min(getEffMaxMana(), (player.mana || 0) + _manaGain);
-    updateTopStats();
-    addStory(`🩸 The ritual surges. Dark power floods through you — raw and potent. (+${_manaGain} temporary mana, ${_newTicks} ticks)`);
-  } else if (tier >= 4) {
-    player.tempManaPool  = (player.tempManaPool  || 0) + _manaGain;
-    player.tempManaTicks = Math.max((player.tempManaTicks || 0), _newTicks);
-    player.mana = Math.min(getEffMaxMana(), (player.mana || 0) + _manaGain);
-    updateTopStats();
-    addStory(`🩸 The ritual holds. Blood-drawn power settles into you uneasily but real. (+${_manaGain} temporary mana)`);
-  } else if (tier >= 3) {
-    player.tempManaPool  = (player.tempManaPool  || 0) + _manaGain;
-    player.tempManaTicks = Math.max((player.tempManaTicks || 0), _newTicks);
-    player.mana = Math.min(getEffMaxMana(), (player.mana || 0) + _manaGain);
-    const _waste = 3;
-    player.life = Math.max(1, (player.life || 1) - _waste);
-    updateTopStats();
-    addStory(`🩸 The circle holds but falters. Some power escapes as the ritual destabilises. (+${_manaGain} temporary mana, −${_waste} life)`);
-  } else if (tier >= 2) {
-    const _extra = 5;
-    player.life = Math.max(1, (player.life || 1) - _extra);
-    updateTopStats();
-    addStory(`🩸 The ritual fails. The power dissipates and your blood runs cold with nothing to show for it. (−${_extra} life)`);
-  } else {
-    const _extra = 10;
-    player.life = Math.max(1, (player.life || 1) - _extra);
-    applyCondition('cursed', 4);
-    updateTopStats();
-    addStory(`🩸 The ritual catastrophically backlashes. The circle unravels and something cold tears through you. (−${_extra} life, Cursed!)`);
-  }
-
   _goBack();
 }
 
@@ -8316,7 +7863,7 @@ async function _doMendSelfSpell() {
   _buildWheel([{ label: '💫 Mending…', action: () => {} }]);
   await runInlineProgress('Channelling…', 2000);
   changeMana(-12);
-  const tier   = await performSkillCheck('Light Magic');
+  const tier   = performSkillCheck('Light Magic');
   const healAmt = Math.max(1, tier * 10 + randomInt(0, 8));
   changeLife(healAmt);
   if (tier >= 3) removeCondition('injured');
@@ -8329,7 +7876,7 @@ async function _doWardSpell() {
   _buildWheel([{ label: '✨ Warding…', action: () => {} }]);
   await runInlineProgress('Weaving a ward…', 2000);
   changeMana(-8);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   if (tier >= 3) {
     player.ritualWard = true;
     addStory('✨ A ward coils around you. The next enemy you face begins weakened (−20 HP).');
@@ -8343,7 +7890,7 @@ async function _doDarkSightSpell() {
   _buildWheel([{ label: '🔍 Sensing…', action: () => {} }]);
   await runInlineProgress('Reaching into shadow…', 2000);
   changeMana(-5);
-  const tier = await performSkillCheck('Black Magic');
+  const tier = performSkillCheck('Black Magic');
   if (tier <= 1) { addStory('🔍 The shadow sight fails. Nothing revealed.'); _goBack(); return; }
   // Reveal a random nearby undiscovered cell
   const key   = player.currentLocation;
@@ -8419,17 +7966,9 @@ function _partyAssistCombat() {
   }
 }
 
-async function _resolveCombatVictory() {
+function _resolveCombatVictory() {
   const e = combatState.enemy;
-  const _victoryCtx = buildActionContext({
-    combat: { enemy: e.name, enemyWeapon: e.weapon, rounds: combatState.round, playerWeapon: player.equipped?.rightHand || player.equipped?.leftHand || 'bare hands' },
-  });
-  const _victoryNarr = await callGameAI(
-    `One vivid sentence (max 25 words) describing the player's victory over a ${e.name} after ${combatState.round} round(s) of combat. Location: ${_victoryCtx.location.name}. Tone should feel earned and grounded — no melodrama.`,
-    _victoryCtx,
-    { mode: 'narrative', fallback: `You defeated the ${e.name}!`, maxTokens: 60 }
-  );
-  addStory(`🏆 ${_victoryNarr}`);
+  addStory(`🏆 You defeated the ${e.name}!`);
   awardProfessionXp('combat_victory');
   gainExperience(e.xp);
   const _forPay  = player.forPayActive;
@@ -8459,17 +7998,9 @@ async function _resolveCombatVictory() {
   _showDefaultWheel();
 }
 
-async function _resolveCombatDefeat() {
+function _resolveCombatDefeat() {
   const e = combatState?.enemy;
-  const _defeatCtx = buildActionContext({
-    combat: { enemy: e?.name || 'unknown', rounds: combatState?.round || 0 },
-  });
-  const _defeatNarr = await callGameAI(
-    `One grim sentence (max 25 words) describing the player being defeated and losing consciousness after being overcome by a ${e?.name || 'foe'}. Location: ${_defeatCtx.location.name}. Grounded, not melodramatic.`,
-    _defeatCtx,
-    { mode: 'narrative', fallback: `You are defeated by the ${e?.name || 'enemy'}. You fall unconscious…`, maxTokens: 60 }
-  );
-  addStory(`💀 ${_defeatNarr}`);
+  addStory(`💀 You are defeated by the ${e?.name || 'enemy'}. You fall unconscious…`);
   player.life    = Math.max(1, Math.floor(player.maxLife * 0.1));
   player.stamina = 0;
   const goldLost = Math.min(player.gold || 0, Math.max(1, Math.floor((player.gold || 0) * 0.3)));
@@ -8740,7 +8271,7 @@ function showRadialMenu(iconEl, items) {
 				addStory(`${npc.name} eyes you appraisingly.`);
 				_buildWheel([{ label: '💬 Haggling…', action: () => {} }]);
 				await runInlineProgress('Negotiating…', 1500);
-				const negTier = await performSkillCheck('Negotiating');
+				const negTier = performSkillCheck('Negotiating');
 				const discount = negTier >= 5 ? 0.30 : negTier >= 4 ? 0.20 : negTier >= 3 ? 0.10 : 0;
 				if (discount > 0) addStory(`🤝 You talk them down — ${Math.round(discount * 100)}% off.`);
 
@@ -8757,7 +8288,7 @@ function showRadialMenu(iconEl, items) {
 				// Use full generator when available; inline fallback otherwise.
 				let npc;
 				if (typeof NPCGenerator !== 'undefined') {
-					npc = NPCGenerator.generate({ biome: cell.biome, zone: cell.zone, kingdom });
+					npc = NPCGenerator.generate({ biome: cell.biome, zone: cell.zone });
 				} else {
 					const races = ['Human','Human','Human','Elf','Dwarf','Halfling','Orc'];
 					const profs = ['Farmer','Hunter','Merchant','Priest','Scholar','Wanderer','Blacksmith'];
@@ -8854,37 +8385,17 @@ function showRadialMenu(iconEl, items) {
 					},
 					{
 						label: 'The Kingdom',
-						action: async () => {
-							const _templateOpinion = getNpcKingdomOpinion(npc, kingdom);
-							const _kStats = getKingdomStats(kingdom);
-							const _kCond  = getKingdomCondition(kingdom);
-							const _kCtx   = buildActionContext({
-								npc: { name: npc.name, profession: npc.profession, morality: npc.morality, affiliation: npc.affiliation },
-								kingdom: { name: kingdom, condition: _kCond.label, prosperity: _kStats.prosperity, stability: _kStats.stability, happiness: _kStats.happiness, crime: _kStats.crime, military: _kStats.military, trade: _kStats.trade },
-							});
-							const _kOpinion = await callGameAI(
-								`You are voicing ${npc.name}, a ${npc.profession || 'local'} in a medieval fantasy RPG, sharing their opinion of ${kingdom} (currently ${_kCond.label}). Write 1–2 sentences of spoken dialogue using the NPC's perspective and profession (e.g. merchants care about trade, guards about security). Stay in character. No name prefix. Stats context: prosperity ${_kStats.prosperity}, stability ${_kStats.stability}, crime ${_kStats.crime}. Use this as seed: ${_templateOpinion}`,
-								_kCtx,
-								{ mode: 'narrative', fallback: _templateOpinion, maxTokens: 100 }
-							);
-							addStory(`<strong>${npc.name}</strong>: <em>"${_kOpinion.replace(/^["']|["']$/g, '')}"</em>`);
+						action: () => {
+							const _opinion = getNpcKingdomOpinion(npc, kingdom);
+							addStory(`<strong>${npc.name}</strong>: ${_opinion}`);
 							gainSkillXp('Persuasion', 2);
 							_goBack();
 						}
 					},
 					{
 						label: 'Ask for Rumors',
-						action: async () => {
-							const _rumorSeed = RUMORS[Math.floor(Math.random() * RUMORS.length)];
-							const _rumorCtx  = buildActionContext({
-								npc: { name: npc.name, profession: npc.profession, morality: npc.morality, socialClass: npc.socialClass },
-							});
-							const _rumorLine = await callGameAI(
-								`You are voicing ${npc.name}, a ${npc.profession || 'local'} in ${_rumorCtx.location.name} (${_rumorCtx.location.kingdom}), sharing a rumor they've heard. Write exactly one sentence of rumor in the NPC's voice — in character, specific, grounded in medieval fantasy. It should feel local and believable. Use this as a seed topic but you may vary it: ${_rumorSeed}`,
-								_rumorCtx,
-								{ mode: 'narrative', fallback: _rumorSeed, maxTokens: 80 }
-							);
-							addStory(`${npc.name}: <em>"${_rumorLine.replace(/^["']|["']$/g, '')}"</em>`);
+						action: () => {
+							addStory(`${npc.name}: "${RUMORS[Math.floor(Math.random() * RUMORS.length)]}"`);
 							// 40% chance NPC tips you off about a nearby establishment
 							const undiscovered = _getUndiscoveredEstabs();
 							if (undiscovered.length && Math.random() < 0.40) {
@@ -8910,9 +8421,7 @@ function showRadialMenu(iconEl, items) {
 					},
 					{
 						label:  '💬 Converse',
-						action: () => typeof openNpcConversation !== 'undefined'
-							? openNpcConversation(npc)
-							: _showNpcInteraction(npc),
+						action: () => _showNpcInteraction(npc),
 					},
 					..._deliverSpokes,
 					{ label: '← Back', action: _goBack, isBack: true }
@@ -8925,35 +8434,35 @@ function showRadialMenu(iconEl, items) {
 				{
 					id: 'pickpocket', weight: 4,
 					narrative: 'A small figure bumps into you in the crowd. You feel fingers at your coin purse.',
-					check: 'Tracking', checkReason: 'catching the pickpocket', difficulty: 10,
+					check: 'Tracking', difficulty: 10,
 					success: { story: 'You catch their wrist. They twist free and bolt, empty-handed.', effects: [] },
 					failure: { story: 'By the time you notice, your coin purse is lighter.', goldMod: -0.12 },
 				},
 				{
 					id: 'guard_stop', weight: 3,
 					narrative: '"I don\'t recognise you." A town guard plants himself in your path. "State your business."',
-					check: 'Persuasion', checkReason: 'talking your way past the guard', difficulty: 8,
+					check: 'Persuasion', difficulty: 8,
 					success: { story: 'You explain yourself smoothly. The guard nods and steps aside.', effects: [] },
 					failure: { story: 'He moves you on — you\'ve spent enough time in this area for now.', effects: [{ type: 'stamina', amount: -10 }] },
 				},
 				{
 					id: 'lost_child', weight: 3,
 					narrative: 'A child grabs your sleeve, eyes wide. "I can\'t find my mother. I\'m scared."',
-					check: 'Tracking', checkReason: 'finding the child\'s mother', difficulty: 9,
+					check: 'Tracking', difficulty: 9,
 					success: { story: 'You navigate the streets and reunite the child with their grateful mother. She presses a few coins into your hand.', effects: [{ type: 'gold', amount: 5 }, { type: 'experience', amount: 10 }] },
 					failure: { story: 'You search for a while before the child spots someone else and darts away.', effects: [{ type: 'stamina', amount: -3 }] },
 				},
 				{
 					id: 'street_deal', weight: 3,
 					narrative: 'A furtive trader pulls aside a canvas revealing a tray of goods. "Special price for you, friend."',
-					check: 'Persuasion', checkReason: 'haggling with the trader', difficulty: 7,
+					check: 'Persuasion', difficulty: 7,
 					success: { story: 'You haggle them to a fair price and walk away with something useful.', effects: [{ type: 'item', name: 'Healing Herb', qty: 2 }] },
 					failure: { story: 'The price sounds reasonable but the goods are junk. You move on.', effects: [] },
 				},
 				{
 					id: 'overheard_whispers', weight: 3,
 					narrative: 'Two cloaked figures exchange hushed words in a doorway. You catch fragments mentioning a nearby location.',
-					check: 'Stealth', checkReason: 'eavesdropping on the figures', difficulty: 10,
+					check: 'Stealth', difficulty: 10,
 					success: { story: 'You piece together enough to note down a location you hadn\'t noticed before.', effects: [{ type: 'experience', amount: 10 }], revealEstab: true },
 					failure: { story: 'One of them glances your way. They go silent and walk off quickly.', effects: [] },
 				},
@@ -8966,7 +8475,7 @@ function showRadialMenu(iconEl, items) {
 				{
 					id: 'street_brawl', weight: 2,
 					narrative: 'Two men spill out of a doorway trading blows. A crowd has stopped to watch.',
-					check: 'Brawling', checkReason: 'breaking up the fight', difficulty: 11,
+					check: 'Brawling', difficulty: 11,
 					success: { story: 'You step in and shove them apart with authority. Both back off, winded.', effects: [{ type: 'experience', amount: 15 }, { type: 'stamina', amount: -5 }] },
 					failure: { story: 'You catch a wild elbow to the jaw for your trouble. You decide to leave them to it.', effects: [{ type: 'life', amount: -6 }] },
 				},
@@ -8986,7 +8495,7 @@ function showRadialMenu(iconEl, items) {
 					return;
 				}
 
-				const tier    = await performSkillCheck(ev.check, 0, ev.checkReason || null);
+				const tier    = performSkillCheck(ev.check);
 				const success = tier >= 3;
 				const outcome = success ? ev.success : ev.failure;
 				if (outcome?.story) addStory(outcome.story);
@@ -9035,30 +8544,14 @@ function showRadialMenu(iconEl, items) {
 					const knownNames = disc.length ? `Known places: ${disc.join(', ')}.` : '';
 					addStory('🗺️ You\'ve explored everything this settlement has to offer.' + (knownNames ? ` ${knownNames}` : ''));
 				} else {
-					const _loreRoll = hiddenRoll();
-					const tier = _loreRoll <= 5 ? 1 : _loreRoll <= 10 ? 2 : _loreRoll <= 14 ? 3 : _loreRoll <= 18 ? 4 : 5;
+					const tier = performSkillCheck('Tracking');
 					if (tier >= 3) {
 						justFound = undiscovered[Math.floor(Math.random() * undiscovered.length)];
 						discoverEstablishment(coord, justFound.name);
-						if (justFound.description) {
-							addStory(justFound.description);
-						} else {
-							const _discCtx = buildActionContext();
-							const _discNarr = await callGameAI(
-								`One sentence describing a traveller discovering "${justFound.name}" (type: ${justFound.type || 'establishment'}) while exploring ${_discCtx.location.name}. Vivid, grounded, medieval fantasy. Max 25 words.`,
-								_discCtx,
-								{ mode: 'narrative', fallback: `📍 New discovery: ${justFound.name}.`, maxTokens: 60 }
-							);
-							addStory(`📍 ${_discNarr}`);
-						}
+						if (justFound.description) addStory(justFound.description);
+						else addStory(`📍 New discovery: <strong>${justFound.name}</strong>.`);
 					} else {
-						const _failCtx = buildActionContext();
-						const _failNarr = await callGameAI(
-							`One sentence describing a traveller wandering the streets of ${_failCtx.location.name} (${_failCtx.location.biome}) without finding anything notable. ${_failCtx.location.timeOfDay}, ${_failCtx.location.weather}. Max 20 words, melancholy or weary tone.`,
-							_failCtx,
-							{ mode: 'narrative', fallback: 'You wander the streets but find nothing new this time.', maxTokens: 50 }
-						);
-						addStory(`🔍 ${_failNarr}`);
+						addStory('🔍 You wander the streets but don\'t find anything new this time.');
 					}
 				}
 
@@ -9101,138 +8594,6 @@ function showRadialMenu(iconEl, items) {
 			}
 
 			// Town sub-wheel: shown when the player is in a City or Village.
-			function _shortNpcLabel(npc) {
-				const PROF_LOOKS = {
-					Farmer: 'weathered farmer',        Blacksmith: 'soot-stained smith',
-					Merchant: 'well-dressed trader',   Guard: 'armed guard',
-					Scholar: 'ink-stained scholar',    Priest: 'robed priest',
-					Bard: 'lute-carrying bard',        Hunter: 'cloaked hunter',
-					Herbalist: 'herb-scented healer',  Innkeeper: 'aproned innkeeper',
-					Beggar: 'ragged beggar',            Thief: 'hooded figure',
-					Soldier: 'scarred soldier',         Wanderer: 'dusty traveller',
-					Alchemist: 'cloaked alchemist',    Knight: 'armoured knight',
-					Ranger: 'weathered ranger',         Sailor: 'salt-stained sailor',
-					Carpenter: 'sawdust-dusted carpenter', Tailor: 'needle-pricked tailor',
-				};
-				const racePrefix = npc.race && npc.race !== 'Human' ? `${npc.race} ` : '';
-				const profLabel  = PROF_LOOKS[npc.profession] || (npc.profession || 'local').toLowerCase();
-				const full = `${racePrefix}${profLabel}`;
-				const capped = full.charAt(0).toUpperCase() + full.slice(1);
-				return capped.length > 22 ? capped.slice(0, 20) + '…' : capped;
-			}
-
-			function _showNpcInteractOptions(npc) {
-				meetNPC(npc);
-				if (npc._worldId) bumpImportance(npc._worldId, 'social interaction', 2);
-				awardProfessionXp('npc_talk');
-
-				// Delivery spokes for active quests targeting this NPC
-				const _deliverSpokes = [];
-				(player.journal?.quests || []).filter(q => q.status === 'Active').forEach(inst => {
-					const def = getQuestDef(inst.id);
-					if (!def) return;
-					const branch = _getActiveBranch(inst, def);
-					const obj = branch
-						? branch.objectives?.[inst.branchObjectiveIndex ?? 0]
-						: def.objectives?.[inst.objectiveIndex];
-					if (!obj || obj.completion?.type !== 'delivered') return;
-					const targetNpc = (obj.completion?.npc || obj.target?.npc || '').toLowerCase();
-					if (targetNpc !== (npc.name || '').toLowerCase()) return;
-					const reqItem = obj.target?.item || obj.completion?.item;
-					const hasIt   = !reqItem || getItemQty(reqItem) >= 1;
-					const lbl     = reqItem ? `Deliver ${reqItem}` : 'Deliver Item';
-					_deliverSpokes.push({
-						label:    lbl.length > 22 ? lbl.slice(0, 20) + '…' : lbl,
-						disabled: !hasIt,
-						action: () => {
-							if (reqItem) removeItem(reqItem, 1);
-							addStory(`📦 You hand ${reqItem ? `the ${reqItem}` : 'the item'} to ${npc.name}.`);
-							addStory(`${npc.name}: "Thank you. This is exactly what I needed."`);
-							setQuestFlag(inst.id, `delivered_${(npc.name || '').replace(/\s+/g,'_').toLowerCase()}`, true);
-							_goBack();
-						}
-					});
-				});
-
-				_buildWheel([
-					{
-						label: '💬 Talk',
-						action: () => typeof openNpcConversation !== 'undefined'
-							? openNpcConversation(npc)
-							: _showNpcInteraction(npc),
-					},
-					{
-						label: '🛒 Trade',
-						action: () => { _wheelStack.push(() => _showNpcInteractOptions(npc)); _doNpcTrade(npc); }
-					},
-					...(npc.flags?.canBePickpocketed ? [{
-						label: '🤏 Pickpocket',
-						action: () => { _wheelStack.push(() => _showNpcInteractOptions(npc)); _doPickpocket(npc); }
-					}] : []),
-					{
-						label: '⚔️ Attack',
-						action: () => {
-							const enemyType = npc.name || `${npc.race || 'Human'} ${npc.profession || ''}`.trim();
-							addStory(`⚔️ You draw your weapon against ${npc.name || 'the stranger'}!`);
-							startCombat(enemyType);
-						}
-					},
-					..._deliverSpokes,
-					{ label: '← Nevermind', action: _goBack, isBack: true },
-				], npc.name || 'Stranger');
-			}
-
-			function _showSocialWheel() {
-				const cell    = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-				const kingdom = cell.kingdom || player.currentKingdom || null;
-
-				// NPCs previously met at this location
-				const knownHere = Object.values(worldNPCs.registry)
-					.filter(r => r.lastLocation === player.currentLocation && r.importance >= 2)
-					.sort((a, b) => (b.lastSeenTurn || 0) - (a.lastSeenTurn || 0))
-					.slice(0, 3);
-
-				// Fill up to 4 total with freshly generated strangers
-				const numFresh = Math.max(1, 4 - knownHere.length);
-				const freshNPCs = [];
-				for (let i = 0; i < numFresh; i++) {
-					freshNPCs.push(
-						typeof NPCGenerator !== 'undefined'
-							? NPCGenerator.generate({ biome: cell.biome, zone: cell.zone, kingdom })
-							: { race: 'Human', profession: 'Farmer', gender: 'Male', flags: { canBePickpocketed: true, recruitable: false, romanceable: false, dropsLootOnDeath: false } }
-					);
-				}
-
-				const opts = [];
-
-				// Known NPCs listed by name
-				knownHere.forEach(rec => {
-					opts.push({
-						label: rec.name.length > 22 ? rec.name.slice(0, 20) + '…' : rec.name,
-						action: () => _showNpcInteractOptions({
-							_worldId:   rec.id,
-							name:       rec.name,
-							race:       rec.race,
-							profession: rec.profession || 'Local',
-							morality:   rec.morality   || 'Neutral',
-							traits:     rec.traits     || [],
-							flags:      { canBePickpocketed: true, recruitable: false, romanceable: false, dropsLootOnDeath: false },
-						}),
-					});
-				});
-
-				// Unknown NPCs listed by appearance
-				freshNPCs.forEach(npc => {
-					opts.push({
-						label: _shortNpcLabel(npc),
-						action: () => _showNpcInteractOptions(npc),
-					});
-				});
-
-				opts.push({ label: '← Back', action: _goBack, isBack: true });
-				_buildWheel(opts, 'Social');
-			}
-
 			function _showTownWheel() {
 				const coord    = player.currentLocation;
 				const cell     = (typeof mapData !== 'undefined' && mapData[coord]) || {};
@@ -9255,8 +8616,8 @@ function showRadialMenu(iconEl, items) {
 							? () => { addStory("You've already found everything this settlement has to offer."); }
 							: () => { _wheelStack.push(_showTownWheel); _exploreTown(); },
 					},
-					{ label: '👥 Social',
-					  action: () => { _wheelStack.push(_showTownWheel); _showSocialWheel(); } },
+					{ label: 'Talk to Someone',
+					  action: () => { _wheelStack.push(_showTownWheel); _talkToNpc(); } },
 					{
 						label:  `Known Places${hasKnown ? ` (${disc.length})` : ''}`,
 						action: hasKnown
@@ -9432,37 +8793,20 @@ function showRadialMenu(iconEl, items) {
 				const gen  = (typeof NPCGenerator !== 'undefined') ? NPCGenerator : null;
 				if (!gen) { addStory('⚠️ NPC generator unavailable.'); _goBack(); return; }
 
-				// Build a natural visual description from what you can plainly see
-				function _strangerVis(npc) {
-					const base = (npc.appearance || '').split('.')[0].trim();
-					const r    = npc.race || 'Human';
-					const g    = npc.gender || '';
-					const gNoun = g === 'Female' ? 'woman' : g === 'Male' ? 'man' : 'figure';
-					const art  = /^[aeiou]/i.test(r) ? 'An' : 'A';
-					if (r === 'Human') {
-						const art2 = /^[aeiou]/i.test(base) ? 'An' : 'A';
-						return `${art2} ${base.toLowerCase()}`;
-					}
-					// Non-human race is visually distinctive — name it
-					return `${art} ${r} — ${base.toLowerCase()}`;
-				}
-
 				const npcs = [gen.generateTavernNPC(ctx), gen.generateTavernNPC(ctx), gen.generateTavernNPC(ctx)];
-				npcs.forEach(n => { n._isStranger = true; registerNPC(n, 1); });
+				npcs.forEach(n => registerNPC(n, 1));
 				addStory('👀 You glance around the room. A few figures catch your attention...');
-				npcs.forEach(n => addStory(`• ${_strangerVis(n)}.`));
+				npcs.forEach(n => {
+					const first = n.appearance.split(',')[0];
+					addStory(`• ${capitalize(first)}.`);
+				});
 				_buildWheel([
 					...npcs.map(npc => ({
-						label: _strangerVis(npc).substring(0, 30),
+						label: npc.appearance.split(',')[0].substring(0, 28),
 						action: () => {
 							if (npc._worldId) bumpImportance(npc._worldId, 'player approached in tavern', 2);
 							_wheelStack.push(_tavernTalkToStranger);
-							if (typeof openNpcConversation !== 'undefined') {
-								addStory(`You make your way over. ${npc.description || ''}`);
-								openNpcConversation(npc);
-							} else {
-								_showNpcInteraction(npc, { anonymous: true });
-							}
+							_showNpcInteraction(npc, { anonymous: true });
 						}
 					})),
 					{ label: '← Back', action: _goBack, isBack: true },
@@ -9543,7 +8887,7 @@ function showRadialMenu(iconEl, items) {
 				await runInlineProgress('Seeking out the cook…', 2000);
 
 				const cookName = ['the cook', 'the innkeeper', 'the barkeep'][Math.floor(Math.random() * 3)];
-				const tier = await performSkillCheck('Persuasion', 0, 'getting the recipe from the cook');
+				const tier = performSkillCheck('Persuasion');
 
 				if (tier <= 2) {
 					const rejections = [
@@ -9610,7 +8954,6 @@ function showRadialMenu(iconEl, items) {
 				await runInlineProgress('Retiring for the night…', 2000);
 				addStory(`💤 You bolt the door and sink into the bed. Sleep comes quickly.`);
 				addStory(`🌅 You wake with the dawn, rested and ready.`);
-				SoundManager?.play('chicken', 0.3);
 				player.life    = player.maxLife;
 				player.stamina = player.maxStamina;
 				player.timeOfDay = '🌅 Dawn';
@@ -9618,15 +8961,13 @@ function showRadialMenu(iconEl, items) {
 				removeCondition('fatigued');
 				updateTopStats();
 				updatePlayerStats();
-				SoundManager?.updateAmbience();
 				if (Math.random() < 0.10) {
 					await fireRandomEvent('tavern', ['hazard', 'traveler_encounter']);
 				}
 				_goBack();
 			}
 
-			async function _listenToBard() {
-				_buildWheel([{ label: '🎵 Listening…', action: () => {} }]);
+			function _listenToBard() {
 				const BARD_SONGS = [
 					'A bard in the corner strums a melancholy air about kings long dead.',
 					'A throaty voice fills the room with an old ballad — the words half-remembered by the older patrons.',
@@ -9637,14 +8978,7 @@ function showRadialMenu(iconEl, items) {
 					'The ballad tells of a wandering knight who found more in a stranger\'s firelight than in any keep.',
 					'A slow, quiet piece — barely audible over the noise of the room. You lean in despite yourself.',
 				];
-				const _songSeed = BARD_SONGS[Math.floor(Math.random() * BARD_SONGS.length)];
-				const _bardCtx  = buildActionContext();
-				const _bardLine = await callGameAI(
-					`Write one short evocative sentence describing what a bard is performing in a medieval fantasy tavern in ${_bardCtx.location.name} (${_bardCtx.location.kingdom}). It is ${_bardCtx.location.timeOfDay}. The description should mention the mood, song type, or subject matter. Use this as a seed: ${_songSeed}`,
-					_bardCtx,
-					{ mode: 'narrative', fallback: _songSeed, maxTokens: 70 }
-				);
-				addStory(`🎵 ${_bardLine}`);
+				addStory(`🎵 ${BARD_SONGS[Math.floor(Math.random() * BARD_SONGS.length)]}`);
 				if (Math.random() < 0.50) {
 					const learned = learnRandomLore('bard', { source: 'bard' });
 					if (!learned) addStory('Nothing in the tale is new to you.');
@@ -9653,8 +8987,7 @@ function showRadialMenu(iconEl, items) {
 				_goBack();
 			}
 
-			async function _tavernRumors() {
-				_buildWheel([{ label: '👂 Listening…', action: () => {} }]);
+			function _tavernRumors() {
 				const TAVERN_RUMORS = [
 					'A merchant mutters that the northern roads are watched by something that isn\'t bandits.',
 					'A weathered soldier claims the last three supply wagons never reached their destination.',
@@ -9674,13 +9007,7 @@ function showRadialMenu(iconEl, items) {
 				} else {
 					tavernRumor = TAVERN_RUMORS[Math.floor(Math.random() * TAVERN_RUMORS.length)];
 				}
-				const _rumCtx  = buildActionContext();
-				const _rumLine = await callGameAI(
-					`You are writing a rumor overheard in a tavern in ${_rumCtx.location.name} (${_rumCtx.location.kingdom}), a medieval fantasy setting. Write exactly one sentence — an atmospheric, specific rumor in the voice of a nameless patron. It should feel local and believable. Use this as a seed: ${tavernRumor}`,
-					_rumCtx,
-					{ mode: 'narrative', fallback: tavernRumor, maxTokens: 70 }
-				);
-				addStory(`👂 ${_rumLine}`);
+				addStory(`👂 ${tavernRumor}`);
 				// 30% chance rumour points to an undiscovered establishment
 				const _undiscTav = _getUndiscoveredEstabs();
 				if (_undiscTav.length && Math.random() < 0.30) {
@@ -9823,8 +9150,8 @@ async function _doPickpocket(npc, rec) {
   await runInlineProgress('Watching for an opening…', 2500);
 
   // Both Stealth and Thievery matter — use the lower tier as the limiting factor
-  const stealthTier  = await performSkillCheck('Stealth');
-  const thieveryTier = await performSkillCheck('Thievery');
+  const stealthTier  = performSkillCheck('Stealth');
+  const thieveryTier = performSkillCheck('Thievery');
   const tier = Math.min(stealthTier, thieveryTier);
 
   if (tier >= 4) {
@@ -10188,10 +9515,9 @@ function _generateShopkeeper(shopType) {
   const prof = profMap[shopType] || 'Merchant';
 
   if (typeof NPCGenerator !== 'undefined') {
-    const cell    = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-    const kingdom = cell.kingdom || player.currentKingdom || null;
+    const cell = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
     try {
-      const npc = NPCGenerator.generate({ biome: cell.biome, zone: cell.zone, kingdom });
+      const npc = NPCGenerator.generate({ biome: cell.biome, zone: cell.zone });
       npc.profession = prof;
       if (!npc.traits?.length) npc.traits = [trait];
       return npc;
@@ -10270,15 +9596,12 @@ function _tradeRenderShopGrid() {
   grid.innerHTML = '';
   _tradeState.shopItems.forEach((item, i) => {
     const el = document.createElement('div');
-    const _rrShop = _isRaceRestricted(item.name);
-    el.className = 'trade-item' +
-      (_tradeState.selectedSide === 'shop' && _tradeState.selectedIndex === i ? ' selected-buy' : '') +
-      (_rrShop ? ' race-restricted' : '');
+    el.className = 'trade-item' + (_tradeState.selectedSide === 'shop' && _tradeState.selectedIndex === i ? ' selected-buy' : '');
     el.innerHTML =
       `<img src="${_getItemIcon(item.name)}" alt="${item.name}" onerror="this.style.display='none'">` +
       `<span class="trade-price-tag">${item.buyPrice}g</span>` +
       (item.qty > 1 ? `<span class="trade-qty">×${item.qty}</span>` : '');
-    el.title = `${item.name} — ${item.buyPrice}g${item.qty > 1 ? ' ×' + item.qty : ''}${_rrShop ? ` (not wearable by ${player.race}s)` : ''}`;
+    el.title = `${item.name} — ${item.buyPrice}g${item.qty > 1 ? ' ×' + item.qty : ''}`;
     el.addEventListener('click', () => _tradeSelectShopItem(i));
     grid.appendChild(el);
   });
@@ -10297,15 +9620,12 @@ function _tradeRenderPlayerGrid() {
         : Math.max(1, Math.floor(((data && data.value) || 5) * 0.55));
       const el  = document.createElement('div');
       const qty = data.quantity || 1;
-      const _rrPlayer = _isRaceRestricted(name);
-      el.className = 'trade-item' +
-        (_tradeState.selectedSide === 'player' && _tradeState.selectedIndex === i ? ' selected-sell' : '') +
-        (_rrPlayer ? ' race-restricted' : '');
+      el.className = 'trade-item' + (_tradeState.selectedSide === 'player' && _tradeState.selectedIndex === i ? ' selected-sell' : '');
       el.innerHTML =
         `<img src="${_getItemIcon(name)}" alt="${name}" onerror="this.style.display='none'">` +
         (qty > 1 ? `<span class="trade-qty">${qty}</span>` : '') +
         `<span class="trade-price-tag">${sellPrice}g</span>`;
-      el.title = `${name}${qty > 1 ? ' (' + qty + ')' : ''} — sell: ${sellPrice}g${_rrPlayer ? ` (not wearable by ${player.race}s)` : ''}`;
+      el.title = `${name}${qty > 1 ? ' (' + qty + ')' : ''} — sell: ${sellPrice}g`;
       el.addEventListener('click', () => _tradeSelectPlayerItem(i, name, data, sellPrice));
       grid.appendChild(el);
     });
@@ -10604,7 +9924,7 @@ async function _doBarterTrade(offerName, offerValue, wantName, wantPrice, stock,
 
   // Under-valued — needs a Negotiating check
   await runInlineProgress('Making your case…', 1500);
-  const tier = await performSkillCheck('Negotiating');
+  const tier = performSkillCheck('Negotiating');
 
   if (tier >= 4) {
     removeItem(offerName, 1);
@@ -10904,7 +10224,7 @@ async function _portWorkWheel(port) {
         _buildWheel([{ label: '⏳ Working…', action: () => {} }]);
         addStory(`💼 ${job.desc}`);
         await runInlineProgress(job.label, 3000);
-        const tier = await performSkillCheck(job.skill);
+        const tier = performSkillCheck(job.skill);
         const pay  = Math.round(job.pay[0] + (job.pay[1] - job.pay[0]) * ((tier - 1) / 4));
         player.gold += pay;
         updateTopStats();
@@ -10963,7 +10283,6 @@ function _openEstablishment(est) {
   const isSmith     = /blacksmith|armorer|armourer|forge/i.test(est.type || est.name || '');
 
   if (isSmith) {
-    SoundManager?.play('hammer_strikes_anvil_single');
     addStory(`🔨 The clang of hammer on anvil fills the air as you enter ${est.name}.`);
     const shopkeeper = _generateShopkeeper('blacksmith');
     addStory(`${shopkeeper.name}, a ${shopkeeper.race} smith, wipes their hands and looks up.`);
@@ -11111,7 +10430,7 @@ function _openEstablishment(est) {
           action: async () => {
             _wheelStack.push(_loreMenu);
             await runInlineProgress(isLoremasterType ? 'Consulting…' : 'Studying…', 2500);
-            const tier = await performSkillCheck('Decrypting', 0, 'studying the texts');
+            const tier = performSkillCheck('Lore');
             if (tier >= 3) {
               const learned = learnRandomLore(studySource, { source: studySource, kingdom: player.currentKingdom });
               if (!learned) addStory('📚 You find nothing you don\'t already know here.');
@@ -11191,7 +10510,7 @@ async function _tavernArmWrestle() {
   addStory(`💪 You slap ${bet} gold on the table and roll up your sleeve. The barroom hushes.`);
   _buildWheel([{ label: '⏳ Wrestling…', action: () => {} }]);
   await runInlineProgress('Arm wrestling…', 3000);
-  const tier = await performSkillCheck('Brawling');
+  const tier = performSkillCheck('Brawling');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(bet * 3, 'arm wrestling');
     addStory(`💥 Dominant. Your opponent's knuckles hit the table before they can blink. (+${bet * 3}g)`);
@@ -11213,8 +10532,6 @@ async function _tavernArmWrestle() {
 }
 
 async function _tavernDiceGame() {
-  if (_activityUsedToday('tavern_dice')) { addStory('🎲 You\'ve already played dice today. The other patrons are tired of losing to you.'); _goBack(); return; }
-  _markActivityUsed('tavern_dice');
   const BET_OPTS = [2, 5, 10, 20].filter(b => b <= (player.gold || 0));
   if (!BET_OPTS.length) { addStory('⚠️ You need at least 2 gold to play.'); _goBack(); return; }
   addStory('🎲 The dice-man rattles his cup. Choose your wager:');
@@ -11247,16 +10564,6 @@ async function _tavernDiceGame() {
   ], 'Your Wager');
 }
 
-// ── Daily Activity Limiter ────────────────────────────────────
-// Keyed by activity id; value = player.day on which it was last done.
-function _activityUsedToday(key) {
-  return (player.dailyActivities || {})[key] === (player.day || 1);
-}
-function _markActivityUsed(key) {
-  if (!player.dailyActivities) player.dailyActivities = {};
-  player.dailyActivities[key] = player.day || 1;
-}
-
 // ── Arena / Fighting Pit ──────────────────────────────────────
 
 function _enterArena(est) {
@@ -11273,12 +10580,10 @@ function _enterArena(est) {
 }
 
 async function _arenaSpar() {
-  if (_activityUsedToday('arena_spar')) { addStory('🥊 You\'ve already sparred today. Rest up and come back tomorrow.'); _goBack(); return; }
-  _markActivityUsed('arena_spar');
   _buildWheel([{ label: '⏳ Sparring…', action: () => {} }]);
   addStory('🥊 A training partner steps forward. Practice — no money, just skill.');
   await runInlineProgress('Sparring…', 3500);
-  const tier = await performSkillCheck('Brawling');
+  const tier = performSkillCheck('Brawling');
   if (tier >= OUTCOME.MAJOR_POS) {
     gainSkillXp('Swordsmanship', 3);
     addStory('⚡ You outclass them completely. They ask if you\'d consider teaching.');
@@ -11302,8 +10607,6 @@ async function _arenaSpar() {
 }
 
 async function _arenaTournament() {
-  if (_activityUsedToday('arena_tournament')) { addStory('🏆 The tournament only runs once a day. Come back tomorrow.'); _goBack(); return; }
-  _markActivityUsed('arena_tournament');
   const ENTRY  = 10;
   const PRIZES = [0, 15, 30, 75];
   if ((player.gold || 0) < ENTRY) { addStory(`⚠️ Entry fee is ${ENTRY} gold.`); _goBack(); return; }
@@ -11315,7 +10618,7 @@ async function _arenaTournament() {
     _buildWheel([{ label: `⏳ Round ${round}…`, action: () => {} }]);
     addStory(`⚔️ Round ${round}. The crowd watches.`);
     await runInlineProgress(`Round ${round}…`, 3500);
-    const tier = await performSkillCheck('Swordsmanship');
+    const tier = performSkillCheck('Swordsmanship');
     if (tier >= OUTCOME.MINOR_POS) {
       addStory(`✅ You advance — round ${round} is yours.`);
       if (round < 3) {
@@ -11377,8 +10680,6 @@ function _enterStables(est) {
 }
 
 async function _horseRace() {
-  if (_activityUsedToday('horse_race')) { addStory('🏁 The races are done for today. The horses need rest too.'); _goBack(); return; }
-  _markActivityUsed('horse_race');
   const ENTRY  = 8;
   const PRIZES = [0, 8, 20, 50];
   if ((player.gold || 0) < ENTRY) { addStory(`⚠️ Race entry costs ${ENTRY} gold.`); _goBack(); return; }
@@ -11386,7 +10687,7 @@ async function _horseRace() {
   addStory('🏁 You draw your lane. Five riders at the post. The flag drops.');
   _buildWheel([{ label: '⏳ Racing…', action: () => {} }]);
   await runInlineProgress('Racing…', 4500);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   const pos   = tier >= OUTCOME.MAJOR_POS ? 1 : tier >= OUTCOME.MINOR_POS ? 2 : tier === OUTCOME.NEUTRAL ? 3 : 4;
   const place = ['', '1st 🥇', '2nd 🥈', '3rd 🥉', '4th'][pos];
   const prize = [0, PRIZES[3], PRIZES[2], PRIZES[1], 0][pos];
@@ -11413,7 +10714,7 @@ async function _betOnRace() {
   addStory('🏁 The race card is posted by the gate. Four horses competing today:');
   HORSES.forEach(h => addStory(`  • ${h.name} — ${h.odds}:1 odds`));
   // Tracking check gives a small hint about the favourite's real condition
-  const hint = await performSkillCheck('Tracking', 0);
+  const hint = performSkillCheck('Tracking', 0);
   if (hint >= OUTCOME.MINOR_POS) {
     const tip = HORSES[Math.floor(Math.random() * 2)]; // one of the two favourites
     addStory(`👁️ You notice ${tip.name} moving with unusual confidence in the warm-up. Could mean something.`);
@@ -11486,8 +10787,6 @@ function _enterGamblingDen(est) {
 }
 
 async function _gamblingHighDice() {
-  if (_activityUsedToday('gambling_high_dice')) { addStory('🎲 You\'ve already had your run at the dice today. The house won\'t let you back until tomorrow.'); _goBack(); return; }
-  _markActivityUsed('gambling_high_dice');
   const BET_OPTS = [5, 10, 20, 50].filter(b => b <= (player.gold || 0));
   if (!BET_OPTS.length) { addStory('⚠️ Minimum stake here is 5 gold.'); _goBack(); return; }
   addStory('🎲 The dice-keeper slides a cup across. Name your stake:');
@@ -11523,15 +10822,13 @@ async function _gamblingHighDice() {
 }
 
 async function _gamblingCards() {
-  if (_activityUsedToday('gambling_cards')) { addStory('🃏 The card table is closed to you until tomorrow — house rules.'); _goBack(); return; }
-  _markActivityUsed('gambling_cards');
   const bet = Math.min(15, Math.max(5, Math.floor((player.gold || 0) * 0.15)));
   if ((player.gold || 0) < 5) { addStory('⚠️ Not enough gold for a card game.'); _goBack(); return; }
   player.gold -= bet; updateTopStats?.();
   addStory(`🃏 You sit down at the table. ${bet} gold in the pot. The dealer's face gives nothing away.`);
   _buildWheel([{ label: '⏳ Playing…', action: () => {} }]);
   await runInlineProgress('Playing cards…', 4000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(bet * 3, 'card game big win');
     addStory(`🃏 You read every face at the table. A clean sweep. (+${bet * 3}g)`);
@@ -11552,15 +10849,13 @@ async function _gamblingCards() {
 }
 
 async function _gamblingShell() {
-  if (_activityUsedToday('gambling_shell')) { addStory('🐚 The operator has packed up for the day. Try again tomorrow.'); _goBack(); return; }
-  _markActivityUsed('gambling_shell');
   const BET = 3;
   if ((player.gold || 0) < BET) { addStory(`⚠️ Shell game costs ${BET} gold.`); _goBack(); return; }
   player.gold -= BET; updateTopStats?.();
   addStory('🐚 The operator\'s hands blur across the table. Follow the shell with the pebble underneath...');
   _buildWheel([{ label: '⏳ Watching…', action: () => {} }]);
   await runInlineProgress('Watching…', 2800);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(BET * 5, 'shell game — caught the switch');
     addStory(`👁️ You track every movement. The operator blinks. "Lucky guess." (+${BET * 5}g)`);
@@ -11577,15 +10872,13 @@ async function _gamblingShell() {
 // ── Archery Contest ──────────────────────────────────────────
 
 async function _doArcheryContest() {
-  if (_activityUsedToday('archery_contest')) { addStory('🏹 The archery contest is only held once a day. Come back tomorrow.'); _goBack(); return; }
-  _markActivityUsed('archery_contest');
   const ENTRY = 5;
   if ((player.gold || 0) < ENTRY) { addStory(`⚠️ Entry to the archery contest costs ${ENTRY} gold.`); _goBack(); return; }
   player.gold -= ENTRY; updateTopStats?.();
   addStory('🏹 The targets are set at distance. A small crowd watches. You notch your first arrow.');
   _buildWheel([{ label: '⏳ Competing…', action: () => {} }]);
   await runInlineProgress('Competing…', 4000);
-  const tier = await performSkillCheck('Archery');
+  const tier = performSkillCheck('Archery');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(30, 'archery contest — first place');
     addStory('🏆 Dead centre three times in a row. The crowd cheers. You take first prize. (+30g)');
@@ -11608,8 +10901,6 @@ async function _doArcheryContest() {
 // ── Pit Fight Betting ─────────────────────────────────────────
 
 async function _doPitFightBetting() {
-  if (_activityUsedToday('pit_fight_betting')) { addStory('⚔️ The pit fights are done for today. The bookmaker has closed the board.'); _goBack(); return; }
-  _markActivityUsed('pit_fight_betting');
   const FIGHTERS = [
     { name: 'The Anvil',     odds: 2 },
     { name: 'Redhand Kern',  odds: 3 },
@@ -11620,7 +10911,7 @@ async function _doPitFightBetting() {
   if (!BET_OPTS.length) { addStory('⚠️ You need at least 5 gold to bet.'); _goBack(); return; }
   addStory('⚔️ Two fighters circle each other in the pit. The bookmaker rattles off the odds:');
   FIGHTERS.forEach(f => addStory(`  • ${f.name} — ${f.odds}:1`));
-  const hint = await performSkillCheck('Tracking', 0);
+  const hint = performSkillCheck('Tracking', 0);
   if (hint >= OUTCOME.MINOR_POS) {
     const tip = FIGHTERS[Math.floor(Math.random() * 2)];
     addStory(`👁️ You notice ${tip.name} favouring their left — or hiding it well.`);
@@ -11671,7 +10962,7 @@ async function _doStreetPickpocket() {
   addStory('🤚 You drift through the crowd, eyes on soft targets. A fat purse catches your eye.');
   _buildWheel([{ label: '⏳ Working the crowd…', action: () => {} }]);
   await runInlineProgress('Working the crowd…', 3000);
-  const tier = await performSkillCheck('Thievery');
+  const tier = performSkillCheck('Thievery');
   if (tier >= OUTCOME.MAJOR_POS) {
     const gain = randomInt(8, 20);
     _actGold(gain, 'pickpocket');
@@ -11705,13 +10996,13 @@ async function _doStreetPickpocket() {
 // ── Mugging ───────────────────────────────────────────────────
 
 async function _doMugSomeone() {
-  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌌 Late Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
+  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
   if (!isNight) { addStory('🌞 The streets are too busy. This kind of work needs dark.'); _goBack(); return; }
   addStory('🌑 You follow a well-dressed figure into a less-travelled alley and make your move.');
   _buildWheel([{ label: '⏳ Moving…', action: () => {} }]);
   await runInlineProgress('Moving…', 3500);
-  const stealthTier = await performSkillCheck('Stealth');
-  const brawlTier   = await performSkillCheck('Brawling');
+  const stealthTier = performSkillCheck('Stealth');
+  const brawlTier   = performSkillCheck('Brawling');
   const combinedTier = Math.round((stealthTier + brawlTier) / 2);
   if (combinedTier >= OUTCOME.MAJOR_POS) {
     const gain = randomInt(15, 40);
@@ -11753,7 +11044,7 @@ async function _reportCrimeToGuards() {
   addStory(`⚔️ You find the guard post and recount what happened — ${robbery.amount} gold stolen at ${robbery.location}.`);
   _buildWheel([{ label: '⏳ Filing report…', action: () => {} }]);
   await runInlineProgress('Filing report…', 2500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= OUTCOME.MAJOR_POS) {
     const recovered = Math.floor(robbery.amount * 0.5);
     _actGold(recovered, 'crime report — partial recovery');
@@ -11895,7 +11186,7 @@ function _showTournamentsWheel() {
 }
 
 function _showCrimeWheel() {
-  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌌 Late Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
+  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
 
   _buildWheel([
     {
@@ -11934,48 +11225,25 @@ async function _doOddJobs() {
       label: '✅ Accept',
       action: async () => {
         _buildWheel([{ label: '⏳ Working…', action: () => {} }]);
-        checkQuestObjectives?.('work_found');
         await runInlineProgress(`${job.label}…`, 4000);
-        const tier = await performSkillCheck(job.skill);
-        const _flavourExcellent = [
-          `They clap you on the back and slip a few extra coins into your palm.`,
-          `Word of your work spreads quickly. A small crowd has noticed.`,
-          `"Come back any time," they say, and mean it.`,
-          `You finish ahead of schedule. They're visibly impressed.`,
-        ];
-        const _flavourGood = [
-          `They nod, satisfied. The coin changes hands without ceremony.`,
-          `"Good enough." High praise, around here.`,
-          `The work is done right. They don't say much more than that.`,
-          `You leave them with one less problem than they woke up with.`,
-        ];
-        const _flavourMid = [
-          `You got it done, more or less. They pay half without complaint.`,
-          `Not your finest hour, but not a disaster either. Half pay.`,
-          `They look it over, then shrug. Half now. Maybe call on you again if they're desperate.`,
-        ];
-        const _flavourFail = [
-          `Things fell apart faster than you could hold them together.`,
-          `You tried. They noticed. They won't be forgetting it.`,
-          `The look on their face says it all. No coin. No second chance.`,
-        ];
-        const _pick = arr => arr[Math.floor(Math.random() * arr.length)];
+        const tier = performSkillCheck(job.skill);
         if (tier >= OUTCOME.MAJOR_POS) {
           _actGold(job.pay + 3, 'odd job bonus');
-          addStory(`⭐ ${_pick(_flavourExcellent)} (+${job.pay + 3}g)`);
+          addStory(`⭐ Excellent work. They add a little extra. (+${job.pay + 3}g)`);
           changeMorality(1);
         } else if (tier >= OUTCOME.MINOR_POS) {
           _actGold(job.pay, 'odd job');
-          addStory(`✅ ${_pick(_flavourGood)} (+${job.pay}g)`);
+          addStory(`✅ Done well. (+${job.pay}g)`);
           changeMorality(1);
         } else if (tier === OUTCOME.NEUTRAL) {
           _actGold(Math.floor(job.pay / 2), 'odd job partial');
-          addStory(`😐 ${_pick(_flavourMid)} (+${Math.floor(job.pay / 2)}g)`);
+          addStory(`😐 Acceptable, if not impressive. Half pay. (+${Math.floor(job.pay / 2)}g)`);
         } else {
-          addStory(`❌ ${_pick(_flavourFail)} No pay.`);
+          addStory(`❌ Things went sideways. No pay — and they won't be calling on you again.`);
           changeMorality(-1);
         }
-        advanceTime(1);
+        advanceTime(2);
+        checkQuestObjectives?.('work_found');
         checkQuestObjectives?.('job_done');
         _goBack();
       },
@@ -11993,7 +11261,7 @@ async function _doSearchAlleys() {
   _buildWheel([{ label: '⏳ Searching…', action: () => {} }]);
   addStory('🔍 You slip into the back streets — alcoves, refuse heaps, forgotten corners...');
   await runInlineProgress('Searching alleys…', 4500);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   player.flags = player.flags || {};
   player.flags[hourKey] = true;
   if (tier >= OUTCOME.MAJOR_POS) {
@@ -12024,7 +11292,7 @@ async function _doBusk() {
   _buildWheel([{ label: '⏳ Performing…', action: () => {} }]);
   addStory('🎭 You find a good corner, attract some passing interest, and begin.');
   await runInlineProgress('Performing…', 4000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   player.stamina = Math.max(0, (player.stamina || 0) - 5); updatePlayerStats?.();
   if (tier >= OUTCOME.MAJOR_POS) {
     const tips = randomInt(10, 18);
@@ -12047,8 +11315,6 @@ async function _doBusk() {
 }
 
 async function _doLocalGames() {
-  if (_activityUsedToday('local_games')) { addStory('🎯 The locals have had enough competition for one day. Come back tomorrow.'); _goBack(); return; }
-  _markActivityUsed('local_games');
   const GAMES = [
     { name: 'Arm Wrestling',  skill: 'Brawling',      flavor: 'The village blacksmith cracks his knuckles.' },
     { name: 'Knife Throwing', skill: 'Archery',       flavor: 'Painted targets on old barrels at the edge of the green.' },
@@ -12068,7 +11334,7 @@ async function _doLocalGames() {
         player.gold -= BET; updateTopStats?.();
         _buildWheel([{ label: '⏳ Competing…', action: () => {} }]);
         await runInlineProgress(`${game.name}…`, 3500);
-        const tier = await performSkillCheck(game.skill);
+        const tier = performSkillCheck(game.skill);
         if (tier >= OUTCOME.MAJOR_POS) {
           _actGold(BET * 4, `${game.name} win`);
           changeMorality(2);
@@ -12110,7 +11376,7 @@ async function _doFavorBoard() {
       action: async () => {
         _buildWheel([{ label: '⏳ Working…', action: () => {} }]);
         await runInlineProgress('On the job…', 5000);
-        const tier = await performSkillCheck(favor.skill);
+        const tier = performSkillCheck(favor.skill);
         if (tier >= OUTCOME.MINOR_POS) {
           const bonus = tier >= OUTCOME.MAJOR_POS ? 8 : 0;
           _actGold(favor.gold + bonus, 'favor');
@@ -12248,13 +11514,11 @@ function runCountdownBar(id, durationMs) {
 					player.level++;
 					player.maxLife    = (player.maxLife    || 100) + 10;
 					player.maxStamina = (player.maxStamina || 50)  + 5;
-					if ((player.maxMana || 0) > 0) player.maxMana += 5;
-					player.life    = player.maxLife;
-					player.stamina = player.maxStamina;
-					player.mana    = player.maxMana;
-					const _manaMsg = (player.maxMana || 0) > 0 ? ' · Max Mana +5' : '';
-					SoundManager?.play('level_up');
-					addStory(`<strong>🌟 Level ${player.level}! Max Life +10 · Max Stamina +5${_manaMsg}. All pools restored.</strong>`);
+					player.maxMana    = (player.maxMana    || 50)  + 5;
+					player.life       = player.maxLife;
+					player.stamina    = player.maxStamina;
+					player.mana       = player.maxMana;
+					addStory(`<strong>🌟 Level ${player.level}! Max Life +10 · Max Stamina +5 · Max Mana +5. All pools restored.</strong>`);
 					addWorldEvent(`Reached Level ${player.level}.`, 'player');
 					changeHope(3, 'leveled up');
 					checkAchievementTitles?.();
@@ -12353,7 +11617,7 @@ function addItem(name, qty, options = {}) {
     if (!player.pouchContents) player.pouchContents = { herb: {}, ingredient: {} };
     if (!player.pouchContents.herb) player.pouchContents.herb = {};
     player.pouchContents.herb[name] = (player.pouchContents.herb[name] || 0) + qty;
-    addStory(`+ ${qty} ${pluralize(name, qty)}. [Herb Pouch]`);
+    addStory(`+ ${qty} ${name}(s). [Herb Pouch]`);
     checkQuestObjectives?.('item', { item: name, qty });
     updateTopStats();
     updateInventory();
@@ -12363,7 +11627,7 @@ function addItem(name, qty, options = {}) {
     if (!player.pouchContents) player.pouchContents = { herb: {}, ingredient: {} };
     if (!player.pouchContents.ingredient) player.pouchContents.ingredient = {};
     player.pouchContents.ingredient[name] = (player.pouchContents.ingredient[name] || 0) + qty;
-    addStory(`+ ${qty} ${pluralize(name, qty)}. [Ingredient Pouch]`);
+    addStory(`+ ${qty} ${name}(s). [Ingredient Pouch]`);
     checkQuestObjectives?.('item', { item: name, qty });
     updateTopStats();
     updateInventory();
@@ -12385,7 +11649,7 @@ function addItem(name, qty, options = {}) {
     };
   }
   player.inventory[name].quantity += qty;
-  addStory(`+ ${qty} ${pluralize(name, qty)}.`);
+  addStory(`+ ${qty} ${name}(s).`);
   const mapMatch = name.match(/^Map of (.+)$/);
   if (mapMatch) learnKingdom(mapMatch[1]);
   checkQuestObjectives?.('item', { item: name, qty });
@@ -12493,7 +11757,6 @@ function removeItem(name, qty = 1) {
 						              : cell.zone === 'City'        ? 'city'
 						              : cell.zone === 'Village'     ? 'village'
 						              : 'location';
-						SoundManager?.play('notice');
 						addStory(`📍 Discovered a new ${locType}: ${name}!`);
 						addWorldEvent(`Discovered ${name}.`, 'exploration');
 						awardProfessionXp('location_discover');
@@ -12684,8 +11947,7 @@ function removeItem(name, qty = 1) {
 					tooltip.style.cssText = 'display:block; left:50%; top:38%; transform:translateX(-50%);';
 				}
 
-				// When a pulseLabel targets a specific spoke, default to click-mode so only that spoke works
-				const isClickMode = opts.advance === 'click' || (!!opts.pulseLabel && opts.advance !== 'enter');
+				const isClickMode = opts.advance === 'click';
 				msgEl.innerHTML  = message;
 				contEl.innerHTML = isClickMode
 					? 'Click the highlighted area to continue'
@@ -12841,7 +12103,7 @@ function removeItem(name, qty = 1) {
 					);
 					await tutorialHint(
 						'#hud-player-info',
-						'<strong>Your Stats</strong><br>Searching for a spot to camp has used up some stamina!<br>Your life, stamina, and mana are shown here — you\'re weary and hungry from your journey, so all three are low. Eating restores life and stamina; resting restores stamina and mana. Keep an eye on these as you explore.<br>Now, click <strong>Survival</strong> to set up your new campsite.',
+						'<strong>Your Stats</strong><br>Your life, stamina, and mana are shown here — you\'re weary and hungry from your journey, so all three are low. Eating restores life and stamina; resting restores stamina and mana. Keep an eye on these as you explore.<br>Now, click <strong>Survival</strong> to set up your new campsite.',
 					);
 					if (!player.flags) player.flags = {};
 					player.flags.tutShowSurvivalHint = true;
@@ -12918,7 +12180,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutGatherSticksWheelShown) return;
 				player.flags.tutGatherSticksWheelShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', `<strong>Gather Sticks</strong><br>Need ${5 - sticks} more ${pluralize('Stick Bundle', 5 - sticks)} for the shelter. Choose <strong>Gather</strong>.`, { pulseLabel: 'Gather' });
+					await tutorialHint('#wheel-area', `<strong>Gather Sticks</strong><br>Need ${5 - sticks} more Stick Bundle(s) for the shelter. Choose <strong>Gather</strong>.`, { pulseLabel: 'Gather' });
 				}, 120);
 			}
 
@@ -12954,18 +12216,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutBuildCampfireShown) return;
 				player.flags.tutBuildCampfireShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Build Campfire</strong><br>Click <strong>Build Campfire</strong> to lay the stone fire pit using your Stones.', { pulseLabel: 'Build Campfire' });
-				}, 120);
-			}
-
-			// Fires from _doBuildCampfire after construction completes — prompts player to select Campfire again
-			function _tutAfterBuildCampfire() {
-				const inst = typeof getActiveQuestInstance === 'function' ? getActiveQuestInstance('lay_of_the_land') : null;
-				if (!inst || inst.objectiveIndex !== 3) return;
-				if (player.flags?.tutAfterBuildCampfireShown) return;
-				player.flags.tutAfterBuildCampfireShown = true;
-				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Campfire</strong><br>The fire pit is laid! Now select <strong>Campfire</strong> again to light it.', { pulseLabel: 'Campfire' });
+					await tutorialHint('#wheel-area', '<strong>Build Campfire</strong><br>Click <strong>Build Campfire</strong> to lay the stone fire pit using your Stones. Once completed, click <strong>Campfire</strong> again to light it.', { pulseLabel: 'Build Campfire' });
 				}, 120);
 			}
 
@@ -13227,17 +12478,9 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutFillWaterskinShown) return;
 				player.flags.tutFillWaterskinShown = true;
 				setTimeout(async () => {
-					const alreadyFull = Object.keys(player.inventory || {}).some(k => /waterskin.*full/i.test(k));
-					if (alreadyFull) {
-						// Waterskin already full — skip fill hint and guide player back
-						await tutorialHint('#wheel-area',
-							'<strong>Waterskin Full</strong><br>Your waterskin is already full — you\'re set for water. Click <strong>Back</strong> to continue.',
-							{ pulseLabel: '← Back', advance: 'click' });
-					} else {
-						await tutorialHint('#wheel-area',
-							'<strong>Fill Waterskin</strong><br>Click <strong>Fill Waterskin</strong> to collect fresh water. Luckily, you\'re on the coast, so finding water is easy. Your location will have a significant effect on the resources you can find.',
-							{ pulseLabel: 'Fill Waterskin', advance: 'click' });
-					}
+					await tutorialHint('#wheel-area',
+						'<strong>Fill Waterskin</strong><br>Click <strong>Fill Waterskin</strong> to collect fresh water. Luckily, you\'re on the coast, so finding water is easy. Your location will have a significant effect on the resources you can find.',
+						{ pulseLabel: 'Fill Waterskin', advance: 'click' });
 				}, 120);
 			}
 
@@ -13251,7 +12494,7 @@ function removeItem(name, qty = 1) {
 					await tutorialHint('#wheel-area',
 						'<strong>Gather Materials</strong><br>Now you\'ve got food and water. Let\'s get a fire going to cook your food!<br>To build and light a campfire you need:<br>• <strong>8 Stones</strong><br>• <strong>1 Bundle of Sticks</strong><br>• <strong>Kindling</strong><br>Luckily, you already found some supplies while setting up your camp.');
 					await tutorialHint('#wheel-area',
-						'<strong>Gather Materials</strong><br>If you need more supplies before building your campfire, use this menu to gather them now. When ready, select <strong>Back</strong>, then choose <strong>Encampment</strong>.');
+						'<strong>Gather Materials</strong><br>If you need more supplies before building your campfire, use this menu to gather them now. When ready, select <strong>Back</strong>.');
 				}, 120);
 			}
 
@@ -13328,6 +12571,13 @@ function removeItem(name, qty = 1) {
 
 				// ── Objective 5: eat_food ─────────────────────────────────────────────
 				} else if (newIndex === 5) {
+					if (!player.flags?.tutBackOutAfterCookShown) {
+						player.flags.tutBackOutAfterCookShown = true;
+						await tutorialHint(
+							'#wheel-area',
+							'<strong>Back Out of the Menus</strong><br>Well done — your food is cooked! Now press <strong>← Back</strong> in the wheel until you return to the main Action Wheel. From there, you\'ll find the <strong>Exploration</strong> menu.',
+						);
+					}
 					if (!player.flags?.tutEatHintShown) {
 						player.flags.tutEatHintShown = true;
 						await tutorialHint(
@@ -13359,13 +12609,6 @@ function removeItem(name, qty = 1) {
 							{ advance: 'click' }
 						);
 					}
-					if (!player.flags?.tutBackOutAfterCookShown) {
-						player.flags.tutBackOutAfterCookShown = true;
-						await tutorialHint(
-							'#wheel-area',
-							'<strong>Back Out of the Menus</strong><br>Well done — your food is cooked! Now press <strong>← Back</strong> in the wheel until you return to the main Action Wheel. From there, you\'ll find the <strong>Exploration</strong> menu.',
-						);
-					}
 
 				// ── Objective 6: check_surroundings ──────────────────────────────────
 				} else if (newIndex === 6) {
@@ -13385,7 +12628,7 @@ function removeItem(name, qty = 1) {
 						if (_sticks < 5) {
 							await tutorialHint(
 								'#wheel-area',
-								`<strong>Gather More Sticks</strong><br>Now you\'ll need to build a shelter to get some proper rest. You need 5 Stick Bundles to build a shelter (have ${_sticks}). Select <strong>Done Searching</strong>, then back out and find the Survival menu again.`,
+								`<strong>Gather More Sticks</strong><br>Now you\'ll need to build a shelter to get some proper rest. You need 5 Stick Bundles to build a shelter (have ${_sticks}). Select <strong>Done Searching</strong>, then find the Survival menu.`,
 							);
 						} else {
 							await tutorialHint(
@@ -13402,7 +12645,7 @@ function removeItem(name, qty = 1) {
 						player.flags.tutVillageHintShown = true;
 						await tutorialHint(
 							'[data-bksec="map"]',
-							'<strong>Find a Village</strong><br>The bandits took your gold! You should find a village and look for work so you can earn back some coin. Click the <em>Map</em> tab to plan your route.',
+							'<strong>Find a Village</strong><br>The bandits took your gold! You should find a village and look for work. Click the <em>Map</em> tab to plan your route.',
 							{ advance: 'click' }
 						);
 						await new Promise(r => setTimeout(r, 400));
@@ -13458,8 +12701,6 @@ function removeItem(name, qty = 1) {
 					addStory(`Visited ${name}.`);
 				} else addStory(`Revisited ${name}.`);
 				updateTopStats();
-				// Quest: The Slow Becoming — Thalorion failure cutscene
-				if (typeof _checkThalorionCutscene === 'function') _checkThalorionCutscene();
 			}
 
 	// ============================================================
@@ -13937,28 +13178,14 @@ function _devShowNPCs() {
 		function meetNPC(npc) {
 				if (!npc || !npc.name) return;
 				registerNPC(npc, 1); // minimum: noticed
-				// Restore persisted social state so trait discovery and disposition carry over
-				if (npc._worldId && worldNPCs?.registry?.[npc._worldId]) {
-					const _reg = worldNPCs.registry[npc._worldId];
-					if (_reg.disposition       !== undefined) npc.disposition       = _reg.disposition;
-					if (_reg.interactionCount  !== undefined) npc.interactionCount  = _reg.interactionCount;
-					if (_reg.revealedTraits    !== undefined) npc.revealedTraits    = _reg.revealedTraits;
-					if (_reg.playerTraitsKnown !== undefined) npc.playerTraitsKnown = _reg.playerTraitsKnown;
-				}
 				if (!player.journal.npcs) player.journal.npcs = [];
 				const existing = player.journal.npcs.find(n => n.name === npc.name);
 				if (!existing) {
 					player.journal.npcs.push(npc);
-					if (npc._isStranger) {
-						// Don't reveal name — player doesn't know this person yet
-						addStory(`You approach them. Their name is unknown to you.`);
-					} else {
-						addStory(`You meet ${npc.name}, a ${npc.race || ''} ${npc.profession || 'stranger'}.`.replace(/\s+/g,' '));
-						if (npc.outsiderNote) addStory(`It's clear they're not from around here — ${npc.outsiderNote}.`);
-					}
-					addWorldEvent(`Met a stranger in ${player.currentLocation}.`, 'npc');
+					addStory(`You meet ${npc.name}, a ${npc.race || ''} ${npc.profession || 'stranger'}.`.replace(/\s+/g,' '));
+					addWorldEvent(`Met ${npc.name} in ${player.currentLocation}.`, 'npc');
 				} else {
-					addStory(npc._isStranger ? `You approach the same figure again.` : `You encounter ${npc.name} again.`);
+					addStory(`You encounter ${npc.name} again.`);
 				}
 				checkQuestObjectives?.('npc', { npc: npc.name });
 				updateJournal();
@@ -14162,7 +13389,6 @@ function _devShowNPCs() {
 					const idx  = instance.branchObjectiveIndex ?? 0;
 					const done = branch.objectives?.[idx];
 					if (done) addStory(`✅ ${done.text}`);
-					SoundManager?.play('quest_update');
 					instance.branchObjectiveIndex = idx + 1;
 					if (!branch.objectives?.[instance.branchObjectiveIndex]) {
 						completeQuest(instance, def, branch);
@@ -14173,7 +13399,6 @@ function _devShowNPCs() {
 				} else {
 					const completed = def.objectives[instance.objectiveIndex];
 					addStory(`✅ ${completed.text}`);
-					SoundManager?.play('quest_update');
 					instance.objectiveIndex++;
 					if (instance.objectiveIndex >= def.objectives.length) {
 						completeQuest(instance, def);
@@ -14197,9 +13422,6 @@ function _devShowNPCs() {
 
 			function _awardTutorialStarterKit() {
 				const _pick = arr => arr[Math.floor(Math.random() * arr.length)];
-
-				// Narrate before awarding so the message precedes the item lines
-				addStory(`🎒 The locals send you off with a bundle of supplies — a good start for the road ahead.`);
 
 				// Always awarded
 				addItem('Inn Token', 1, {
@@ -14229,16 +13451,23 @@ function _devShowNPCs() {
 					['Hunting Knife', 1],
 				]);
 				addItem(bonusName, bonusQty);
+
+				// Narrate the reward
+				addStory(`🎒 The locals send you off with a bundle of supplies — a good start for the road ahead.`);
 			}
 
 			function completeQuest(instance, def, branch = null) {
 				instance.status = 'Completed';
+				if (instance.id === 'lay_of_the_land') {
+					if (!player.flags) player.flags = {};
+					player.flags.tutorialComplete = true;
+					_awardTutorialStarterKit();
+				}
 				// Clear tracking if this was the tracked quest
 				if (player.trackedQuest === instance.id) {
 					player.trackedQuest = null;
 					_rebuildQuestMarkers();
 				}
-				SoundManager?.play('quest_complete');
 				addStory(`<strong>🏆 Quest Complete: ${def.name}!</strong>`);
 				addWorldEvent(`Completed quest: ${def.name}.`, 'quest');
 				checkGlobalEventTriggers();
@@ -14247,31 +13476,21 @@ function _devShowNPCs() {
 				player.traitCounters.questsCompleted = (player.traitCounters.questsCompleted || 0) + 1;
 				if (player.currentKingdom) changeKingdomStat(player.currentKingdom, 'prosperity', 3);
 				const r = branch?.rewards || def.rewards || {};
-				if (instance.id === 'lay_of_the_land') {
-					// Tutorial: narration first, then items, then rewards, then congratulations last
-					if (!player.flags) player.flags = {};
-					player.flags.tutorialComplete = true;
-					_awardTutorialStarterKit();
-					if (r.experience) gainExperience(r.experience);
-					if (r.gold) { player.gold = (player.gold || 0) + r.gold; updateTopStats(); addStory(`+ ${r.gold} gold.`); }
-					addStory('🌟 <strong>Congratulations!</strong> You\'ve learned the basics. The world is yours to explore…');
-				} else {
-					if (r.experience) gainExperience(r.experience);
-					if (r.gold) { player.gold = (player.gold || 0) + r.gold; updateTopStats(); addStory(`+ ${r.gold} gold.`); }
-					(r.items || []).forEach(item => {
-						const name = item.displayName || item.name || item.questItem;
-						if (name) addItem(name, item.qty || 1, { type: item.itemType || 'misc', rarity: item.rarity || 'Common', consumable: item.consumable || false, weight: item.weight || 0.1, description: item.description || '' });
-					});
-					if (r.skills) Object.entries(r.skills).forEach(([sk, xp]) => gainSkillXp(sk, Math.min(5, Math.max(1, xp))));
-					(r.special || []).forEach(s => {
-						if (s.type === 'skill_unlock' && s.skill) learnSkill(s.skill);
-						if (s.type === 'recipe'       && s.name)  learnRecipe(s.name);
-						if (s.type === 'flag')    { if (!player.flags) player.flags = {}; player.flags[s.key] = s.value; }
-						if (s.type === 'morality' && s.value)    changeMorality(s.value);
-						if (s.type === 'title'        && s.value) awardGameTitle?.(s.value);
-						if (s.type === 'reputation'   && s.kingdom && s.value) changeKingdomReputation(s.kingdom, s.value);
-					});
-				}
+				if (r.experience) gainExperience(r.experience);
+				if (r.gold) { player.gold = (player.gold || 0) + r.gold; updateTopStats(); addStory(`+ ${r.gold} gold.`); }
+				(r.items || []).forEach(item => {
+					const name = item.displayName || item.name || item.questItem;
+					if (name) addItem(name, item.qty || 1, { type: item.itemType || 'misc', rarity: item.rarity || 'Common', consumable: item.consumable || false, weight: item.weight || 0.1, description: item.description || '' });
+				});
+				if (r.skills) Object.entries(r.skills).forEach(([sk, xp]) => gainSkillXp(sk, Math.min(5, Math.max(1, xp))));
+				(r.special || []).forEach(s => {
+					if (s.type === 'skill_unlock' && s.skill) learnSkill(s.skill);
+					if (s.type === 'recipe'       && s.name)  learnRecipe(s.name);
+					if (s.type === 'flag')    { if (!player.flags) player.flags = {}; player.flags[s.key] = s.value; }
+					if (s.type === 'morality' && s.value)    changeMorality(s.value);
+					if (s.type === 'title'        && s.value) awardGameTitle?.(s.value);
+					if (s.type === 'reputation'   && s.kingdom && s.value) changeKingdomReputation(s.kingdom, s.value);
+				});
 				// Award reputation in the current kingdom for completing a quest
 				if (player.currentKingdom) changeKingdomReputation(player.currentKingdom, 8);
 				checkAchievementTitles?.();
@@ -14303,6 +13522,7 @@ function _devShowNPCs() {
 
 			const TIME_PERIODS = [
 				'🌅 Early Morning',
+				'🌄 Mid-Morning',
 				'☀️ Morning',
 				'🌞 Midday',
 				'🌤️ Afternoon',
@@ -14310,7 +13530,6 @@ function _devShowNPCs() {
 				'🌇 Late Afternoon',
 				'🌆 Evening',
 				'🌃 Mid-Evening',
-				'🌌 Late Evening',
 				'🌙 Dusk',
 				'🌑 Night',
 				'⭐ Late Night',
@@ -14319,7 +13538,7 @@ function _devShowNPCs() {
 			// Periods that are "night" for establishment gating
 			const NIGHT_PERIODS = new Set(['🌑 Night', '⭐ Late Night']);
 			// Periods considered "late" (cold risk, reduced visibility)
-			const LATE_PERIODS  = new Set(['🌇 Late Afternoon', '🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night']);
+			const LATE_PERIODS  = new Set(['🌇 Late Afternoon', '🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night']);
 
 			function isNightTime()  { return NIGHT_PERIODS.has(player.timeOfDay); }
 			function isLateTime()   { return LATE_PERIODS.has(player.timeOfDay);  }
@@ -14332,7 +13551,6 @@ function _devShowNPCs() {
 				const nextIdx  = (idx === -1 ? 0 : idx + 1) % TIME_PERIODS.length;
 				const wasLate  = TIME_PERIODS[idx] === '⭐ Late Night';
 				player.timeOfDay = TIME_PERIODS[nextIdx];
-				if (player.timeOfDay === '🌅 Early Morning') SoundManager?.play('chicken', 0.3);
 				if (wasLate) player.day = (player.day || 1) + 1;
 				// Advance weather every ~3 time periods (landmark periods always eligible)
 				if (!silent || LANDMARK_PERIODS.has(player.timeOfDay)) {
@@ -14350,7 +13568,6 @@ function _devShowNPCs() {
 				if (!silent || LANDMARK_PERIODS.has(player.timeOfDay)) {
 					addStory(`🕐 ${player.timeOfDay}`);
 				}
-				SoundManager?.updateAmbience();
 			}
 
 			// Advance n periods; only the final period announces
@@ -14593,7 +13810,7 @@ function initializeQuickSlots() {
 // 12.5 · Biome Colors
 const biomeColors = {
 				Forest: 'rgba(34,139,34,0.5)',
-				Mountains: 'rgba(139,137,137,0.5)',
+				Mountain: 'rgba(139,137,137,0.5)',
 				Hills: 'rgba(205,133,63,0.5)',
 				Wetlands: 'rgba(70,130,180,0.5)',
 				Coastal: 'rgba(135,206,235,0.5)',
@@ -14778,12 +13995,12 @@ function applyEventEffects(effects = []) {
       case 'life':       changeLife(fx.amount); break;
       case 'stamina':    changeStamina(fx.amount); break;
       case 'gold':       player.gold = Math.max(0, (player.gold || 0) + fx.amount); updateTopStats(); break;
-      case 'item':       addItem(fx.name, fx.qty || 1, fx.options || {}); SoundManager?.play('item_pickup'); break;
+      case 'item':       addItem(fx.name, fx.qty || 1, fx.options || {}); break;
       case 'removeItem': removeItem(fx.name, fx.qty || 1); break;
       case 'experience': gainExperience(fx.amount); break;
       case 'skill':      learnSkill(fx.name); break;
       case 'status':     applyCondition(fx.value.toLowerCase()); break;
-      case 'weather':    player.weather = fx.value; updateTopStats(); SoundManager?.updateAmbience(); addStory(`The weather shifts to ${fx.value}.`); break;
+      case 'weather':    player.weather = fx.value; updateTopStats(); addStory(`The weather shifts to ${fx.value}.`); break;
       case 'kingdomRep': {
         const _k = fx.kingdom || player.currentKingdom;
         if (_k) changeKingdomReputation(_k, fx.amount);
@@ -14833,15 +14050,7 @@ async function resolveRandomEvent(event) {
 
   if (event.simple) {
     applyEventEffects(event.simple.effects || []);
-    if (event.simple.storyText) {
-      const _evSimCtx = buildActionContext({ event: { name: event.name, type: event.type, polarity: event.polarity } });
-      const _evSimNarr = await callGameAI(
-        `You are narrating a ${event.polarity || 'neutral'} ${event.type} event called "${event.name}" in a medieval fantasy RPG. Expand the following outcome into 1–2 immersive sentences that fit the setting (${_evSimCtx.location.name}, ${_evSimCtx.location.biome}, ${_evSimCtx.location.timeOfDay}, ${_evSimCtx.location.weather}). Do not change the meaning. Seed: ${event.simple.storyText}`,
-        _evSimCtx,
-        { mode: 'narrative', fallback: event.simple.storyText, maxTokens: 120 }
-      );
-      addStory(_evSimNarr);
-    }
+    if (event.simple.storyText) addStory(event.simple.storyText);
   }
 
   if (event.choice) {
@@ -14879,15 +14088,7 @@ async function resolveRandomEvent(event) {
     } else {
       outcome = chosen.onSuccess;
     }
-    if (outcome.storyText) {
-      const _evCtx = buildActionContext({ event: { name: event.name, type: event.type, polarity: event.polarity, choiceText: chosen.text } });
-      const _evNarr = await callGameAI(
-        `You are narrating the outcome of a player's choice in a medieval fantasy RPG event called "${event.name}". The player chose: "${chosen.text}". Expand the following outcome into 1–2 vivid sentences that fit the current setting (${_evCtx.location.name}, ${_evCtx.location.biome}, ${_evCtx.location.weather}). Keep the same meaning. Seed: ${outcome.storyText}`,
-        _evCtx,
-        { mode: 'narrative', fallback: outcome.storyText, maxTokens: 120 }
-      );
-      addStory(_evNarr);
-    }
+    if (outcome.storyText) addStory(outcome.storyText);
     applyEventEffects(outcome.effects || []);
   }
 
@@ -14940,7 +14141,7 @@ async function fireRandomEvent(context = 'travel', allowedTypes = null) {
     if (t.requiredEquipped && !Object.values(player.equipped || {}).includes(t.requiredEquipped)) return false;
     return true;
   });
-  if (!eligible.length) return false;
+  if (!eligible.length) return;
   // Listener's Compass — boosts discovery and mystical event weight when equipped
   const _hasCompass = player.equipped?.leftHand === "Listener's Compass";
   const _eventWeight = e => {
@@ -14955,7 +14156,6 @@ async function fireRandomEvent(context = 'travel', allowedTypes = null) {
   for (const e of eligible) { rand -= _eventWeight(e); if (rand <= 0) { picked = e; break; } }
   await resolveRandomEvent(picked);
   if (picked.once) { _wsInit(); if (!player.worldState.firedEvents.includes(picked.id)) player.worldState.firedEvents.push(picked.id); }
-  return true;
 }
 
 // Full async travel sequence. Called after the player confirms a journey.
@@ -15090,19 +14290,18 @@ function advanceWeather() {
   const sev = getWeatherSeverity(next);
   if (sev >= 4) addStory(`⚠️ ${next === 'Blizzard' ? 'A blizzard is moving in.' : 'A violent storm closes in.'} Seek shelter.`);
   else if (sev >= 3) addStory(`⚠️ The weather is turning dangerous.`);
-  SoundManager?.updateAmbience();
 }
 
 const TRAVEL_TIME = {
   '🌅 Early Morning': ['The world is barely awake. Mist sits low on the fields.', 'The air is cold and still. First light ahead.', 'Dawn birds are the only sound on the road.'],
-  '☀️ Morning':       ['The sun climbs. The road warms under the growing light.', 'The morning air is fresh and clear.', 'Birdsong fills the early light. A good time to be moving.'],
+  '🌄 Mid-Morning':   ['The sun climbs. Dew still on the grass.', 'The road warms under the growing light.', 'A crisp morning. Good traveling weather.'],
+  '☀️ Morning':       ['The morning air is fresh and clear.', 'Birdsong fills the early light.', 'A good time to be moving.'],
   '🌞 Midday':        ['The sun is directly overhead. The road shimmers slightly.', 'High sun. You find shade where you can.', 'The day is at its peak. The road is busy.'],
   '🌤️ Afternoon':    ['The afternoon is warm. The road is quiet.', 'High sun makes the distance hazy.', 'Good light and a steady pace.'],
   '⛅ Mid-Afternoon': ['The sun begins its descent. Still plenty of light.', 'The road is familiar at this hour — well-traveled.'],
   '🌇 Late Afternoon':['The light turns golden. Shadows stretch long across the road.', 'Getting late. You keep a solid pace.'],
   '🌆 Evening':       ['The sun drops low. Long shadows cross the road ahead.', 'The light is golden and fading fast.', 'Evening is coming on. You push your pace.'],
   '🌃 Mid-Evening':   ['The sky deepens to purple. The first stars appear.', 'Lanterns are lit in farmhouse windows.'],
-  '🌌 Late Evening':  ['The stars are fully out now. The road feels longer in the dark.', 'The village lights have gone quiet. Just you and the road.'],
   '🌙 Dusk':          ['The last of the light fades. The road grows grey.', 'Dusk settles in. Hard to read the terrain now.'],
   '🌑 Night':         ['You travel by starlight. The road is dark and quiet.', 'Owls call in the dark. You keep to the road.', 'The night is cold and clear.'],
   '⭐ Late Night':    ['Deep night. The road is yours alone.', 'The stars are bright. The silence is complete.', 'Late night travel. Every sound carries further.'],
@@ -15111,80 +14310,6 @@ const TRAVEL_TIME = {
 function _travelLine(table, key) {
   const pool = table[key] || table.default || [];
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : '';
-}
-
-// Per-grid travel time multipliers by biome (relative to the 10 s base)
-const BIOME_TRAVEL_MULT = {
-  Grassland: 1.0, Plains: 1.0, Savanna: 1.0,
-  Coastal: 1.1, River: 1.2,
-  Hills: 1.2, Desert: 1.2,
-  Tundra: 1.3, Cave: 1.3,
-  Mountains: 1.5, Forest: 1.4, Jungle: 1.5, Rainforest: 1.5,
-  Swamp: 1.6, Wetlands: 1.5, 'Dense Forest': 1.6,
-};
-
-// Per-grid progress bar labels — picked by the biome the player is passing through
-const GRID_TRAVEL_LABELS = {
-  Grassland:      ['Walking through open grassland', 'Following a worn path through the fields', 'A gentle slope of grass and wind'],
-  Plains:         ['Crossing flat, open country', 'The road stretches long and straight', 'Open land in all directions'],
-  Savanna:        ['Crossing the dry savanna', 'Sparse trees and pale grass on all sides', 'The heat rises off the ground ahead'],
-  Forest:         ['Threading through the trees', 'Pushing through dense undergrowth', 'Picking a path between old trunks', 'Following a narrow animal trail'],
-  'Dense Forest': ['Forcing a way through dense brush', 'The canopy blocks the sky entirely', 'Squeezing between ancient trunks', 'Every step fought from the undergrowth'],
-  Jungle:         ['Hacking through thick jungle growth', 'Sweat and green in equal measure', 'The jungle closes in from all sides'],
-  Rainforest:     ['Moving beneath a dripping canopy', 'Everything is wet and alive', 'The understory tangles at every step'],
-  Mountains:      ['Picking a path up the rocky slope', 'Scrambling over loose stone', 'The altitude makes every step heavier', 'Cold air and thin ground underfoot'],
-  Hills:          ['Climbing the rolling hillside', 'Cresting a low ridge', 'The path dips and rises with the land'],
-  Desert:         ['Crossing open sand', 'Heat shimmers off the ground ahead', 'Each step stirs a puff of pale dust', 'The sand shifts underfoot'],
-  Tundra:         ['Crunching across frozen ground', 'The wind cuts without mercy', 'Pale, empty flats in all directions'],
-  Coastal:        ['Following the coastal track', 'Salt air and the sound of waves to one side', 'Threading between rocks above the tideline'],
-  River:          ['Following the riverbank', 'The river murmurs alongside', 'Picking a line along the water\'s edge'],
-  Swamp:          ['Wading through shallow murk', 'Testing each step before trusting the ground', 'Mud pulls at every footfall'],
-  Wetlands:       ['Picking through reeds and waterlogged earth', 'The ground sinks with every step', 'Marsh grass and standing water on all sides'],
-  Cave:           ['Feeling along the cavern wall', 'The air turns damp and cool', 'Footsteps echo off close stone'],
-  default:        ['Pressing on', 'Keeping to the road', 'Continuing the journey'],
-};
-
-// Severe weather overrides the biome label entirely
-const WEATHER_GRID_LABELS = {
-  'Heavy Rain':  ['Trudging through sheets of rain', 'The rain hammers down as you push on', 'Visibility falls in the downpour'],
-  Stormy:        ['Fighting through the storm', 'Thunder above, mud below', 'Every step a struggle against wind and rain'],
-  Blizzard:      ['Forcing a way through the blizzard', 'The world is white and featureless', 'Snow drives hard into your face'],
-  Fog:           ['Feeling your way through thick fog', 'The fog swallows the road a few paces ahead', 'Navigating by feel as much as sight'],
-  Mist:          ['Moving through low mist', 'The mist muffles every sound', 'Shapes resolve slowly out of the grey'],
-  'Strong Wind': ['Leaning into a punishing headwind', 'The wind nearly costs you your footing', 'Every step costs double against the gale'],
-  Snowy:         ['Trudging through fresh snow', 'The snow muffles the world', 'Each step leaves a deep print behind'],
-};
-
-function _gridTravelLabel(cell, weather) {
-  // Severe weather overrides biome
-  if (weather && WEATHER_GRID_LABELS[weather]) {
-    const pool = WEATHER_GRID_LABELS[weather];
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  const zone = (cell.zone || '').toLowerCase();
-  const cv   = cell.cityVillage || '';
-  // Named settlement labels
-  if (cv && /^(city|capitalcity|capital city)$/.test(zone)) {
-    const pool = [
-      `Navigating through the streets of ${cv}`,
-      `Moving through the crowds of ${cv}`,
-      `Passing through ${cv}`,
-      `Threading through the market district of ${cv}`,
-      `Weaving through the city traffic of ${cv}`,
-    ];
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  if (cv && zone === 'village') {
-    const pool = [
-      `Passing through the village of ${cv}`,
-      `Walking through ${cv}`,
-      `Crossing through ${cv}`,
-    ];
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  // Biome
-  const pool = GRID_TRAVEL_LABELS[cell.biome] || GRID_TRAVEL_LABELS.default;
-  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts = {}) {
@@ -15239,155 +14364,80 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
 
   if (!opts.skipDeparture) {
     // Departure flavor
-    const _depSeed = _travelLine(TRAVEL_DEPARTURE, fromBiome);
-    const _depCtx  = buildActionContext({ destination: destName });
-    const _depLine = await callGameAI(
-      `One atmospheric sentence describing a traveller departing from ${_depCtx.location.name} (${fromBiome} biome), heading toward ${destName}. It is ${_depCtx.location.timeOfDay}, weather: ${_depCtx.location.weather}. Grounded, observational, no melodrama. Use this as a seed: ${_depSeed}`,
-      _depCtx,
-      { mode: 'narrative', fallback: _depSeed, maxTokens: 60 }
-    );
-    addStory(`🚶 ${_depLine}`);
+    const depLine = _travelLine(TRAVEL_DEPARTURE, fromBiome);
+    addStory(`🚶 ${depLine}`);
     _buildWheel([{ label: '🚶 Travelling…', action: () => {} }]);
 
-    // Speed modifiers (computed once for the whole journey)
-    const _weatherMod      = _travelSev >= 3 ? 1.6 : _travelSev >= 2 ? 1.3 : _travelSev >= 1 ? 1.1 : 1.0;
-    const _compassMod      = player.inventory?.['Compass'] ? 0.8 : 1.0;
-    const _horseMod        = player.flags?.hasHiredHorse   ? 0.85 : 1.0;
+    // Weather modifies travel time
+    const _weatherMod = _travelSev >= 3 ? 1.6 : _travelSev >= 2 ? 1.3 : _travelSev >= 1 ? 1.1 : 1.0;
+    // Short trips: single bar. Longer trips: split with mid-narrative.
+    const baseTravelMs = Math.max(2000, Math.min(45000, gridSquares * 1200));
+    const _compassMod  = player.inventory?.['Compass'] ? 0.8 : 1.0;
+    const _horseMod    = player.flags?.hasHiredHorse   ? 0.85 : 1.0;
     const _litTorchEquipped = Object.values(player.equipped || {}).some(n => n && /^lit torch$/i.test(n));
-    const _torchMod        = (isLateTime() && _litTorchEquipped) ? 0.9 : 1.0;
-    const perGridMs        = Math.round(10000 * _compassMod * _horseMod * _weatherMod * _torchMod);
+    const _torchMod    = (isLateTime() && _litTorchEquipped) ? 0.9 : 1.0; // 10% faster at night with light
+    const travelMs     = Math.round(baseTravelMs * _compassMod * _horseMod * _weatherMod * _torchMod);
+    if (gridSquares > 3) {
+      const halfMs = Math.round(travelMs / 2);
+      await runInlineProgress(`Travelling to ${destName}…`, halfMs);
+      const midLines = [
+        _travelLine(TRAVEL_MID, destBiome),
+        player.weather && TRAVEL_WEATHER[player.weather] ? _travelLine(TRAVEL_WEATHER, player.weather) : '',
+        player.timeOfDay && TRAVEL_TIME[player.timeOfDay]  ? _travelLine(TRAVEL_TIME, player.timeOfDay)  : '',
+      ].filter(Boolean);
+      if (midLines.length) addStory(midLines[Math.floor(Math.random() * midLines.length)]);
+      // Mid-journey conditions during extended travel
+      if (['Rainy', 'Heavy Rain', 'Stormy'].includes(player.weather)) applyCondition('wet');
+      if (player.weather === 'Blizzard') { applyCondition('wet'); applyCondition('cold'); }
+      if (isLateTime() && !player.hasShelter) applyCondition('cold');
+      await runInlineProgress('Nearly there…', halfMs);
+    } else {
+      await runInlineProgress(`Travelling to ${destName}…`, travelMs);
+    }
 
-    // Stamina — resolve one-time free-travel abilities upfront
+    // Deduct stamina — severe weather increases drain; some abilities waive it once
     const _staminaSevMult = _travelSev >= 4 ? 1.8 : _travelSev >= 3 ? 1.4 : _travelSev >= 2 ? 1.2 : 1.0;
     const _coastalBiomes  = ['Coastal', 'Ocean', 'Sea', 'Shoreline'];
     const _woodlandBiomes = ['Forest', 'Dense Forest', 'Swamp', 'Jungle', 'Rainforest', 'Woodland'];
-    let _freeTravel = false;
     if (player.orienteeringActive) {
-      player.orienteeringActive = false; _freeTravel = true;
+      player.orienteeringActive = false;
       addStory('🧭 Orienteering: this journey costs no stamina.');
     } else if (player.seaLegsActive && (_coastalBiomes.includes(destBiome) || _coastalBiomes.includes(fromBiome))) {
-      player.seaLegsActive = false; _freeTravel = true;
+      player.seaLegsActive = false;
       addStory('🌊 Sea Legs: coastal travel costs no stamina.');
     } else if (player.woodlandStrideActive && (_woodlandBiomes.includes(destBiome) || _woodlandBiomes.includes(fromBiome))) {
-      player.woodlandStrideActive = false; _freeTravel = true;
+      player.woodlandStrideActive = false;
       addStory('🌲 Woodland Stride: the terrain imposes no stamina penalty.');
-    }
-    const totalStaminaCost = Math.round(staminaCost * _staminaSevMult);
-    let staminaDeducted = 0;
-
-    // Origin pixel coords for computing intermediate stop positions on event interrupt
-    const _fromPxMatch = player.currentLocation.match(/^x(\d+)_y(\d+)$/);
-    const _fpx = _fromPxMatch ? (+_fromPxMatch[1] + GRID_SIZE / 2) : toX;
-    const _fpy = _fromPxMatch ? (+_fromPxMatch[2] + GRID_SIZE / 2) : toY;
-
-    // Per-grid event setup
-    const _nightTravel        = isLateTime();
-    const _torchCarried       = Object.values(player.equipped || {}).some(n => n && /^lit torch$/i.test(n));
-    const _encounterThreshold = _nightTravel ? (_torchCarried ? 8 : 9) : 6;
-    const _COOLDOWN_START = 6, _COOLDOWN_DECAY = 3;
-    let _eventCooldown = 0;
-    let gridsCompleted = 0;
-    const midGrid = Math.floor(gridSquares / 2);
-
-    for (let i = 0; i < gridSquares; i++) {
-      // Resolve the map cell the player is currently passing through (midpoint of this step)
-      const _stepRatio = (i + 0.5) / gridSquares;
-      const _scx = _fpx + (toX - _fpx) * _stepRatio;
-      const _scy = _fpy + (toY - _fpy) * _stepRatio;
-      const _skx = Math.round((_scx - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      const _sky = Math.round((_scy - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      const _curCell = (mapData && mapData[`x${_skx}_y${_sky}`]) || {};
-
-      // Contextual progress bar label based on biome/weather/settlement
-      const _barLabel = _gridTravelLabel(_curCell, player.weather);
-      // Biome affects how long this grid takes to traverse
-      const _biomeMult = BIOME_TRAVEL_MULT[_curCell.biome] || 1.0;
-      const _stepMs    = Math.round(perGridMs * _biomeMult);
-      await runInlineProgress(_barLabel, _stepMs);
-
-      // Mid-journey flavour and conditions at the halfway point
-      if (i === midGrid && gridSquares > 2) {
-        const midLines = [
-          _travelLine(TRAVEL_MID, destBiome),
-          player.weather && TRAVEL_WEATHER[player.weather] ? _travelLine(TRAVEL_WEATHER, player.weather) : '',
-          player.timeOfDay && TRAVEL_TIME[player.timeOfDay]  ? _travelLine(TRAVEL_TIME, player.timeOfDay)  : '',
-        ].filter(Boolean);
-        const _midSeed = midLines.length ? midLines[Math.floor(Math.random() * midLines.length)] : '';
-        if (_midSeed) {
-          const _midCtx  = buildActionContext({ destination: destName });
-          const _midLine = await callGameAI(
-            `One atmospheric sentence describing what a traveller observes in the middle of a journey through ${destBiome || 'unknown terrain'}. Weather: ${player.weather}. Time: ${player.timeOfDay}. Grounded, evocative. Use this as a seed: ${_midSeed}`,
-            _midCtx,
-            { mode: 'narrative', fallback: _midSeed, maxTokens: 60 }
-          );
-          addStory(_midLine);
-        }
-        if (['Rainy', 'Heavy Rain', 'Stormy'].includes(player.weather)) applyCondition('wet');
-        if (player.weather === 'Blizzard') { applyCondition('wet'); applyCondition('cold'); }
-        if (isLateTime() && !player.hasShelter) applyCondition('cold');
-      }
-
-      // Deduct stamina for this step; absorb rounding error on the last step
-      if (!_freeTravel) {
-        const stepCost = (i === gridSquares - 1)
-          ? totalStaminaCost - staminaDeducted
-          : Math.round(totalStaminaCost / gridSquares);
-        changeStamina(-stepCost);
-        staminaDeducted += stepCost;
-      }
-
-      // Advance time 1 period per grid square
-      advanceTime(1);
-      gridsCompleted++;
-
-      // Random event check for this grid — settlements raise encounter chance
-      const _inSettlement = ['City', 'CapitalCity', 'Village'].includes(_curCell.zone || '');
-      const _effectiveThreshold = Math.max(0, _encounterThreshold + (_inSettlement ? 3 : 0) - _eventCooldown);
-      if (_effectiveThreshold > 0 && Math.floor(Math.random() * 20) + 1 <= _effectiveThreshold) {
-        // Interpolate the map cell reached after this step
-        const _ratio    = (i + 1) / gridSquares;
-        const _cx       = _fpx + (toX - _fpx) * _ratio;
-        const _cy       = _fpy + (toY - _fpy) * _ratio;
-        const _stopKeyX = Math.round((_cx - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-        const _stopKeyY = Math.round((_cy - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-        const _stopKey  = `x${_stopKeyX}_y${_stopKeyY}`;
-
-        // Place the player at this intermediate cell
-        player.currentLocation = _stopKey;
-        const _stopCell = mapData[_stopKey] || {};
-        if (_stopCell.kingdom) player.currentKingdom = _stopCell.kingdom;
-        const _sm = _stopKey.match(/^x(\d+)_y(\d+)$/);
-        if (_sm) updatePlayerSymbol(+_sm[1], +_sm[2]);
-        _markDiscovered(_stopKey);
-        updateTopStats();
-        checkDiscovery();
-        if (['Drizzle','Light Rain','Rainy','Heavy Rain','Stormy','Blizzard'].includes(player.weather)) applyCondition('wet');
-        if (isLateTime() && !player.hasShelter) applyCondition('cold');
-        if (gridsCompleted >= 6 && player.conditions?.find(c => c.id === 'encumbered' || c.id === 'overloaded')) {
-          applyCondition('sore');
-        }
-
-        // Fire the event; only halt travel if an event actually triggered
-        const _eventFired = await fireRandomEvent('travel', _nightTravel ? ['creature_encounter', 'hazard', 'traveler_encounter', 'discovery', 'mystical'] : null);
-        if (_eventFired) {
-          addStory('You stop to deal with what lies ahead. Continue your journey when ready.');
-          _showDefaultWheel?.();
-          return;
-        }
-      } else {
-        _eventCooldown = Math.max(0, _eventCooldown - _COOLDOWN_DECAY);
-      }
+    } else {
+      changeStamina(-Math.round(staminaCost * _staminaSevMult));
     }
 
-    // Sore muscles from hauling a heavy load over a long march (only on full completion)
+    // 1 period per grid square (12-period day), minimum 1
+    advanceTime(Math.max(1, gridSquares));
+
+    // Sore muscles from hauling a heavy load over a long march
     if (gridSquares >= 6 && player.conditions?.find(c => c.id === 'encumbered' || c.id === 'overloaded')) {
       applyCondition('sore');
     }
   }
 
+  // Random events — one check per 3 squares
+  // Night raises danger chance; lit torch equipped reduces it slightly
+  const _nightTravel    = isLateTime();
+  const _torchCarried   = Object.values(player.equipped || {}).some(n => n && /^lit torch$/i.test(n));
+  const _encounterThreshold = _nightTravel ? (_torchCarried ? 8 : 9) : 6; // day:30%, night:45%, torch:40%
+  const checks = Math.floor(gridSquares / 3);
+  for (let i = 0; i < checks; i++) {
+    if (Math.floor(Math.random() * 20) + 1 <= _encounterThreshold) {
+      await fireRandomEvent('travel', _nightTravel ? ['creature_encounter', 'hazard', 'traveler_encounter', 'discovery', 'mystical'] : null);
+      // Brief pause so the wheel readjusts between events
+      _buildWheel([{ label: '🚶 Continuing…', action: () => {} }]);
+      await runInlineProgress('Continuing journey…', 800);
+    }
+  }
+
   // Arrive
   player.currentLocation = destKey;
-  if (destCell.kingdom) player.currentKingdom = destCell.kingdom;
   const [, _dx, _dy] = destKey.match(/^x(\d+)_y(\d+)$/) || [];
   if (_dx) updatePlayerSymbol(+_dx, +_dy);
   if (player.waypoint === destKey) {
@@ -15411,43 +14461,6 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
   if (isSettlement && isFirstVisit) {
     addStory(`🪧 A weathered sign at the road reads: "${destCell.cityVillage}"`);
     learnLocationName(destKey);
-  }
-
-  // Entering a settlement in an unknown kingdom reveals the kingdom via its markings
-  if (isSettlement && destCell.kingdom && !(player.knownKingdoms || {})[destCell.kingdom]) {
-    if (!player.knownKingdoms) player.knownKingdoms = {};
-    player.knownKingdoms[destCell.kingdom] = true;
-    const _k = destCell.kingdom;
-    const _bannerMsgs = {
-      CapitalCity: [
-        `🏳️ Pennants bearing the colors of <strong>${_k}</strong> fly from every tower as you pass beneath the great gatehouse.`,
-        `🏳️ The royal standard of <strong>${_k}</strong> snaps in the wind above the palace spires.`,
-        `🏳️ Guards in the livery of <strong>${_k}</strong> flank the road on either side, eyeing travelers as they pass.`,
-        `🏳️ An arch carved with the royal seal of <strong>${_k}</strong> spans the main approach into the city.`,
-        `🏳️ Heralds' posts along the processional road bear the device of <strong>${_k}</strong> at every corner.`,
-      ],
-      City: [
-        `🏳️ A banner bearing the crest of <strong>${_k}</strong> hangs above the main road into the city.`,
-        `🏳️ Market stalls are draped in the colors of <strong>${_k}</strong>, and guards wear its tabard at every corner.`,
-        `🏳️ A herald's post at the crossroads bears the device of <strong>${_k}</strong>.`,
-        `🏳️ The city watch wears the colors of <strong>${_k}</strong> — you are in their territory now.`,
-        `🏳️ Painted signs throughout the streets bear the mark of <strong>${_k}</strong>, leaving no doubt whose city this is.`,
-        `🏳️ A carved stone marker at the road's edge reads the name of <strong>${_k}</strong>, its borders stretching in all directions.`,
-      ],
-      Village: [
-        `🏳️ A painted post at the village edge bears the mark of <strong>${_k}</strong>.`,
-        `🏳️ A small pennant bearing the colors of <strong>${_k}</strong> flies from the top of the inn.`,
-        `🏳️ An old milestone beside the road is carved with the emblem of <strong>${_k}</strong>.`,
-        `🏳️ The village elder's house bears a faded plaque declaring allegiance to <strong>${_k}</strong>.`,
-        `🏳️ A notice board at the village entrance is stamped with the seal of <strong>${_k}</strong>.`,
-        `🏳️ Villagers going about their work wear simple caps in the colors of <strong>${_k}</strong>.`,
-      ],
-    };
-    const _pool = _bannerMsgs[destCell.zone] || _bannerMsgs.City;
-    addStory(_pool[Math.floor(Math.random() * _pool.length)]);
-    addWorldEvent(`Entered ${_k} for the first time at ${destCell.cityVillage || destKey}.`, 'exploration');
-    updateJournal();
-    updateTopStats();
   }
 
   // First visit to a City or CapitalCity: auto-reveal the nearest tavern or inn
@@ -15512,7 +14525,6 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
         setBuiltIcon?.('campfire-button', false);
       }
       updateComfortProtection?.();
-      SoundManager?.updateAmbience();
       if (!player.flags) player.flags = {};
       player.flags._campRaidResult = { lostSupplies: lostNames, shelterDestroyed, fireDestroyed };
     } else if (raidRoll <= 12) {
@@ -15536,11 +14548,6 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
     }
   }
 
-  // Quest: The Slow Becoming — check if Ithris should appear on arrival
-  if (typeof _checkIthrisMeetTrigger === 'function') _checkIthrisMeetTrigger();
-  // Romance NPCs — check travel triggers against the actual arrival cell
-  if (typeof _checkRomanceTravelTriggers === 'function') await _checkRomanceTravelTriggers(destCell);
-
   updateJournal();
   checkQuestObjectives?.('location', { coord: destKey });
   addWorldEvent(`Travelled to ${locDisplay}.`, 'exploration');
@@ -15557,7 +14564,6 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
   }
   checkAchievementTitles?.();
   checkGlobalEventTriggers();
-  SoundManager?.updateAmbience();
   saveGame();
   if (!rollReencounters()) {
     if (isSettlement) {
@@ -15793,7 +14799,7 @@ async function _prof_quick_brew_action() {
   const herbs = Object.keys(player.inventory || {}).filter(k => /herb/i.test(k) && (player.inventory[k].quantity ?? 0) >= 2);
   if (!herbs.length) { addStory('⛔ You need at least 2 Healing Herbs to brew.'); _goBack(); return; }
   removeItem(herbs[0], 2);
-  const tier = await performSkillCheck('Alchemy');
+  const tier = performSkillCheck('Alchemy');
   if (tier <= 1) { addStory('⚗️ The mixture is ruined. Materials wasted.'); }
   else {
     const qty = tier >= 5 ? 2 : 1;
@@ -15811,7 +14817,7 @@ async function _prof_transmute() {
   if (!commons.length) { addStory('⛔ Need 5× of any Common material to transmute.'); _goBack(); return; }
   const [name] = commons[0];
   removeItem(name, 5);
-  const tier = await performSkillCheck('Alchemy');
+  const tier = performSkillCheck('Alchemy');
   const result = tier >= 4 ? 'Silver Dust' : 'Iron Powder';
   addItem(result, 1, { type: 'material', weight: 0.2, rarity: 'Uncommon', consumable: false });
   addStory(`🔄 Transmuted 5× ${name} → 1× ${result}.`);
@@ -15827,7 +14833,7 @@ async function _prof_master_formula() {
 async function _prof_steady_aim() {
   if (!combatState) { addStory('⛔ You are not in combat.'); _goBack(); return; }
   await runInlineProgress('Drawing breath, taking aim…', 1500);
-  let tier = await performSkillCheck('Archery');
+  let tier = performSkillCheck('Archery');
   if (combatState.eagleEye) tier = Math.max(3, tier);
   if (player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
   const wepBonus    = _getEquippedWeaponDamage();
@@ -15849,7 +14855,7 @@ async function _prof_steady_aim() {
 async function _prof_volley() {
   if (!combatState) { addStory('⛔ You are not in combat.'); _goBack(); return; }
   await runInlineProgress('Loosing volley…', 1500);
-  const tier = await performSkillCheck('Archery');
+  const tier = performSkillCheck('Archery');
   const dmg  = Math.max(1, tier * 3 + randomInt(-1, 2));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   combatState.enemySkipsNext = true;
@@ -15896,7 +14902,7 @@ async function _prof_silent_kill() {
 
 async function _prof_ballad() {
   await runInlineProgress('Playing…', 2000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 1) { addStory('🎵 The notes fall flat. No effect.'); _goBack(); return; }
   applyCondition('inspired', 3);
   (player.party || []).forEach(() => {}); // party can't have conditions but note it narratively
@@ -15914,7 +14920,7 @@ async function _prof_tale_of_valor() {
 
 async function _prof_epic_performance() {
   await runInlineProgress('Performing…', 3000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 2) { addStory('🎭 The performance falls flat with this crowd.'); _goBack(); return; }
   addStory('🎭 The crowd erupts. Your name will be spoken here for days. All locals are now Friendly.');
   player.settlementReputation = (player.settlementReputation || {});
@@ -15933,7 +14939,7 @@ async function _prof_field_repair() {
   }, ['', null]);
   const wear = itemName ? getItemWear(itemName) : 100;
   if (!itemName || wear >= 100) { addStory('🔧 Nothing in your pack needs repair.'); _goBack(); return; }
-  const tier = await performSkillCheck('Smithing');
+  const tier = performSkillCheck('Smithing');
   if (tier <= 1) { addStory('🔧 The repair doesn\'t hold.'); _goBack(); return; }
   const repaired = Math.min(100, wear + 25 * tier);
   player.inventory[itemName].wear = repaired;
@@ -15945,7 +14951,7 @@ async function _prof_field_repair() {
 
 async function _prof_sharpen_blade() {
   await runInlineProgress('Honing the edge…', 2000);
-  const tier = await performSkillCheck('Smithing');
+  const tier = performSkillCheck('Smithing');
   if (tier <= 1) { addStory('⚔️ The blade slips. No improvement.'); _goBack(); return; }
   player.sharpenedWeaponBonus = 3;
   addStory('⚔️ Edge is razor sharp. +3 damage on your next combat.');
@@ -15970,7 +14976,7 @@ async function _prof_manhunt() {
   await runInlineProgress('Tracking the quarry…', 2500);
   const active = (player.journal?.quests || []).filter(q => q.status === 'Active');
   if (!active.length) { addStory('🗺️ No active quarry to track.'); _goBack(); return; }
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier <= 2) { addStory('🗺️ The trail is cold. You find no leads.'); _goBack(); return; }
   addStory(`🗺️ Your instincts sharpen. Your quarry is somewhere in ${player.currentKingdom || 'this region'}.`);
   _goBack();
@@ -15980,7 +14986,7 @@ async function _prof_capture() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   const e = combatState.enemy;
   await runInlineProgress('Subduing…', 2000);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier <= 2) { addStory('⛓️ They resist. The capture fails.'); _showCombatWheel(); return; }
   addStory(`⛓️ You subdue the ${e.name} and take them in. Bounty collected.`);
   const bonus = Math.floor((e.goldRange?.[1] || 20) * 0.5);
@@ -16001,7 +15007,7 @@ async function _prof_bless() {
 
 async function _prof_divine_healing() {
   await runInlineProgress('Channelling divine power…', 2500);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   if (tier <= 1) { addStory('💫 The connection wavers. No healing.'); _goBack(); return; }
   changeLife(25);
   removeCondition('injured');
@@ -16013,7 +15019,7 @@ async function _prof_divine_healing() {
 async function _prof_holy_wrath() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Invoking divine wrath…', 2000);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   const dmg  = Math.max(1, tier * 7 + randomInt(0, 5));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   addStory(`⚡ Holy fire strikes the ${combatState.enemy.name} for ${dmg} damage! (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
@@ -16026,7 +15032,7 @@ async function _prof_holy_wrath() {
 
 async function _prof_survey_area() {
   await runInlineProgress('Surveying the terrain…', 2500);
-  const tier = await performSkillCheck('Navigation');
+  const tier = performSkillCheck('Navigation');
   if (tier <= 1) { addStory('🔭 The terrain is confusing. You gain nothing.'); _goBack(); return; }
   const key = player.currentLocation;
   const match = key.match(/^x(\d+)_y(\d+)$/);
@@ -16056,7 +15062,7 @@ async function _prof_orienteering() {
 
 async function _prof_first_expedition() {
   await runInlineProgress('Searching carefully…', 3000);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier <= 2) { addStory('🏔️ You find nothing hidden here.'); _goBack(); return; }
   const cell   = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
   const hidden = (cell.pointsOfInterest || []).find(p => !((player.discoveredEstablishments || {})[player.currentLocation] || []).includes(p.name));
@@ -16097,7 +15103,7 @@ async function _prof_craft_arrows() {
   await runInlineProgress('Fletching arrows…', 2000);
   const hasSticks = (player.inventory?.['Sticks']?.quantity ?? 0) >= 3 || (player.inventory?.['Stick']?.quantity ?? 0) >= 3;
   const qty = hasSticks ? 5 : 3;
-  const tier = await performSkillCheck('Fletching');
+  const tier = performSkillCheck('Fletching');
   if (tier <= 1) { addStory('🪶 The fletching splits. No arrows made.'); _goBack(); return; }
   addItem('Arrow', qty, { type: 'material', weight: 0.1, rarity: 'Common', consumable: false });
   addStory(`🪶 You craft ${qty} arrows.`);
@@ -16114,7 +15120,7 @@ async function _prof_broadhead() {
 
 async function _prof_perfect_shot() {
   await runInlineProgress('Crafting the perfect arrow…', 3000);
-  const tier = await performSkillCheck('Fletching');
+  const tier = performSkillCheck('Fletching');
   if (tier <= 2) { addStory('🎯 The arrow warps. It won\'t fly true.'); _goBack(); return; }
   player.perfectArrowReady = true;
   addItem('Perfect Arrow', 1, { type: 'material', weight: 0.1, rarity: 'Rare', consumable: false, description: 'Guarantees a Tier 5 Archery check when used.' });
@@ -16132,7 +15138,7 @@ async function _prof_brace() {
 async function _prof_intimidate() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Staring them down…', 1500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 3 && Math.random() < 0.5) {
     addStory(`😤 The ${combatState.enemy.name} flinches and flees!`);
     combatState = null; _showDefaultWheel(); return;
@@ -16163,7 +15169,7 @@ async function _prof_cure_ailment() {
   const harmful = (player.conditions || []).filter(c => CONDITION_DEFS[c.id]?.harmful);
   if (!harmful.length) { addStory('💊 No harmful conditions to treat.'); _goBack(); return; }
   await runInlineProgress('Treating the condition…', 2000);
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   if (tier <= 1) { addStory('💊 The treatment has no effect.'); _goBack(); return; }
   const removed = harmful[0];
   removeCondition(removed.id);
@@ -16174,7 +15180,7 @@ async function _prof_cure_ailment() {
 
 async function _prof_full_restoration() {
   await runInlineProgress('Full treatment…', 3500);
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   if (tier <= 2) { addStory('✨ The treatment is incomplete. Partial recovery only.'); changeLife(15); _goBack(); return; }
   const targetLife = Math.floor(player.maxLife * 0.8);
   player.life = Math.max(player.life, targetLife);
@@ -16193,7 +15199,7 @@ async function _prof_set_snare() {
 
 async function _prof_study_prey() {
   await runInlineProgress('Reading the signs…', 2000);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier <= 1) { addStory('🦌 The signs are unclear. No guaranteed encounter.'); _goBack(); return; }
   player.guaranteedHuntEncounter = true;
   addStory('🦌 You spot clear signs of prey. Your next hunt is guaranteed to find an animal.');
@@ -16209,7 +15215,7 @@ async function _prof_apex_predator() {
 async function _prof_honors_strike() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Striking with honour…', 1500);
-  const tier    = await performSkillCheck('Swordsmanship');
+  const tier    = performSkillCheck('Swordsmanship');
   const dmg     = Math.max(1, tier * 4 + 5 + randomInt(-1, 2));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   applyCondition('fortified', 2);
@@ -16231,7 +15237,7 @@ async function _prof_stand_firm() {
 async function _prof_charge() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Charging…', 1500);
-  const tier = await performSkillCheck('Swordsmanship');
+  const tier = performSkillCheck('Swordsmanship');
   const dmg  = Math.max(1, tier * 8 + randomInt(0, 5));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   combatState.enemySkipsNext = true;
@@ -16243,7 +15249,7 @@ async function _prof_charge() {
 
 async function _prof_detect_magic() {
   await runInlineProgress('Sensing magic…', 2000);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   if (tier <= 1) { addStory('🔍 The magical sense fades before you can focus it.'); _goBack(); return; }
   const magical = Object.entries(player.inventory || {}).filter(([, v]) => v.rarity === 'Rare' || v.type === 'potion' || /magic|enchant|arcane|rune/i.test(JSON.stringify(v)));
   if (!magical.length) { addStory('🔍 You detect no magical items in your pack.'); _goBack(); return; }
@@ -16255,7 +15261,7 @@ async function _prof_arcane_bolt() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Channelling arcane force…', 1500);
   const skill = (player.skills?.['Light Magic']?.level || 0) >= (player.skills?.['Black Magic']?.level || 0) ? 'Light Magic' : 'Black Magic';
-  const tier  = await performSkillCheck(skill);
+  const tier  = performSkillCheck(skill);
   const dmg   = Math.max(1, tier * 6 + randomInt(0, 4));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   addStory(`⚡ Arcane bolt deals ${dmg} — no mana spent. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
@@ -16271,7 +15277,7 @@ async function _prof_ritual_casting() {
   _buildWheel([{ label: '🌀 Ritual…', action: () => {} }]);
   await runInlineProgress('Preparing ritual…', 5000);
   await runInlineProgress('Weaving the arcane…', 5000);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   const outcomes = [
     'The ritual fails. A cold wind snuffs out nearby fires.',
     'A faint shimmer — nothing tangible, but the air feels cleaner.',
@@ -16301,7 +15307,7 @@ async function _prof_battle_hardened() {
 
 async function _prof_appraise() {
   await runInlineProgress('Appraising…', 1500);
-  const tier = await performSkillCheck('Negotiating');
+  const tier = performSkillCheck('Negotiating');
   const items = Object.entries(player.inventory || {});
   if (!items.length) { addStory('🧐 Nothing in your pack to appraise.'); _goBack(); return; }
   const [name, data] = items[Math.floor(Math.random() * items.length)];
@@ -16384,7 +15390,7 @@ async function _prof_study() {
     tier = 5;
     addStory('🔤 Decipher Runes: your study check auto-succeeds.');
   } else {
-    tier = await performSkillCheck('Decrypting');
+    tier = performSkillCheck('Decrypting');
   }
   if (tier <= 2) { addStory('📚 Your study yields nothing new this time.'); _goBack(); return; }
   const allRecipes = typeof Recipes !== 'undefined' ? Object.values(Recipes).flat() : [];
@@ -16449,7 +15455,7 @@ async function _prof_killing_blow() {
 
 async function _prof_gather_intel() {
   await runInlineProgress('Observing…', 2000);
-  const tier = await performSkillCheck('Stealth');
+  const tier = performSkillCheck('Stealth');
   if (tier <= 2) { addStory('🕵️ You learn nothing of value.'); _goBack(); return; }
   const secrets = [
     'They owe a debt they cannot repay.',
@@ -16458,21 +15464,14 @@ async function _prof_gather_intel() {
     'They are being watched by someone else in this settlement.',
     'Their true motivation is self-preservation above all else.',
   ];
-  const _intelSeed = secrets[Math.floor(Math.random() * secrets.length)];
-  const _intelCtx  = buildActionContext();
-  const _intelLine = await callGameAI(
-    `One sentence of covert intelligence gathered through observation in ${_intelCtx.location.name}. The intelligence is about a person nearby. Specific, intriguing, foreboding. Use this as a seed: ${_intelSeed}`,
-    _intelCtx,
-    { mode: 'narrative', fallback: _intelSeed, maxTokens: 60 }
-  );
-  addStory(`🕵️ Intel gathered: ${_intelLine}`);
+  addStory(`🕵️ Intel gathered: ${secrets[Math.floor(Math.random() * secrets.length)]}`);
   awardProfessionXp('social_success');
   _goBack();
 }
 
 async function _prof_plant_evidence() {
   await runInlineProgress('Planting evidence…', 2000);
-  const tier = await performSkillCheck('Stealth');
+  const tier = performSkillCheck('Stealth');
   if (tier <= 2) { addStory('📄 Your manipulation is too clumsy. No effect.'); _goBack(); return; }
   const npcs = player.journal?.npcs || [];
   if (!npcs.length) { addStory('📄 No known NPCs to manipulate.'); _goBack(); return; }
@@ -16554,7 +15553,7 @@ async function _skAct_power_strike() {
 async function _skAct_disarm() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Disarming…', 1500);
-  const tier = await performSkillCheck('Swordsmanship');
+  const tier = performSkillCheck('Swordsmanship');
   if (tier <= 2) { addStory('🗡️ The disarm fails — they keep their weapon.'); _enemyCounterattack(); _showCombatWheel(); return; }
   combatState.enemy.damage = [1, 3];
   addStory(`🗡️ You knock the weapon aside! The ${combatState.enemy.name} fights barehanded (1–3 damage).`);
@@ -16567,7 +15566,7 @@ async function _skAct_disarm() {
 async function _skAct_aimed_shot() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Taking aim…', 2000);
-  let tier = await performSkillCheck('Archery');
+  let tier = performSkillCheck('Archery');
   if (combatState.eagleEye) tier = Math.max(3, tier);
   if (player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
   const wepBonus    = _getEquippedWeaponDamage();
@@ -16589,7 +15588,7 @@ async function _skAct_aimed_shot() {
 async function _skAct_grapple() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Grappling…', 1500);
-  const tier = await performSkillCheck('Brawling');
+  const tier = performSkillCheck('Brawling');
   if (tier <= 2) { addStory('🤼 They shake you off.'); _enemyCounterattack(); _showCombatWheel(); return; }
   combatState.grappled         = true;
   combatState.enemySkipsNext   = true;
@@ -16605,7 +15604,7 @@ async function _skAct_calm_beast() {
     addStory('🐾 This only works on beasts, not intelligent foes.'); _showCombatWheel(); return;
   }
   await runInlineProgress('Calming the beast…', 2000);
-  const tier = await performSkillCheck('Animal Handling');
+  const tier = performSkillCheck('Animal Handling');
   if (tier >= 4) {
     addStory(`🐾 The ${combatState.enemy.name} calms and withdraws. No further hostility.`);
     combatState = null; _showDefaultWheel(); return;
@@ -16619,7 +15618,7 @@ async function _skAct_calm_beast() {
 
 async function _skAct_rally() {
   await runInlineProgress('Rallying…', 1500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 2) { addStory('📯 The call falls flat. No effect.'); if (combatState) _showCombatWheel(); else _goBack(); return; }
   changeStamina(10);
   applyCondition('inspired', 2);
@@ -16631,7 +15630,7 @@ async function _skAct_rally() {
 
 async function _skAct_read_tracks() {
   await runInlineProgress('Reading the tracks…', 2500);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   const findings = [
     'The ground tells you nothing. The trail is old.',
     'Something passed through here recently — unclear what.',
@@ -16646,7 +15645,7 @@ async function _skAct_read_tracks() {
 
 async function _skAct_chart_area() {
   await runInlineProgress('Charting…', 2500);
-  const tier = await performSkillCheck('Navigation');
+  const tier = performSkillCheck('Navigation');
   if (tier <= 1) { addStory('🗺️ Your charting is off. Nothing useful mapped.'); _goBack(); return; }
   const key   = player.currentLocation;
   const match = key.match(/^x(\d+)_y(\d+)$/);
@@ -16677,7 +15676,7 @@ async function _skAct_mend_wounds() {
     const herbKey = Object.keys(player.inventory).find(k => /healing herb/i.test(k));
     if (herbKey) removeItem(herbKey, 1);
   }
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   const heal = tier >= 4 ? 20 : tier >= 3 ? 15 : 10;
   changeLife(heal);
   addStory(`🩹 You tend to the wounds. +${heal} life.`);
@@ -16690,7 +15689,7 @@ async function _skAct_field_surgery() {
     addStory('🩺 You are not Injured — no surgery needed.'); _goBack(); return;
   }
   await runInlineProgress('Performing field surgery…', 3000);
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   if (tier <= 2) { addStory('🩺 The surgery is incomplete. Injured condition remains.'); _goBack(); return; }
   removeCondition('injured');
   changeLife(25);
@@ -16704,7 +15703,7 @@ async function _skAct_quick_brew() {
   const herbKey = Object.keys(player.inventory || {}).find(k => /healing herb/i.test(k) && (player.inventory[k].quantity ?? 0) >= 2);
   if (!herbKey) { addStory('⚗️ Need at least 2 Healing Herbs to quick-brew.'); _goBack(); return; }
   removeItem(herbKey, 2);
-  const tier = await performSkillCheck('Alchemy');
+  const tier = performSkillCheck('Alchemy');
   if (tier <= 1) { addStory('⚗️ The mixture is wrong. Materials wasted.'); _goBack(); return; }
   addItem('Health Potion', 1, { type: 'potion', weight: 0.3, rarity: 'Common', consumable: true });
   addStory('⚗️ Quick Brew: 1× Health Potion crafted.');
@@ -16714,7 +15713,7 @@ async function _skAct_quick_brew() {
 
 async function _skAct_identify_plants() {
   await runInlineProgress('Examining the flora…', 2000);
-  const tier = await performSkillCheck('Herbalism');
+  const tier = performSkillCheck('Herbalism');
   if (tier <= 2) { addStory('🌿 Nothing particularly useful here.'); _goBack(); return; }
   const qty = tier >= 5 ? 3 : 2;
   addItem('Healing Herb', qty, { type: 'material', weight: 0.1, rarity: 'Common', consumable: false });
@@ -16724,7 +15723,7 @@ async function _skAct_identify_plants() {
 
 async function _skAct_inspire() {
   await runInlineProgress('Inspiring…', 1500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 2) { addStory('✨ Your words ring hollow. No one is moved.'); _goBack(); return; }
   applyCondition('inspired', 3);
   addStory('✨ Your words lift spirits. You and the party feel inspired.');
@@ -16734,7 +15733,7 @@ async function _skAct_inspire() {
 
 async function _skAct_read_aura() {
   await runInlineProgress('Reading the aura…', 2000);
-  const tier = await performSkillCheck('Mysticism');
+  const tier = performSkillCheck('Mysticism');
   if (tier <= 2) { addStory('🔮 The aura is murky. You read nothing.'); _goBack(); return; }
   const insights = [
     'A concealed fear drives them.',
@@ -16743,14 +15742,7 @@ async function _skAct_read_aura() {
     'They harbour a deep loyalty to someone you haven\'t met.',
     'Their aura is surprisingly clean — this person means well.',
   ];
-  const _auraSeed = insights[Math.floor(Math.random() * insights.length)];
-  const _auraCtx  = buildActionContext();
-  const _auraLine = await callGameAI(
-    `One mystical sentence describing what a traveller senses while reading a person's aura in ${_auraCtx.location.name}. Cryptic, atmospheric, medieval fantasy. Use this as a seed: ${_auraSeed}`,
-    _auraCtx,
-    { mode: 'narrative', fallback: _auraSeed, maxTokens: 60 }
-  );
-  addStory(`🔮 ${_auraLine}`);
+  addStory(`🔮 Reading the aura: ${insights[Math.floor(Math.random() * insights.length)]}`);
   _goBack();
 }
 
@@ -16904,11 +15896,6 @@ function loadGame(slot) {
   if (obj.worldEconomy) Object.assign(worldEconomy, obj.worldEconomy);
   if (obj.worldNPCs)   Object.assign(worldNPCs,   obj.worldNPCs);
 
-  // Recalculate equipped mana vessel bonus from saved equipment
-  player.equippedManaBonus = _calcEquippedManaBonus();
-
-  // Migrate saves that predate romance system
-  if (!player.romance) player.romance = {};
   // Migrate saves that predate quickSlots
   if (!Array.isArray(player.quickSlots)) player.quickSlots = Array(10).fill(null);
   // Migrate saves that predate pouchContents
@@ -16986,4111 +15973,7 @@ function loadGame(slot) {
     const [, xStr, yStr] = m;
     updatePlayerSymbol(+xStr, +yStr);
   }
-  _prevGoldForSound = player.gold;
   updateTopStats();
-  window.titleMusicFadeOut?.();
-  SoundManager?.updateAmbience();
-}
-
-	// ============================================================
-// SECTION 13.5 · QUEST: THE SLOW BECOMING
-// Sarsett / "Ithris" — the corruption cure quest.
-// ============================================================
-
-// ── NPC state helpers ────────────────────────────────────────────────────────
-
-function _initSarsett() {
-  if (player.sarsett) return;
-  player.sarsett = {
-    met:              false,
-    knownAs:          'Ithris',   // 'Ithris' until confession
-    trustLevel:       0,          // 0–100
-    romanceActive:    false,
-    confessed:        false,
-    deceptionPath:    false,
-    corruptionStage:  1,          // 1–5; advances over time
-    interactionCount: 0,
-    travelingWith:    false,
-    alive:            true,
-    cured:            false,
-    luredPlayer:      false,
-    davolarMet:       false,
-    brewStartDay:     null,       // player.dayCount when brew starts
-  };
-}
-
-function _sarsettName() {
-  return player.sarsett?.confessed ? 'Sarsett' : 'Ithris';
-}
-
-function _sarsettTrustUp(amt) {
-  if (!player.sarsett) return;
-  player.sarsett.trustLevel = Math.min(100, (player.sarsett.trustLevel || 0) + amt);
-  if (player.sarsett.trustLevel >= 60 && !player.sarsett.confessed) {
-    _triggerSarsettConfession();
-  }
-}
-
-function _sarsettTrustDown(amt) {
-  if (!player.sarsett) return;
-  player.sarsett.trustLevel = Math.max(0, (player.sarsett.trustLevel || 0) - amt);
-  if (player.sarsett.trustLevel <= 20 && !player.sarsett.confessed && player.sarsett.interactionCount >= 4) {
-    _triggerSarsettDeception();
-  }
-}
-
-// ── Encounter trigger ────────────────────────────────────────────────────────
-
-function _checkIthrisMeetTrigger() {
-  if (!player.sarsett || player.sarsett.met) return;
-  if (player.level < 2) return;
-  if ((player.journal?.quests || []).find(q => q.id === 'the_slow_becoming')) return;
-  const cell = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-  const safeBiomes = ['Forest', 'Plains', 'Hills', 'Coastal'];
-  if (!safeBiomes.includes(cell.biome || '')) return;
-  const corruptZones = ['Crimson Valley'];
-  if (corruptZones.some(z => (cell.zone || '').includes(z) || (cell.description || '').toLowerCase().includes(z.toLowerCase()))) return;
-  const tod = player.timeOfDay || '';
-  const dayTimes = ['🌅 Early Morning','☀️ Morning','🌞 Midday'];
-  if (!dayTimes.includes(tod)) return;
-  // Rolls 1-in-6 chance per travel step — same rhythm as other random events.
-  if (Math.random() > (1/6)) return;
-  _meetIthris();
-}
-
-// ── Phase 1: The Meeting ─────────────────────────────────────────────────────
-
-async function _meetIthris() {
-  _initSarsett();
-  if (player.sarsett.met) return;
-  player.sarsett.met = true;
-  player.sarsett.travelingWith = true;
-
-  addStory('─────────────────────────────────');
-  addStory('A woman stands at the fork in the road ahead, studying the paths with quiet deliberation. She is elven — unmistakably — though dressed practically, without the usual markers of kingdom allegiance. When she hears you approach she turns, and for a moment you forget what you were going to do next.');
-  addStory('She smiles. Not wide. Measured.');
-  addStory('"I was beginning to think no one used this road." Her voice is steady and pleasant. "I\'m Ithris. I\'m heading... broadly in your direction. Would you object to company?"');
-  await waitForEnter('Press Enter to respond...');
-
-  _buildWheel([
-    {
-      label: '🤝 Welcome the company',
-      action: async () => {
-        addStory('You tell her you don\'t mind at all. She falls into step beside you as if she\'d always been there.');
-        _sarsettTrustUp(10);
-        await _finishMeetingIthris();
-      },
-    },
-    {
-      label: '🤨 Ask what her business is',
-      action: async () => {
-        addStory('"Business?" She tilts her head. "Wandering. Same as you, I\'d imagine. I don\'t mean trouble — I just dislike walking alone."');
-        addStory('Something in her tone suggests the word "trouble" was chosen carefully. You let it pass for now.');
-        _sarsettTrustUp(5);
-        await _finishMeetingIthris();
-      },
-    },
-    {
-      label: '😏 Flirt',
-      action: async () => {
-        addStory('You say you\'d be a fool to object. She raises an eyebrow — then laughs, brief and genuine. The first real thing you\'ve seen from her.');
-        addStory('"Don\'t make me regret asking," she says.');
-        _sarsettTrustUp(8);
-        player.sarsett.romanceActive = true;
-        await _finishMeetingIthris();
-      },
-    },
-    {
-      label: '🚶 Keep walking without a word',
-      action: async () => {
-        addStory('You keep walking. She takes that as a yes and follows, unbothered. She doesn\'t try to fill the silence.');
-        _sarsettTrustDown(5);
-        await _finishMeetingIthris();
-      },
-    },
-  ], 'A Woman on the Road');
-}
-
-async function _finishMeetingIthris() {
-  addStory('─────────────────────────────────');
-  startQuest('the_slow_becoming', true);
-  setQuestFlag('the_slow_becoming', 'met_ithris', true);
-  if (!player.bonusFlags) player.bonusFlags = {};
-  player.bonusFlags.corruptionImmune = true;
-  addStory('📜 Quest begun: <strong>The Slow Becoming</strong>');
-  addStory('→ You\'ve met a woman calling herself Ithris. Spend time with her — she seems willing to travel.');
-  updateJournal();
-  _showDefaultWheel();
-}
-
-// ── Phase 2: Conversations (builds trust) ────────────────────────────────────
-
-function _showIthrisWheel() {
-  if (!player.sarsett?.met || !player.sarsett?.alive) return;
-  const name    = _sarsettName();
-  const trust   = player.sarsett.trustLevel || 0;
-  const romance = player.sarsett.romanceActive;
-  const confessed = player.sarsett.confessed;
-  const options = [
-    {
-      label: '🏡 Ask where she\'s from',
-      action: _ithrisTalkHome,
-      disabled: !!(player.sarsett._talkedHome),
-    },
-    {
-      label: '🌿 Ask about her travels',
-      action: _ithrisTalkTravels,
-      disabled: !!(player.sarsett._talkedTravels),
-    },
-    {
-      label: '🌑 Ask what she\'s hiding',
-      action: _ithrisTalkSecret,
-      disabled: !!(player.sarsett._talkedSecret) || trust < 30,
-    },
-    ...(romance ? [{
-      label: '❤️ Tell her how you feel',
-      action: _ithrisTalkRomance,
-      disabled: !!(player.sarsett._talkedRomance),
-    }] : []),
-    ...(confessed ? [{
-      label: '💬 Talk about the cure',
-      action: _ithrisTalkCure,
-    }] : []),
-    { label: '← Back', action: _goBack, isBack: true },
-  ];
-  _buildWheel(options, name);
-}
-
-async function _ithrisTalkHome() {
-  player.sarsett._talkedHome = true;
-  addStory(`"Thalorion," ${_sarsettName()} says, and something softens in her face for just a moment. "The capital of Nithrond. I grew up on a street that looked out over the crescent valley — you can see the white towers from nearly every window. There is nowhere else in the world built like that."`);
-  addStory('She goes quiet for a few steps. "I haven\'t been back in a long time."');
-  _sarsettTrustUp(8);
-  _checkRapportProgress();
-  _goBack();
-}
-
-async function _ithrisTalkTravels() {
-  player.sarsett._talkedTravels = true;
-  addStory(`${_sarsettName()} is quiet for a moment. "All over. More recently than I\'d have liked." She glances at the horizon. "I\'ve been looking for something specific. Something that doesn\'t want to be found."`);
-  addStory('"What is it?" you ask. She looks at you sideways. "I\'ll tell you when I trust you more."');
-  addStory('Her voice is light but her eyes aren\'t.');
-  _sarsettTrustUp(10);
-  _checkRapportProgress();
-  _goBack();
-}
-
-async function _ithrisTalkSecret() {
-  player.sarsett._talkedSecret = true;
-  const trust = player.sarsett.trustLevel || 0;
-  if (trust < 50) {
-    addStory(`${_sarsettName()} doesn't flinch. "What makes you think I\'m hiding something?" A beat. "Everyone\'s hiding something. Are you asking about mine specifically, or just making conversation?"`);
-    addStory('She doesn\'t answer the question. But she doesn\'t seem angry either.');
-    _sarsettTrustUp(5);
-  } else {
-    addStory(`${_sarsettName()} stops walking. For a moment she just looks at the road ahead.`);
-    addStory('"I\'m looking for ingredients," she says finally. "For a potion. It\'s — complicated. The kind of thing you can\'t just walk into an apothecary and ask for."');
-    addStory('"What kind of potion?" The pause that follows is long enough to be an answer in itself.');
-    addStory('"A cure," she says. "For something that doesn\'t have many cures."');
-    _sarsettTrustUp(15);
-  }
-  _checkRapportProgress();
-  _goBack();
-}
-
-async function _ithrisTalkRomance() {
-  player.sarsett._talkedRomance = true;
-  const trust = player.sarsett.trustLevel || 0;
-  if (trust < 40) {
-    addStory(`${_sarsettName()} looks at you for a moment. "You\'re honest, I\'ll give you that." She doesn\'t pull away, but she doesn\'t lean in either. "Ask me again when we\'ve known each other longer."`);
-    _sarsettTrustUp(6);
-  } else {
-    addStory(`${_sarsettName()} doesn\'t look surprised. She looks like someone who had been expecting this and still didn\'t know what to do with it.`);
-    addStory('"I\'ve been..." she starts, then stops. "I\'ve been trying not to," she admits. "For reasons I can\'t explain yet. But I don\'t think it\'s working."');
-    addStory('She doesn\'t say more. But the silence between you is different now.');
-    _sarsettTrustUp(20);
-    player.sarsett.romanceDeep = true;
-  }
-  _checkRapportProgress();
-  _goBack();
-}
-
-async function _ithrisTalkCure() {
-  const confessed = player.sarsett.confessed;
-  if (!confessed) { _goBack(); return; }
-  addStory(`Sarsett walks through what she knows: the Moonwither Herb from Sivanrift's sacred gardens, a vial of pure elven blood — "Not mine. I can\'t give what I\'ve already lost" — and the final ingredient, a Veldrite Crystal from the mines of Feldarún.`);
-  addStory('"There\'s also an alchemist," she says. "Davolar. A hermit who lives near the Crimson Valley. He\'s the only person I trust to brew this correctly. I found out about him the hard way."');
-  addStory('She meets your eyes. "I know what I\'m asking. I know where each of those things is and what it will take to get them."');
-  _goBack();
-}
-
-function _checkRapportProgress() {
-  const s = player.sarsett;
-  if (!s) return;
-  s.interactionCount = (s.interactionCount || 0) + 1;
-  if (s.interactionCount >= 4 && !s._rapportFlagged) {
-    s._rapportFlagged = true;
-    setQuestFlag('the_slow_becoming', 'rapport_built', true);
-    addStory('─────────────────────────────────');
-    addStory(`You\'ve spent real time with ${_sarsettName()}. She\'s not who she first seemed — or perhaps she\'s more. Something is building between you, and it has nothing to do with chance.`);
-  }
-}
-
-// ── Phase 3: The Truth moment ────────────────────────────────────────────────
-
-function _triggerSarsettConfession() {
-  if (player.sarsett?.confessed) return;
-  player.sarsett.confessed   = true;
-  player.sarsett.knownAs     = 'Sarsett';
-  player.sarsett.deceptionPath = false;
-  addStory('─────────────────────────────────');
-  addStory('She stops on the road and turns to face you. It\'s not a dramatic moment — just a held breath. Then:');
-  addStory('"My name is Sarsett."');
-  addStory('A pause. The name hangs in the air between you.');
-  addStory('"Ithris was my mother\'s name. She was — she was murdered. By orcs. I took her name because..." She doesn\'t finish. "I\'m sorry. For using it like this. For using you."');
-  addStory('Her voice doesn\'t shake but her hands are still. "I\'m corrupted. You know the old curse — the one the covens made? I\'m becoming one of them. An orc. And I\'ve known for months. I came to you because I needed help. Not because I—" She stops again.');
-  addStory('"I don\'t know anymore what I came to you for."');
-  setQuestFlag('the_slow_becoming', 'truth_moment_passed', true);
-  _buildWheel([
-    {
-      label: '🤝 I\'ll help you',
-      action: () => {
-        addStory('You tell her you already knew something was wrong. And that it doesn\'t change anything.');
-        addStory('Sarsett looks at you for a long moment. Then she exhales — slowly — as if she\'d been holding it since before she met you. "All right," she says. "Then let me tell you what we need."');
-        _sarsettTrustUp(20);
-        player.sarsett.playerHelping = true;
-        _ithrisTalkCure();
-      },
-    },
-    {
-      label: '❤️ I\'ll help — and I care about you',
-      action: () => {
-        addStory('You tell her the truth: that you\'d already started to care, before you knew any of this, and you\'re not stopping now.');
-        addStory('Her composure breaks — just for a second. Then she looks away, jaw tight, and nods.');
-        addStory('"Don\'t make promises yet," she says quietly. "But... thank you."');
-        _sarsettTrustUp(30);
-        player.sarsett.romanceActive = true;
-        player.sarsett.romanceDeep   = true;
-        player.sarsett.playerHelping = true;
-        _ithrisTalkCure();
-      },
-    },
-    {
-      label: '😠 You were using me',
-      action: () => {
-        addStory('You tell her that you\'re not blind to what she was doing. That knowing her name doesn\'t change that she lied.');
-        addStory('Sarsett doesn\'t argue. "You\'re right," she says. "I won\'t pretend otherwise."');
-        addStory('She waits. You let the silence stretch. Finally — reluctantly — you say you\'ll still help. But she\'d better be straight with you from now on.');
-        addStory('She nods. Once. "I will be."');
-        _sarsettTrustDown(10);
-        player.sarsett.playerHelping = true;
-        player.sarsett.romanceActive = false;
-        _ithrisTalkCure();
-      },
-    },
-    {
-      label: '🚶 Walk away',
-      action: () => {
-        addStory('You tell her you\'re sorry for what she\'s going through. But you won\'t be used. You turn and keep walking.');
-        addStory('She doesn\'t call after you. When you glance back, she\'s still standing on the road, watching you go. She doesn\'t look angry.');
-        addStory('She just looks like someone who knew this might happen.');
-        _sarsettTrustDown(30);
-        player.sarsett.travelingWith  = false;
-        player.sarsett.playerHelping  = false;
-        _triggerSarsettDeception();
-        _goBack();
-      },
-    },
-  ], 'The Truth');
-}
-
-function _triggerSarsettDeception() {
-  if (player.sarsett?.deceptionPath) return;
-  player.sarsett.deceptionPath = true;
-  if (player.sarsett.confessed) return; // confession already happened
-  setQuestFlag('the_slow_becoming', 'truth_moment_passed', true);
-  const romance = player.sarsett.romanceActive || player.sarsett.romanceDeep;
-  addStory('─────────────────────────────────');
-  if (romance) {
-    addStory(`${_sarsettName()} leans a little closer as you walk. "There\'s something I\'ve been wanting to show you," she says, her voice dropped half a register. "There\'s a place — not far. Beautiful, if you know where to look. Will you come?"`);
-    addStory('The invitation is warm. Genuine-seeming. You haven\'t learned to tell the difference yet.');
-  } else {
-    addStory(`${_sarsettName()} mentions, almost casually, that she knows of a cache of unclaimed wealth left by a merchant who never returned. She\'d been reluctant to go alone. If you\'re interested — and she suspects you might be — she could take you there.`);
-    addStory('Her voice is easy. Her eyes are careful.');
-  }
-  addStory('→ Something about this doesn\'t sit right. But she seems sincere enough. Will you follow?');
-  player.sarsett.travelingWith = true;
-  setQuestFlag('the_slow_becoming', 'truth_moment_passed', true);
-  _buildWheel([
-    {
-      label: romance ? '😍 Follow her' : '💰 Follow for the gold',
-      action: _sarsettLeadsToCorruption,
-    },
-    {
-      label: '🤨 Decline — something\'s off',
-      action: () => {
-        addStory(`You tell her you\'d rather not. ${_sarsettName()} doesn\'t push. She smiles and lets it go. But something shifts in her eyes.`);
-        addStory('You\'re still traveling together — for now.');
-        _sarsettTrustUp(5);
-        _goBack();
-      },
-    },
-  ], 'A Proposition');
-}
-
-async function _sarsettLeadsToCorruption() {
-  addStory('─────────────────────────────────');
-  addStory(`${_sarsettName()} leads you off the main road. The path narrows between blighted trees — the bark red-black at the roots, the leaves a sickly amber that has nothing to do with autumn. The air tastes wrong.`);
-  await waitForEnter('Press Enter to continue...');
-  addStory('By the time you realize where you are, you\'ve already breathed it in. Drunk from the stream without thinking. Eaten something she handed you in the dark.');
-  addStory('You feel it slowly — a cold that has nothing to do with temperature. A weight in your blood that wasn\'t there before.');
-  addStory('"I\'m sorry," she says, from just behind you. Her voice cracks on the word. "I\'m so sorry. I didn\'t — I couldn\'t see another way."');
-  addStory('She looks like she means it. You\'re not sure that helps.');
-  applyCondition('cursed_corruption', 999);
-  if (!player.bonusFlags) player.bonusFlags = {};
-  player.bonusFlags.corruptionImmune = false;
-  player.corruptionStage = 1;
-  addStory('🩸 <strong>You have been corrupted.</strong> The curse has entered you. You will need the cure too — but first you\'ll need her to make it.');
-  setQuestFlag('the_slow_becoming', 'truth_moment_passed', true);
-  setQuestFlag('the_slow_becoming', 'player_corrupted', true);
-  player.sarsett.luredPlayer = true;
-  await waitForEnter('Press Enter...');
-  addStory('She doesn\'t try to run. She stands there and takes whatever you\'re going to say to her. There\'s nothing righteous about her expression — just the look of someone who made a bad choice and knows it.');
-  addStory('She says: "I still know where the ingredients are. I still know Davolar. If you want the cure — for both of us — I\'ll help you. If you never want to see me again after that, I understand."');
-  _buildWheel([
-    {
-      label: '🤝 Fine. Work together.',
-      action: () => {
-        addStory('You tell her you\'re furious. And that you\'ll deal with that later. Right now you both need the cure.');
-        player.sarsett.playerHelping = true;
-        player.sarsett.travelingWith = true;
-        _ithrisTalkCure();
-      },
-    },
-    {
-      label: '🚪 I never want to see you again.',
-      action: () => {
-        addStory('You tell her to go. She does.');
-        addStory('You have the corruption now. And the names of what you need. The rest is on you.');
-        addStory('📜 Find the Moonwither Herb, a Vial of Pure Elf Blood, and a Veldrite Crystal from Feldarún. Then find Davolar near the Crimson Valley.');
-        player.sarsett.travelingWith = false;
-        player.sarsett.playerHelping = false;
-        _goBack();
-      },
-    },
-  ], 'What Now?');
-}
-
-// ── Phase 4: Ingredient 1 — The Moonwither Herb (Sivanrift) ─────────────────
-
-function _showSivanriftHerbWheel() {
-  const hasSeed = getItemQty('Moonwither Seed') > 0;
-  const hasHerb = getItemQty('Moonwither Herb') > 0;
-  if (hasHerb) {
-    addStory('🌿 You already have the Moonwither Herb.');
-    _goBack(); return;
-  }
-  addStory('The Grand Gardens of Sivanrift stretch before you — a dense, fragrant tapestry of rare plants tended by elven wardens. A sign at the entrance reads: <em>Sacred. Nothing may be removed.</em>');
-  _buildWheel([
-    {
-      label: '🌙 Steal it (night)',
-      action: _doHerbSteal,
-    },
-    {
-      label: '🤝 Do a favor first',
-      action: _doHerbFavor,
-    },
-    ...(hasSeed ? [{
-      label: '🌱 Grow your seed',
-      action: _doHerbGrowSeed,
-    }] : []),
-    { label: '← Back', action: _goBack, isBack: true },
-  ], 'The Grand Gardens');
-}
-
-async function _doHerbSteal() {
-  addStory('You wait for the wardens to change their patrol, then slip into the gardens in the small hours.');
-  _buildWheel([{ label: '🌙 Slipping in...', action: () => {} }]);
-  await runInlineProgress('Moving through the gardens...', 4000);
-  const tier = await performSkillCheck('Stealth');
-  if (tier >= 4) {
-    addStory('🌿 You move like shadow and breath. You find the Moonwither Herb in its dedicated plot — pale, silver-glowing under moonlight — and cut a sprig without disturbing a leaf. You\'re out before the next patrol turns the corner.');
-    addItem('Moonwither Herb', 1);
-    setQuestFlag('the_slow_becoming', 'herb_obtained', true);
-    setQuestFlag('the_slow_becoming', 'herb_stolen', true);
-  } else if (tier === 3) {
-    addStory('You find the herb and take it, but you brush a windchime on your way out. A warden stirs — you freeze. Long seconds pass. They settle back down. You make it out, herb in hand, heart loud.');
-    addItem('Moonwither Herb', 1);
-    setQuestFlag('the_slow_becoming', 'herb_obtained', true);
-    setQuestFlag('the_slow_becoming', 'herb_stolen', true);
-  } else if (tier === 2) {
-    addStory('A warden catches you in the act. They don\'t call guards — they simply stand there with an expression of profound disappointment and escort you firmly out. The herb stays in the garden. You\'ll have to try a different approach.');
-    changeLife(-5);
-  } else {
-    addStory('You are caught, reported, and briefly detained by the city guard. Released without charge — but warned. The gardens will be watching for you now.');
-    changeLife(-8);
-    changeStamina(-10);
-    if (!player.flags) player.flags = {};
-    player.flags.sivanrift_caught_stealing = true;
-  }
-  _goBack();
-}
-
-async function _doHerbFavor() {
-  addStory('You ask around the gardens and the nearby market. The head garden keeper — a composed elven man who seems to be everywhere at once — pauses in the middle of a long monologue to himself about root density and looks at you.');
-  addStory('"Lorien Veth," he says. "Keeper of the east and south beds." He studies you. "You\'re asking about the Moonwither. The east beds are infested — root-borers. Nobody else has had time. If you clear them, we can talk about what I can offer."');
-  _buildWheel([{ label: '🌿 Working on it...', action: () => {} }]);
-  await runInlineProgress('Clearing the root-borers...', 5000);
-  const tier = await performSkillCheck('Survival');
-  if (tier >= 3) {
-    addStory('It takes the better part of a morning, but you clear every last borer from the beds. Lorien comes to inspect and nods, apparently satisfied — which, you sense, is a meaningful response from him.');
-    addStory('He reaches into his apron pocket and holds out a seed — small, pearl-grey, faintly luminescent.');
-    addStory('"Moonwither," he says. "I can\'t give you a cutting — that would break the garden rules. But a seed I can give freely. Grow it in moonlit soil. It\'ll take patience." He pauses. "Come back when you have more time. I want to show you something in the east beds."');
-    addItem('Moonwither Seed', 1);
-    addStory('🌱 You received a Moonwither Seed. Plant it somewhere sheltered with moonlight — or find a patient place to grow it.');
-    gainSkillXp('Survival', tier);
-    if (typeof _meetLorienFavor === 'function') await _meetLorienFavor();
-  } else {
-    addStory('You do your best but the borers are resilient and your knowledge of garden pests has its limits. Lorien thanks you for trying, but the damage is done. He has nothing to offer. "Come back when you\'ve learned more about root systems," he says, without unkindness.');
-    gainSkillXp('Survival', 1);
-  }
-  _goBack();
-}
-
-async function _doHerbGrowSeed() {
-  if (getItemQty('Moonwither Seed') < 1) { _goBack(); return; }
-  addStory('You find a sheltered spot with good moonlight — a clearing, or a south-facing windowsill at an inn — and plant the seed. Then you wait.');
-  _buildWheel([{ label: '🌱 Waiting for growth...', action: () => {} }]);
-  await runInlineProgress('Days pass...', 5000);
-  const tier = await performSkillCheck('Herbalism');
-  if (tier >= 3) {
-    addStory('Three days later, a pale silver sprout has pushed through the soil. By the fifth day it blooms — tiny, white-edged petals that glow faintly in the dark. You harvest it carefully.');
-    removeItem('Moonwither Seed', 1);
-    addItem('Moonwither Herb', 1);
-    setQuestFlag('the_slow_becoming', 'herb_obtained', true);
-    setQuestFlag('the_slow_becoming', 'herb_grown', true);
-    gainSkillXp('Herbalism', tier);
-    addStory('🌿 The Moonwither Herb is ready.');
-  } else {
-    addStory('The seed sprouts — and then withers. The soil was wrong, or the light too inconsistent. It didn\'t survive. The seed is spent.');
-    removeItem('Moonwither Seed', 1);
-    gainSkillXp('Herbalism', 1);
-    addStory('The seed is lost. You\'ll need to find another way to get the herb.');
-  }
-  _goBack();
-}
-
-// ── Phase 4: Ingredient 2 — Pure Elf Blood ───────────────────────────────────
-
-function _showElfBloodWheel() {
-  if (getItemQty('Vial of Pure Elf Blood') > 0) {
-    addStory('🩸 You already have the Vial of Pure Elf Blood.');
-    _goBack(); return;
-  }
-  const name = _sarsettName();
-  addStory(`Sarsett was blunt about this one: she cannot give her own blood. Whatever she was is changing. The blood must come from a pure, uncorrupted, full-blooded elf — and convincing one to give it willingly is another matter.`);
-  _buildWheel([
-    {
-      label: '🗣️ Persuade a willing elf',
-      action: _doElfBloodPersuade,
-    },
-    {
-      label: '⚔️ Take it by force',
-      action: _doElfBloodForce,
-    },
-    { label: '← Back', action: _goBack, isBack: true },
-  ], 'Elf Blood');
-}
-
-async function _doElfBloodPersuade() {
-  addStory('You approach an elf — a traveler or a local, it doesn\'t matter — and explain what you need. You try to be honest about why.');
-  _buildWheel([{ label: '🗣️ Explaining...', action: () => {} }]);
-  await runInlineProgress('Making your case...', 3000);
-  const tier = await performSkillCheck('Persuasion');
-  if (tier >= 4) {
-    addStory('The elf is quiet for a long time. Then they roll up their sleeve. "Corruption is a tragedy," they say simply. They let you draw a small amount into a vial, seal it, and hand it back.');
-    addStory('"I hope it works," they say. They don\'t say anything else.');
-    addItem('Vial of Pure Elf Blood', 1);
-    setQuestFlag('the_slow_becoming', 'blood_obtained', true);
-    gainSkillXp('Persuasion', tier);
-    _sarsettTrustUp(5);
-  } else if (tier === 3) {
-    addStory('The elf is uncertain. They stall, ask questions, want more explanation. Eventually they say no — but politely, and they suggest the herbalist in the next settlement might know someone who would help. A lead, not a success.');
-    gainSkillXp('Persuasion', 2);
-  } else {
-    addStory('The elf is affronted. They walk away without a word. A few others in earshot look at you oddly. You\'ll need to try again somewhere else.');
-    gainSkillXp('Persuasion', 1);
-    _sarsettTrustDown(3);
-  }
-  _goBack();
-}
-
-async function _doElfBloodForce() {
-  addStory('⚠️ You don\'t ask. You wait for a moment when the elf is alone, then move quickly — a vial, a blade, a few seconds of struggle. The elf doesn\'t scream. They just stare at you with an expression that stays with you longer than it should.');
-  _buildWheel([{ label: '⚔️ Taking it...', action: () => {} }]);
-  await runInlineProgress('A brief, ugly moment...', 2500);
-  addStory('It works. You have the blood. The elf runs. Whether they\'ll report it depends on how populated this road is.');
-  addItem('Vial of Pure Elf Blood', 1);
-  setQuestFlag('the_slow_becoming', 'blood_obtained', true);
-  setQuestFlag('the_slow_becoming', 'blood_taken_by_force', true);
-  if (!player.flags) player.flags = {};
-  player.flags.elven_reputation_damaged = true;
-  changeKingdomReputation?.('Nithrond', -15);
-  changeKingdomReputation?.('Naradreth', -10);
-  _sarsettTrustDown(15);
-  if (player.sarsett?.romanceActive) {
-    addStory('When you tell Sarsett how you got it, she doesn\'t say anything for a while. Then: "I wish you hadn\'t had to do that."');
-    addStory('Her voice doesn\'t judge you. But she doesn\'t look at you the same way for the rest of the day.');
-  }
-  _goBack();
-}
-
-// ── Phase 4: Ingredient 3 — Veldrite Crystal (Feldarún Mine) ─────────────────
-
-function _showMineApproachWheel() {
-  if (getItemQty('Veldrite Crystal') > 0) {
-    addStory('💎 You already have the Veldrite Crystal.');
-    _goBack(); return;
-  }
-  const hasRing      = getItemQty('Ironbrand Family Ring') > 0;
-  const hasInvisPotion = getItemQty('Invisibility Potion') > 0;
-  const hasCloak     = !!(player.equipped?.cloak && (findItemInDatabase?.(player.equipped.cloak)?.invisible));
-  const race         = (player.race || '').toLowerCase();
-  const isElf        = race.includes('elf');
-  const isDwarf      = race === 'dwarf';
-  const isHuman      = race === 'human';
-  const goldAmt      = player.gold || 0;
-  const stealth      = player.skills?.['Stealth']?.level || 0;
-  const persuasion   = player.skills?.['Persuasion']?.level || 0;
-  const deception    = player.skills?.['Deception']?.level || 0;
-
-  if (!player.sarsett?._metMineGuard) {
-    addStory('The mine entrance is set into the mountainside — a low arch of carved stone, two dwarven guards standing before it with the particular stillness of people who have been told the same thing a thousand times and will say it again.');
-    addStory('One of them raises a hand as you approach. "This mine is not open to outsiders. Turn around."');
-    addStory('If you try to engage them further, one of the guards shifts his weight and his eyes flick to his hand — to his ring finger — and then away. Quickly. As if he remembered something.');
-    player.sarsett._metMineGuard = true;
-  }
-
-  const options = [
-    ...(hasRing ? [{
-      label: '💍 Return the ring',
-      action: _doMineEntryRing,
-    }] : [{
-      label: '🔍 Search for the ring',
-      action: _doMineSearchForRing,
-      disabled: !!(player.sarsett?._searchedForRing && !hasRing),
-    }]),
-    ...(isElf ? [{
-      label: '🌙 Sneak in at night',
-      action: _doMineEntryStealth,
-      disabled: stealth < 2,
-    }] : []),
-    ...(isHuman ? [{
-      label: '🤫 Sneak in',
-      action: _doMineEntryStealth,
-      disabled: stealth < 3,
-    }] : []),
-    ...(isDwarf && persuasion >= 3 ? [{
-      label: '🗣️ Persuade them',
-      action: _doMineEntryPersuade,
-    }] : []),
-    ...(isDwarf && deception >= 3 ? [{
-      label: '🧢 Disguise as miner',
-      action: _doMineEntryDisguise,
-    }] : []),
-    ...(goldAmt >= 500 ? [{
-      label: `💰 Bribe (500 gold)`,
-      action: _doMineEntryBribe,
-    }] : []),
-    ...((hasInvisPotion || hasCloak) ? [{
-      label: '👻 Use invisibility',
-      action: _doMineEntryInvisibility,
-    }] : []),
-    { label: '← Back', action: _goBack, isBack: true },
-  ];
-  _buildWheel(options, 'Feldarún Mine');
-}
-
-async function _doMineSearchForRing() {
-  player.sarsett._searchedForRing = true;
-  addStory('You step back from the entrance and look around the surrounding area — the loose stone, the worn path, the shadows between boulders where things roll and settle.');
-  _buildWheel([{ label: '🔍 Searching...', action: () => {} }]);
-  await runInlineProgress('Searching the area...', 4000);
-  const tier = await performSkillCheck('Tracking');
-  if (tier >= 3) {
-    addStory('There — in a crack between two flat stones, half-covered by wind-blown grit — a ring. Heavy iron. A square-and-flame emblem on the band. The craftsmanship is old and unmistakable. This was made to last generations.');
-    addItem('Ironbrand Family Ring', 1);
-    addStory('💍 You found the Ironbrand Family Ring.');
-    gainSkillXp('Tracking', tier);
-  } else if (tier === 2) {
-    addStory('You search carefully but find nothing immediately useful. The area is all rock and scrub. Maybe another pass, more slowly, would reveal something — or maybe nothing\'s there to find.');
-    gainSkillXp('Tracking', 1);
-    player.sarsett._searchedForRing = false; // allow retry
-  } else {
-    addStory('Nothing. Rock and shadow and the sound of the guards not paying attention to you. Try again later, or try a different approach to the mine.');
-    player.sarsett._searchedForRing = false;
-  }
-  _goBack();
-}
-
-async function _doMineEntryRing() {
-  if (getItemQty('Ironbrand Family Ring') < 1) { _goBack(); return; }
-  addStory('You walk back to the guard who\'s been avoiding looking at his right hand. You hold out the ring.');
-  addStory('He stares at it. His jaw tightens. Then — slowly — he reaches out and takes it. He turns it over once. Twice. He doesn\'t look at you when he speaks.');
-  addStory('"My great-great-grandfather forged that," he says quietly. "I thought I\'d never see it again."');
-  addStory('A long pause. The other guard stares resolutely at the middle distance.');
-  addStory('"One hour," the first guard says. "You were never here."');
-  removeItem('Ironbrand Family Ring', 1);
-  setQuestFlag('the_slow_becoming', 'mine_method', 'ring');
-  player.sarsett._mineAccess = true;
-  await _doCavernSearch();
-}
-
-async function _doMineEntryStealth() {
-  addStory('You wait for the shift change — the one quiet window when both guards are looking the other way — and slip past the entrance into the dark of the mountain.');
-  _buildWheel([{ label: '🌙 Moving in silence...', action: () => {} }]);
-  await runInlineProgress('Slipping past the guards...', 4000);
-  const tier = await performSkillCheck('Stealth');
-  if (tier >= 4) {
-    addStory('You move like part of the dark. Not a sound. The guards never know. You\'re in.');
-    setQuestFlag('the_slow_becoming', 'mine_method', 'stealth');
-    player.sarsett._mineAccess = true;
-    await _doCavernSearch();
-  } else if (tier === 3) {
-    addStory('You make it in — just. A guard glances toward the sound of your boot on loose stone, waits, then turns back. Your heart doesn\'t slow down for several minutes.');
-    setQuestFlag('the_slow_becoming', 'mine_method', 'stealth');
-    player.sarsett._mineAccess = true;
-    await _doCavernSearch();
-  } else {
-    addStory('A guard hears you. There\'s a shout. You run — back out and into the hills. They don\'t pursue far, but you\'re known now. The front entrance is no longer an option tonight.');
-    changeStamina(-15);
-    _goBack();
-  }
-}
-
-async function _doMineEntryPersuade() {
-  addStory('You approach the guards formally, announce yourself as a dwarf of the outer settlements, and make your case — clan ties, mutual trade interests, the reasonable expectation of kin-courtesy.');
-  _buildWheel([{ label: '🗣️ Presenting your case...', action: () => {} }]);
-  await runInlineProgress('Negotiating entry...', 3500);
-  const tier = await performSkillCheck('Persuasion');
-  if (tier >= 4) {
-    addStory('The guards confer. Then: "One hour. Clan business only. You don\'t go past the second level." It\'s more than you expected.');
-    setQuestFlag('the_slow_becoming', 'mine_method', 'persuasion');
-    player.sarsett._mineAccess = true;
-    await _doCavernSearch();
-  } else {
-    addStory('The guards are unmoved. "Rules are rules," one says, not unkindly. "Try the Tharnhold council if you want a formal pass."');
-    gainSkillXp('Persuasion', tier);
-    _goBack();
-  }
-}
-
-async function _doMineEntryDisguise() {
-  addStory('You acquire a miner\'s coat and lamp from a supply shed near the road, rough your hands with dirt, and join a shift change — head down, walking with the tired confidence of someone who\'s done this a hundred times before.');
-  _buildWheel([{ label: '🧢 Blending in...', action: () => {} }]);
-  await runInlineProgress('Assuming the role...', 4000);
-  const tier = await performSkillCheck('Deception');
-  if (tier >= 3) {
-    addStory('No one looks twice. You\'re just another tired dwarf heading in for the early shift. The guards wave you through.');
-    setQuestFlag('the_slow_becoming', 'mine_method', 'disguise');
-    player.sarsett._mineAccess = true;
-    await _doCavernSearch();
-  } else {
-    addStory('A senior miner squints at your lamp technique and your hands. "Which crew are you on?" You don\'t know the answer quickly enough. He calls the guards. You run.');
-    changeStamina(-10);
-    _goBack();
-  }
-}
-
-async function _doMineEntryBribe() {
-  if ((player.gold || 0) < 500) { _goBack(); return; }
-  addStory('You wait until the guards swap a look that means they\'re bored, and you step forward. You don\'t say much — just place a purse on the stone between you. It\'s heavy enough to make a point.');
-  addStory('The guards don\'t look at each other. One of them slowly picks it up. "Thirty minutes," he says. "You were checking your compass and got confused."');
-  player.gold -= 500;
-  updateTopStats();
-  addStory('-500 gold.');
-  setQuestFlag('the_slow_becoming', 'mine_method', 'bribe');
-  player.sarsett._mineAccess = true;
-  await _doCavernSearch();
-}
-
-async function _doMineEntryInvisibility() {
-  const hasPotion = getItemQty('Invisibility Potion') > 0;
-  addStory('You make use of the invisibility — whether from a potion or a cloak — and walk through the entrance in plain sight of the guards, who see nothing but air where you stand.');
-  if (hasPotion) removeItem('Invisibility Potion', 1);
-  addStory('One guard scratches his head as the air in front of him shifts slightly. Then shrugs and goes back to staring at the mountains.');
-  setQuestFlag('the_slow_becoming', 'mine_method', 'invisibility');
-  player.sarsett._mineAccess = true;
-  await _doCavernSearch();
-}
-
-async function _doCavernSearch() {
-  addStory('─────────────────────────────────');
-  addStory('The mine is deep and lit by pale fissures in the rock — mineral veins that glow faintly violet. Veldrite. You\'ve found the right place.');
-  await waitForEnter('Press Enter to search...');
-  _buildWheel([{ label: '💎 Searching the cavern...', action: () => {} }]);
-  await runInlineProgress('Searching the vein...', 5000);
-  const tier = await performSkillCheck('Mining');
-  const crystalsFound = tier >= 5 ? 3 : tier >= 4 ? 2 : tier >= 2 ? 1 : 0;
-  if (crystalsFound === 0) {
-    addStory('The vein is there but the crystals are buried deep and you haven\'t the tools to reach them properly. You\'ll have to come back with a better approach — or different skills.');
-    gainSkillXp('Mining', 1);
-    _goBack(); return;
-  }
-  addStory(`💎 You extracted ${crystalsFound === 1 ? 'one Veldrite Crystal' : `${crystalsFound} Veldrite Crystals`} from the vein. ${crystalsFound > 1 ? 'You only need one for the cure — the rest are yours.' : ''}`);
-  addItem('Veldrite Crystal', crystalsFound);
-  gainSkillXp('Mining', tier);
-  setQuestFlag('the_slow_becoming', 'crystal_obtained', true);
-
-  if (crystalsFound > 1) {
-    addStory(`You can keep the extra ${crystalsFound - 1 === 1 ? 'crystal' : 'crystals'} or sell them to Davolar when you meet him — they\'re worth good gold to someone who understands what they are.`);
-  }
-  addStory('Now get out before your time is up.');
-  player.sarsett._mineAccess = false;
-  await waitForEnter('Press Enter to leave the mine...');
-  addStory('You slip back out of the mountain. The guards are either oblivious or paid enough not to look.');
-  _goBack();
-}
-
-// ── Phase 5: Davolar ─────────────────────────────────────────────────────────
-
-async function _meetDavolar() {
-  if (player.sarsett?.davolarMet) { _showDavolarWheel(); return; }
-  if (!player.sarsett) _initSarsett();
-  player.sarsett.davolarMet = true;
-  setQuestFlag('the_slow_becoming', 'davolar_found', true);
-
-  addStory('─────────────────────────────────');
-  addStory('The workshop is not much to look at from the outside — a low stone building crouched at the edge of a blighted treeline. The trees behind it grow wrong; the colour of the earth is a shade too red. Crimson Valley starts here.');
-  addStory('The man who opens the door is not young and not particularly old. He looks like someone who has spent a lot of time alone with difficult problems.');
-  addStory('"Davolar," he says, before you can ask. "You\'re here about the corruption." He steps aside. "Come in."');
-  await waitForEnter('Press Enter...');
-  addStory('The inside of the workshop is exactly what you\'d expect from a man who lives next to a blight zone: shelves of samples, hand-written notes pinned everywhere, an ongoing experiment that smells like copper and burnt wood. He clearly knows the corruption intimately.');
-  addStory('"I\'ve been working on a cure for eleven years," he says, clearing a chair for you. "Haven\'t had the right ingredients until now. Tell me what you have."');
-  updateJournal();
-  _showDavolarWheel();
-}
-
-function _showDavolarWheel() {
-  const hasHerb    = getItemQty('Moonwither Herb') > 0;
-  const hasBlood   = getItemQty('Vial of Pure Elf Blood') > 0;
-  const hasCrystal = getItemQty('Veldrite Crystal') > 0;
-  const allReady   = hasHerb && hasBlood && hasCrystal;
-  const extraCrystals = Math.max(0, (player.inventory?.['Veldrite Crystal']?.quantity || 0) - 1);
-  const brewStarted = !!(getActiveQuestInstance('the_slow_becoming')?.flags?.brew_started);
-  const brewDone    = !!(getActiveQuestInstance('the_slow_becoming')?.flags?.brew_complete);
-
-  _buildWheel([
-    {
-      label: allReady ? '⚗️ Give him the ingredients' : `⚗️ Deliver ingredients (${[hasHerb,hasBlood,hasCrystal].filter(Boolean).length}/3)`,
-      action: _doDeliverIngredients,
-      disabled: !allReady || brewStarted,
-    },
-    {
-      label: '💊 Buy delay tincture',
-      action: _doBuyDelayTincture,
-      disabled: !!(player.sarsett?.boughtDelay) || brewDone,
-    },
-    ...(extraCrystals > 0 ? [{
-      label: `💎 Sell extra crystals (${extraCrystals})`,
-      action: () => _doSellExtraCrystals(extraCrystals),
-    }] : []),
-    ...(brewStarted && !brewDone ? [{
-      label: '⏳ Check on the brew',
-      action: _doCheckBrew,
-    }] : []),
-    ...(brewDone ? [{
-      label: '🧪 Collect the cure',
-      action: _doCollectCure,
-    }] : []),
-    { label: '← Back', action: _goBack, isBack: true },
-  ], 'Davolar');
-}
-
-async function _doDeliverIngredients() {
-  if (!(getItemQty('Moonwither Herb') > 0 && getItemQty('Vial of Pure Elf Blood') > 0 && getItemQty('Veldrite Crystal') > 0)) {
-    addStory('⚠️ You still need all three ingredients.'); _goBack(); return;
-  }
-  removeItem('Moonwither Herb', 1);
-  removeItem('Vial of Pure Elf Blood', 1);
-  removeItem('Veldrite Crystal', 1);
-  setQuestFlag('the_slow_becoming', 'ingredients_delivered', true);
-  addStory('You lay the three ingredients on Davolar\'s workbench one by one. He examines each without touching them — just looking, carefully, the way a craftsman looks at materials that matter.');
-  addStory('"The herb is fresh," he says. "The blood is clean — uncorrupted." He holds the Veldrite up to the lamp. The light inside it moves. "And the crystal is good. Very good."');
-  addStory('He sets them down and looks at you.');
-  addStory('"Three days. Come back in three days. Don\'t bring the afflicted person — I\'ll need to work without distraction." He pauses. "And don\'t be late. The brew doesn\'t keep."');
-  player.sarsett.brewStartDay = player.dayCount || 0;
-  setQuestFlag('the_slow_becoming', 'brew_started', true);
-  addStory('📜 Wait three days and return to Davolar for the cure.');
-  updateJournal();
-  _goBack();
-}
-
-async function _doBuyDelayTincture() {
-  const cost = 80;
-  if ((player.gold || 0) < cost) {
-    addStory(`⚠️ The tincture costs ${cost} gold. You don\'t have enough.`); _goBack(); return;
-  }
-  player.gold -= cost;
-  updateTopStats();
-  addItem('Corruption Delay Tincture', 1);
-  player.sarsett.boughtDelay = true;
-  addStory(`Davolar produces a dark vial from a locked cabinet. "This will slow the progression for a few days — it won\'t cure anything. Don\'t rely on it." He takes the gold without counting it. (−${cost} gold)`);
-  _goBack();
-}
-
-function _doSellExtraCrystals(count) {
-  const priceEach = 150;
-  const total = count * priceEach;
-  removeItem('Veldrite Crystal', count);
-  player.gold = (player.gold || 0) + total;
-  updateTopStats();
-  addStory(`Davolar takes ${count === 1 ? 'the extra crystal' : `the ${count} extra crystals`}, examines them briefly, and pays you ${total} gold without argument. He doesn\'t explain what he\'ll use them for. (+${total} gold)`);
-  _showDavolarWheel();
-}
-
-async function _doCheckBrew() {
-  const startDay = player.sarsett?.brewStartDay || 0;
-  const currentDay = player.dayCount || 0;
-  const daysElapsed = currentDay - startDay;
-  if (daysElapsed < 3) {
-    const remaining = 3 - daysElapsed;
-    addStory(`Davolar waves you off without looking up from his work. "${remaining} more ${remaining === 1 ? 'day' : 'days'}. Do not rush me."`);
-    _goBack(); return;
-  }
-  // Three days have passed
-  setQuestFlag('the_slow_becoming', 'brew_complete', true);
-  await _doBrewComplete();
-}
-
-async function _doBrewComplete() {
-  addStory('─────────────────────────────────');
-  addStory('Something is wrong the moment you step inside. The workshop smells of scorched stone and something sharper — burnt copper and spilled reagent. A shelf has been knocked over. Davolar is sitting in a chair near the workbench, one arm wrapped in a hasty bandage.');
-  addStory('"There was a... reaction," he says. "The Veldrite and the blood don\'t merge cleanly without something to stabilise them. I found out what that something is the hard way."');
-  await waitForEnter('Press Enter...');
-
-  // Roll for injury severity
-  const injuryRoll = hiddenRoll();
-  if (injuryRoll <= 8) {
-    // Injured — will later die
-    player.sarsett.davolarWillDie = true;
-    addStory('His arm is badly burned — not a surface wound. He holds it very still. "I\'ll be fine," he says, in a voice that means the opposite.');
-    addStory('"The cure is done. That\'s what matters." He holds out a small sealed bottle — dark glass, a cork sealed with wax the colour of dried blood. "Use it quickly. Don\'t let it sit."');
-    addStory('You don\'t miss the way he doesn\'t look at the burn when he hands it over.');
-    addStory('⚠️ <em>Davolar was badly injured in the process. Visit him again later to see how he fares.</em>');
-  } else {
-    // Survived fine
-    player.sarsett.davolarSurvived = true;
-    addStory('"I\'ll live," he says, and it sounds like the truth. "I\'ve had worse from worse reagents than this. Three years ago I—" He stops. "It doesn\'t matter. The cure is done."');
-    addStory('He produces a small sealed bottle — dark glass, a wax-sealed cork the colour of dried blood — and holds it out.');
-    addStory('"Come back if you need me," he says. "I\'ll be here. I\'m always here."');
-    addStory('✅ <em>Davolar survived. He remains available as an alchemist and consultant.</em>');
-  }
-
-  addItem('Corruption Cure Potion', 1, {
-    type: 'potion', consumable: true, rarity: 'Legendary',
-    description: 'A cure for the ancient corruption — brewed from Moonwither Herb, pure elven blood, and Veldrite Crystal dust. The colour shifts when you tilt it. It took eleven years and a dangerous night to make this.',
-    baseEffect: { removeCondition: 'cursed_corruption' },
-    weight: 0.3, value: 0, questItem: true,
-  });
-  setQuestFlag('the_slow_becoming', 'brew_complete', true);
-  updateJournal();
-  _goBack();
-}
-
-async function _doCollectCure() {
-  addStory('You already have the cure. Find Sarsett and use it before the corruption progresses further.');
-  _goBack();
-}
-
-// ── Phase 6: Resolution ───────────────────────────────────────────────────────
-
-async function _administerCure() {
-  if (getItemQty('Corruption Cure Potion') < 1) {
-    addStory('⚠️ You don\'t have the cure potion.'); _goBack(); return;
-  }
-  if (!player.sarsett?.alive) {
-    addStory('She\'s gone. There\'s no one left to give it to.'); _goBack(); return;
-  }
-
-  removeItem('Corruption Cure Potion', 1);
-  const confessed = player.sarsett.confessed;
-  const romance   = player.sarsett.romanceDeep;
-  const deceived  = player.sarsett.deceptionPath && !confessed;
-
-  addStory('─────────────────────────────────');
-  addStory('You find her where she said she\'d be. She looks worse than when you last saw her — not dramatic, just tired in a way that goes further than tiredness. Something in her posture has changed.');
-  addStory('You hold out the bottle without preamble.');
-  addStory('She stares at it. Then at you.');
-
-  if (romance) {
-    addStory('"You actually did it," she says. Not in disbelief — more like she\'s hearing music she had given up on.');
-    addStory('She takes the bottle. Drinks it in one motion. Closes her eyes.');
-    await waitForEnter('Press Enter...');
-    addStory('It takes a moment. Then she exhales, long and slow, and when she opens her eyes they are clear. Entirely clear. The faint discolouration at the edges — the first sign of the change — is gone.');
-    addStory('She looks at her hands for a long time. Then she looks at you.');
-    addStory('"My name is Sarsett," she says. "My real name. I wanted to say it to you as myself."');
-    addStory('She puts a hand on your face, just briefly. Then lets it go and straightens up. "We should probably talk," she says. "A lot."');
-  } else if (confessed) {
-    addStory('"You actually came back," she says — and the surprise in her voice is genuine. She takes the bottle.');
-    addStory('The cure works. When it\'s done she looks like herself again — or what you imagine herself was, before.');
-    addStory('"Sarsett," she says quietly. "You can call me Sarsett now. If you want." A pause. "Thank you. I mean it."');
-  } else {
-    // Deception path — never confessed
-    addStory('She takes the bottle from you without a word. Drinks it. When she turns back, her eyes are clear. She is herself again — whatever that means.');
-    addStory('You know her as Ithris. She has never corrected you. She doesn\'t now.');
-    addStory('"It worked," she says. "We\'re done then. I owe you — more than I can probably pay back."');
-    addStory('She doesn\'t offer her real name. Maybe she doesn\'t think you\'ve earned it. Maybe she doesn\'t think she has.');
-  }
-
-  // Apply cure to player too if they were corrupted
-  if (player.sarsett.luredPlayer || (player.conditions || []).some(c => c.id === 'cursed_corruption')) {
-    addStory('You take the last of the cure for yourself. The cold in your blood recedes — slowly, then all at once. The weight lifts.');
-    removeCondition('cursed_corruption');
-    player.corruptionStage = 0;
-    addStory('🩸 Your corruption is cured.');
-  }
-
-  player.sarsett.cured  = true;
-  player.sarsett.alive  = true;
-  if (romance) player.sarsett.romanceActive = true;
-  if (deceived) { player.sarsett.romanceActive = false; player.sarsett.knownAs = 'Ithris'; }
-  if (!player.bonusFlags) player.bonusFlags = {};
-  player.bonusFlags.corruptionImmune = false;
-
-  setQuestFlag('the_slow_becoming', 'quest_resolved', true);
-  const inst = getActiveQuestInstance('the_slow_becoming');
-  if (inst) completeQuest(inst, getQuestDef('the_slow_becoming'));
-
-  // Davolar death follow-up reminder
-  if (player.sarsett.davolarWillDie && !player.sarsett.davolarDied) {
-    addStory('─────────────────────────────────');
-    addStory('You think of Davolar. The burn on his arm. He said he\'d be fine. You should go back and check on him.');
-    setQuestFlag('the_slow_becoming', 'check_davolar', true);
-  }
-  _goBack();
-}
-
-async function _slowBecomingFailure() {
-  if (!player.sarsett?.alive) return;
-  player.sarsett.alive         = false;
-  player.sarsett.travelingWith = false;
-  if (!player.bonusFlags) player.bonusFlags = {};
-  player.bonusFlags.corruptionImmune = false;
-  if (player.sarsett.luredPlayer) {
-    removeCondition('cursed_corruption'); // triggered by her earlier, still counts
-  }
-  const inst = getActiveQuestInstance('the_slow_becoming');
-  if (inst) {
-    inst.status = 'Failed';
-    addStory(`📜 <strong>Quest Failed: The Slow Becoming.</strong>`);
-    updateJournal();
-  }
-}
-
-async function _showSarsettNote() {
-  addStory('─────────────────────────────────');
-  addStory('You unfold the paper. The handwriting is careful and controlled — the hand of someone who wrote it when they still could.');
-  addStory('');
-
-  const s         = player.sarsett || {};
-  const confessed = s.confessed;
-  const romance   = s.romanceDeep;
-  const lured     = s.luredPlayer;
-  const tried     = s.playerHelping;
-  const walkedAway = confessed && !tried && !lured;
-
-  if (romance && tried) {
-    // She loved them, they tried everything, it still wasn't enough
-    addStory('<em>I don\'t know how to begin this. I\'ve written it four times.</em>');
-    addStory('<em>You tried. I need you to know that I know that. I watched you carry this like it was yours to carry, and it wasn\'t — it was mine. You took it anyway.</em>');
-    addStory('<em>I\'m sorry I ran out of time before you ran out of trying.</em>');
-    addStory('<em>I told myself I wouldn\'t let myself feel anything about you. That it was too complicated. That I was too far gone. I was wrong about all of it, and I don\'t regret being wrong.</em>');
-    addStory('<em>I couldn\'t live as a monster. That\'s the only reason. Not because of anything you did or didn\'t do. You did everything.</em>');
-    addStory('<em>Thalorion is beautiful. I wanted to see it one more time while I still looked like someone who belonged here.</em>');
-    addStory('<em>— Sarsett</em>');
-
-  } else if (confessed && tried && lured) {
-    // She corrupted them, they forgave her, tried to help, still failed
-    addStory('<em>I don\'t have the right to write this letter. I know that.</em>');
-    addStory('<em>I led you into that valley. I gave you this curse. And then you forgave me — or something close enough to forgiveness that I couldn\'t tell the difference. You helped me anyway.</em>');
-    addStory('<em>I have been trying to understand that and I can\'t. I don\'t know what I did to deserve even the attempt.</em>');
-    addStory('<em>I\'m sorry we didn\'t make it. I\'m sorry for the corruption — yours and mine. If there\'s a cure left in the world, I hope you find it without me complicating things.</em>');
-    addStory('<em>My name was Sarsett. My mother\'s name was Ithris. She was murdered by orcs. I became the thing that killed her. I couldn\'t carry that.</em>');
-    addStory('<em>You were more generous than I deserved. I won\'t forget it wherever this goes next.</em>');
-    addStory('<em>— S.</em>');
-
-  } else if (confessed && tried) {
-    // She told them everything, they tried, it wasn't enough — no blame, only grief
-    addStory('<em>I knew you were trying. I want to say that first.</em>');
-    addStory('<em>I watched you go after those ingredients like they were yours to find, for someone you barely knew — and then someone you knew too well, maybe. Either way, you went.</em>');
-    addStory('<em>It wasn\'t enough. That\'s not your fault. Some things just aren\'t enough, even when everything behind them is.</em>');
-    addStory('<em>I couldn\'t live as a monster. I\'ve thought about it — really thought — and I couldn\'t. I hope you understand. I think you do.</em>');
-    addStory('<em>You\'re the only person I told about Thalorion. I came here because you should know where to think of me, if you\'re the kind of person who does that.</em>');
-    addStory('<em>Sarsett. That\'s who you were trying to save. I wanted to say it clearly, once, at the end.</em>');
-    addStory('<em>— Sarsett</em>');
-
-  } else if (walkedAway) {
-    // She confessed, player knew her name, and chose not to help
-    addStory('<em>I\'m not writing this to make you feel guilty. I mean that.</em>');
-    addStory('<em>You knew what I\'d done. What I was asking. You said no. That was a fair answer to give someone who opened with a lie and finished with a confession.</em>');
-    addStory('<em>I kept thinking I\'d find another way. I didn\'t. I\'m not sure another way existed, but I kept thinking it anyway, because the alternative was this.</em>');
-    addStory('<em>I told you my name. I don\'t regret that. Whatever happened after — you knew who I actually was, for a little while. That mattered to me more than I expected it to.</em>');
-    addStory('<em>I couldn\'t live as a monster. My mother was murdered by one. I think she would understand.</em>');
-    addStory('<em>— Sarsett</em>');
-
-  } else if (lured && !tried) {
-    // Lured them into corruption, they refused to help after
-    addStory('<em>You have every right to be angry. I won\'t argue that.</em>');
-    addStory('<em>I did what I did because I was desperate and frightened and I thought I could justify it. I couldn\'t. I couldn\'t justify it and I couldn\'t find another way and now we\'re both out of time.</em>');
-    addStory('<em>If the corruption took hold in you — I\'m sorry. I don\'t know what that\'s worth now. I\'m sorry anyway.</em>');
-    addStory('<em>Ithris was my mother\'s name. She was murdered by orcs. I\'m becoming one. I\'ve known for months and I spent most of that time lying to people who might have helped me, and now I\'m out of people and out of time.</em>');
-    addStory('<em>My name is Sarsett. You never got to know that. I\'m not sure you would have wanted to.</em>');
-    addStory('<em>— S.</em>');
-
-  } else {
-    // Default — never confessed, player never learned her name
-    addStory('<em>I kept meaning to tell you everything. I kept thinking there would be more time.</em>');
-    addStory('<em>Ithris was my mother\'s name. She died because of what I\'m becoming. I think I took her name because I wanted to carry something of her — or because I didn\'t want to be called by my own name anymore. I\'m not sure I knew which.</em>');
-    addStory('<em>My name is Sarsett. I\'m sorry you only have it now.</em>');
-    addStory('<em>I couldn\'t live as a monster. I know that probably sounds like a choice — it was the only one left that felt like mine.</em>');
-    addStory('<em>You were kind to me. More than I gave you reason to be. I didn\'t expect that.</em>');
-    addStory('<em>— S.</em>');
-  }
-
-  addStory('─────────────────────────────────');
-}
-
-// ── Davolar death follow-up ───────────────────────────────────────────────────
-
-async function _checkDavolarStatus() {
-  if (!player.sarsett?.davolarWillDie || player.sarsett?.davolarDied) { _goBack(); return; }
-  player.sarsett.davolarDied = true;
-  addStory('─────────────────────────────────');
-  addStory('You return to Davolar\'s workshop. The door is open. The fire in the hearth has gone cold.');
-  addStory('He is in the chair where you last saw him. He didn\'t suffer — the burn reached something that couldn\'t be reached without better tools than he had access to, and he knew it. The notes on his desk are organised. He left them deliberately.');
-  addStory('There is a line at the bottom of the last page, in his hand:');
-  addStory('<em>"Eleven years and I managed it once. Not a bad record."</em>');
-  await waitForEnter('Press Enter...');
-  addStory('He was the only alchemist who knew how to brew that cure. He won\'t be replaced easily. What he knew, he took with him — except for the notes he left behind.');
-  addWorldEvent('Davolar, the hermit alchemist, has died from injuries sustained while brewing the corruption cure.', 'npc');
-  _goBack();
-}
-
-// ── Wire into action wheel ────────────────────────────────────────────────────
-// Called from _showActionsWheel. Adds Ithris/Sarsett and quest-location actions.
-
-function _getSlowBecomingWheelOptions() {
-  const options = [];
-  const s = player.sarsett;
-  if (!s?.met || !s.alive) return options;
-  const quest = getActiveQuestInstance('the_slow_becoming');
-  if (!quest) return options;
-  const qf = quest.flags || {};
-
-  // Traveling companion interaction
-  if (s.travelingWith) {
-    options.push({
-      label: `💬 ${_sarsettName()}`,
-      action: () => { _wheelStack.push(_showActionsWheel); _showIthrisWheel(); },
-    });
-  }
-
-  // Administer cure if we have it
-  if (getItemQty('Corruption Cure Potion') > 0 && s.alive && !s.cured) {
-    options.push({
-      label: '🧪 Give Sarsett the cure',
-      action: () => { _wheelStack.push(_showActionsWheel); _administerCure(); },
-    });
-  }
-
-  // Location-specific options
-  const cell = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-  const kingdom = player.currentKingdom || '';
-  const loc = (cell.cityVillage || '') + ' ' + (player.currentLocation || '');
-
-  if (kingdom === 'Sivanrift' && !qf.herb_obtained) {
-    options.push({
-      label: '🌿 Grand Gardens',
-      action: () => { _wheelStack.push(_showActionsWheel); _showSivanriftHerbWheel(); },
-    });
-  }
-  if (!qf.blood_obtained) {
-    options.push({
-      label: '🩸 Find elf blood',
-      action: () => { _wheelStack.push(_showActionsWheel); _showElfBloodWheel(); },
-      disabled: !(player.journal?.npcs || []).some(n => n.race === 'Elf') &&
-                !(typeof generateNPCByRace === 'function'),
-    });
-  }
-  if (kingdom === 'Feldarún' && !qf.crystal_obtained) {
-    options.push({
-      label: '⛏️ Ironback Mine',
-      action: () => { _wheelStack.push(_showActionsWheel); _showMineApproachWheel(); },
-    });
-  }
-  if (qf.crystal_obtained && !qf.davolar_found) {
-    options.push({
-      label: '🧪 Find Davolar',
-      action: () => { _wheelStack.push(_showActionsWheel); _meetDavolar(); },
-    });
-  }
-  if (qf.davolar_found) {
-    options.push({
-      label: '🧪 Davolar',
-      action: () => { _wheelStack.push(_showActionsWheel); _showDavolarWheel(); },
-    });
-  }
-  if (qf.brew_complete && !s.cured && s.alive) {
-    options.push({
-      label: '🧪 Collect the cure',
-      action: () => { _wheelStack.push(_showActionsWheel); _doCollectCure(); },
-    });
-  }
-  if (s.davolarWillDie && !s.davolarDied && s.cured) {
-    options.push({
-      label: '🏠 Check on Davolar',
-      action: () => { _wheelStack.push(_showActionsWheel); _checkDavolarStatus(); },
-    });
-  }
-
-  return options;
-}
-
-// Failure cutscene — triggered by visitLocation when player visits Thalorion after failure
-function _checkThalorionCutscene() {
-  if (!player.sarsett) return;
-  if (player.sarsett.alive || player.sarsett.cured) return;
-  if (player.sarsett._thalorionCutsceneSeen) return;
-  const loc = player.currentLocation || '';
-  const cell = (typeof mapData !== 'undefined' && mapData[loc]) || {};
-  if ((cell.cityVillage || '').toLowerCase().includes('thalorion') ||
-      loc.toLowerCase().includes('thalorion')) {
-    _triggerThalorionCutscene();
-  }
-}
-
-async function _triggerThalorionCutscene() {
-  if (player.sarsett._thalorionCutsceneSeen) return;
-  player.sarsett._thalorionCutsceneSeen = true;
-  addStory('─────────────────────────────────');
-  addStory('Thalorion. You\'ve heard her describe it — the white stone towers rising from the crescent valley, buildings grown as much as built. She was right. There is nowhere else in the world built like this.');
-  addStory('You find the temple at the end of a long avenue of silver-bark trees. You know what you\'re going to find before you find it.');
-  await waitForEnter('Press Enter...');
-  addStory('She is at the base of the temple steps. The fall was not long. The city is quiet around her — the kind of quiet that means people have seen and don\'t know what to do.');
-  addStory('A folded piece of paper lies near her hand, your name written on the outside.');
-  await waitForEnter('Press Enter to read it...');
-  await _showSarsettNote();
-  addItem('Sarsett\'s Note', 1);
-  addWorldEvent('Sarsett — known to you as Ithris — died at the Temple of Thalorion in Nithrond. She left a note.', 'npc');
-  removeCondition('cursed_corruption');
-  if (player.conditions) {
-    player.corruptionStage = 0;
-  }
-  const inst = getActiveQuestInstance('the_slow_becoming');
-  if (inst) { inst.status = 'Failed'; updateJournal(); }
-  await _slowBecomingFailure();
-  addStory('─────────────────────────────────');
-  _showDefaultWheel();
-}
-
-// ── Corruption stage advancement ──────────────────────────────────────────────
-// Called from tickConditions for players with cursed_corruption.
-
-function _tickCorruption() {
-  if (!(player.conditions || []).some(c => c.id === 'cursed_corruption')) return;
-  if ((player.conditions || []).some(c => c.id === 'corruption_delayed')) return;
-  if (player.bonusFlags?.corruptionImmune) return;
-  const stage = player.corruptionStage || 1;
-  if (stage >= 5) {
-    addStory('🩸 The corruption has taken hold completely. Without a cure, there is nothing left to save.');
-    return;
-  }
-  // Random chance per tick to advance stage (low probability — dramatic, not constant)
-  if (Math.random() < 0.08) {
-    player.corruptionStage = stage + 1;
-    const msgs = [
-      '',
-      '🩸 Something shifts in you — your reflection looks slightly wrong.',
-      '🩸 Your hands ache. The change is accelerating.',
-      '🩸 You catch yourself flinching at mirrors. The corruption deepens.',
-      '🩸 You don\'t recognize yourself clearly anymore. Time is running out.',
-    ];
-    addStory(msgs[stage] || '🩸 The corruption advances.');
-    updateTopStats();
-  }
-}
-
-	// ============================================================
-// SECTION 13.6 · ROMANCE SYSTEM
-// ============================================================
-
-// ── 13.6.0 · NPC Registry ──────────────────────────────────────
-const ROMANCE_DATA = {
-  ryn:     { name: 'Ryn Ashvale',     monogamous: true,  interestedIn: 'either',  culture: 'human'   },
-  mira:    { name: 'Mira Aldcroft',   monogamous: false, interestedIn: 'men',     culture: 'human'   },
-  cassin:  { name: 'Cassin Vael',     monogamous: true,  interestedIn: 'women',   culture: 'human'   },
-  edric:   { name: 'Edric Farrow',    monogamous: true,  interestedIn: 'women',   culture: 'human'   },
-  sylara:  { name: 'Sylara',          monogamous: false, interestedIn: 'either',  culture: 'elven'   },
-  eavan:   { name: 'Eavan',           monogamous: true,  interestedIn: 'women',   culture: 'elven'   },
-  vorath:  { name: 'Vorath',          monogamous: true,  interestedIn: 'men',     culture: 'elven'   },
-  lorien:  { name: 'Lorien Veth',     monogamous: false, interestedIn: 'men',     culture: 'elven'   },
-  brynn:   { name: 'Brynn Ironstep',  monogamous: false, interestedIn: 'men',     culture: 'dwarven' },
-  tormund: { name: 'Tormund Geldras', monogamous: true,  interestedIn: 'women',   culture: 'dwarven' },
-  dagri:   { name: 'Dagri Stonesong', monogamous: false, interestedIn: 'either',  culture: 'dwarven' },
-  aldric:  { name: 'Aldric Varn',     monogamous: true,  interestedIn: 'either',  culture: 'dwarven' },
-};
-
-// ── 13.6.1 · Foundation Utilities ──────────────────────────────
-function _initRomance(id) {
-  if (!player.romance) player.romance = {};
-  if (player.romance[id]) return;
-  player.romance[id] = {
-    met: false, trustLevel: 0, romancePath: false,
-    questPhase: 0, questComplete: false,
-    flags: {}, interactionCount: 0, conflictFired: false,
-  };
-}
-
-function _romance(id) { _initRomance(id); return player.romance[id]; }
-
-function _romanceTrust(id, delta) {
-  const r = _romance(id);
-  r.trustLevel = Math.max(0, Math.min(100, (r.trustLevel || 0) + delta));
-}
-
-function _romanceFlag(id, key, val) { _romance(id).flags[key] = val; }
-
-function _isRomanceAvailable(id) {
-  const data = ROMANCE_DATA[id];
-  if (!data) return false;
-  const pg = (player.gender || '').toLowerCase();
-  if (data.interestedIn === 'men'   && pg !== 'male'      && pg !== 'masculine') return false;
-  if (data.interestedIn === 'women' && pg !== 'female'    && pg !== 'feminine')  return false;
-  return true;
-}
-
-function _getActiveMonogamousRomance(excludeId) {
-  if (!player.romance) return null;
-  for (const [id, state] of Object.entries(player.romance)) {
-    if (id === excludeId)      continue;
-    if (!state.romancePath)    continue;
-    if (state.conflictFired)   continue;
-    if (ROMANCE_DATA[id]?.monogamous) return id;
-  }
-  return null;
-}
-
-async function _triggerMonogamyConflict(monoId) {
-  const r = _romance(monoId);
-  r.conflictFired  = true;
-  r.romancePath    = false;
-  const scenes = {
-    ryn:     _rynMonogamyScene,
-    cassin:  _cassinMonogamyScene,
-    edric:   _edricMonogamyScene,
-    eavan:   _eavanMonogamyScene,
-    vorath:  _vorathMonogamyScene,
-    tormund: _tormundMonogamyScene,
-    aldric:  _aldricMonogamyScene,
-  };
-  const fn = scenes[monoId];
-  if (typeof fn === 'function') await fn();
-  else addStory(`${ROMANCE_DATA[monoId]?.name || 'They'} quietly withdraws.`);
-}
-
-function _startRomancePath(id) {
-  const r = _romance(id);
-  if (r.romancePath) return;
-  r.romancePath = true;
-  const conflict = _getActiveMonogamousRomance(id);
-  if (conflict) setTimeout(() => _triggerMonogamyConflict(conflict), 600);
-}
-
-// ── 13.6.2 · Wheel & Travel Dispatchers ────────────────────────
-function _getRomanceWheelOptions() {
-  const fns = [
-    _getRynWheelOptions, _getMiraWheelOptions, _getCassinWheelOptions,
-    _getEdricWheelOptions, _getSylaraWheelOptions, _getEavanWheelOptions,
-    _getVorathWheelOptions, _getLorienWheelOptions, _getBrynnWheelOptions,
-    _getTormundWheelOptions, _getDagriWheelOptions, _getAldricWheelOptions,
-  ];
-  const opts = [];
-  for (const fn of fns) {
-    if (typeof fn === 'function') {
-      const res = fn();
-      if (res) opts.push(...(Array.isArray(res) ? res : [res]));
-    }
-  }
-  return opts;
-}
-
-async function _checkRomanceTravelTriggers(destCell = {}) {
-  if (!player.flags?.tutorialComplete) return;
-  const dk  = destCell.kingdom     || '';
-  const dz  = destCell.zone        || '';
-  const db  = destCell.biome       || '';
-  const dcv = destCell.cityVillage || '';
-  const inSettlement = ['City','CapitalCity','Village'].includes(dz);
-  if (typeof _checkRynTravelTrigger    === 'function') await _checkRynTravelTrigger();
-  if (typeof _checkMiraTravelTrigger   === 'function') await _checkMiraTravelTrigger(dk, inSettlement);
-  if (typeof _checkCassinTravelTrigger === 'function') await _checkCassinTravelTrigger(inSettlement);
-  if (typeof _checkEdricTravelTrigger  === 'function') await _checkEdricTravelTrigger(inSettlement, db);
-  if (typeof _checkSylaraTravelTrigger === 'function') await _checkSylaraTravelTrigger(dk);
-  if (typeof _checkEavanTravelTrigger  === 'function') await _checkEavanTravelTrigger(dk);
-  if (typeof _checkVorathTravelTrigger === 'function') await _checkVorathTravelTrigger(dk);
-  if (typeof _checkLorienFallbackTrigger === 'function') await _checkLorienFallbackTrigger(dk);
-  if (typeof _checkBrynnTravelTrigger  === 'function') await _checkBrynnTravelTrigger(dk);
-  if (typeof _checkTormundTravelTrigger=== 'function') await _checkTormundTravelTrigger(dk);
-  if (typeof _checkDagriTravelTrigger  === 'function') await _checkDagriTravelTrigger(dk);
-  if (typeof _checkAldricTravelTrigger === 'function') await _checkAldricTravelTrigger(dcv);
-}
-
-// ══════════════════════════════════════════════════════════════
-// 13.6.3 · RYN ASHVALE
-// Human | Either | Monogamous | Quest: What Stays Buried
-// ══════════════════════════════════════════════════════════════
-
-async function _checkRynTravelTrigger() {
-  const r = _romance('ryn');
-  if (r.met) return;
-  if ((player.level || 1) < 2) return;
-  if ((player.worldState?.travelCount || 0) < 2) return;
-  if (Math.floor(Math.random() * 8) !== 0) return;
-  r.met = true;
-  await _meetRyn();
-}
-
-async function _meetRyn() {
-  _buildWheel([{ label: '⏳ …', action: () => {} }]);
-  await waitForEnter('You approach a road checkpoint. A figure in worn leather armour holds up a hand — not threatening, just firm.');
-  addStory('She\'s scanning your face the way people do when they\'ve been looking for someone specific and know you\'re not them.');
-  addStory('"Papers, if you have them. If not, just your name and where you\'re headed."');
-  addStory('Her voice is measured. She doesn\'t sound like a toll collector.');
-  await waitForEnter('You hand over what you have.');
-  addStory('She reads quickly — really reads, not the performance of reading. Notes the kingdom stamp. Looks up.');
-  addStory('"You\'re not who I\'m looking for." A pause. "Where\'ve you come from, exactly?"');
-  const romOk = _isRomanceAvailable('ryn');
-  _buildWheel([
-    { label: 'Answer directly', action: async () => {
-      addStory('You tell her where you came from. She listens, nods once.');
-      addStory('"Useful. Thank you." She moves to hand back your papers, then stops. "If you come across a man named Aldus Prell — travelling light, nervous hands — I\'d appreciate a message sent to Ryn Ashvale. Any innkeeper in Ardrenhold can find me."');
-      addStory('She steps aside. No further drama.');
-      _romanceTrust('ryn', 5);
-      _romance('ryn').questPhase = 1;
-      _goBack();
-    }},
-    { label: 'Ask who she\'s looking for', action: async () => {
-      addStory('"No one you\'d know." She says it like a fact, not a dismissal. "Move along."');
-      addStory('But she hesitates just long enough that you catch it — this isn\'t routine.');
-      _romanceTrust('ryn', 3);
-      _romance('ryn').questPhase = 1;
-      _goBack();
-    }},
-    { label: 'Offer to help', action: async () => {
-      addStory('She studies you for a moment longer than the question deserves.');
-      addStory('"I don\'t take help from strangers." A beat. "But thank you." Something about the way she says it — like the sentiment costs something — makes it land differently than refusals usually do.');
-      addStory('"Ryn Ashvale. If you\'re serious, and you\'re still in the area — any innkeeper in Ardrenhold knows how to find me."');
-      _romanceTrust('ryn', 10);
-      _romance('ryn').questPhase = 1;
-      _romance('ryn').flags.offeredHelp = true;
-      _goBack();
-    }},
-    ...(romOk ? [{ label: 'Linger a moment', action: async () => {
-      addStory('You don\'t move quite as fast as the checkpoint clears. She notices.');
-      addStory('She doesn\'t tell you to go. She also doesn\'t encourage you. She just looks at you with the same steady attention she gave your papers.');
-      addStory('"Ryn Ashvale," she says finally. "In case you need to know."');
-      _romanceTrust('ryn', 8);
-      _romance('ryn').questPhase = 1;
-      _romance('ryn').flags.lingered = true;
-      _goBack();
-    }}] : []),
-  ], 'Checkpoint');
-}
-
-function _getRynWheelOptions() {
-  const r = _romance('ryn');
-  if (!r.met) return [];
-  const cell         = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-  const inSettlement = ['City','CapitalCity','Village'].includes(cell.zone || '');
-  if (r.questPhase === 1) {
-    if (!inSettlement) return [];
-    return [{ label: '🎯 Find Ryn Ashvale', action: () => { _wheelStack.push(_showActionsWheel); _rynInnConversation(); } }];
-  }
-  if (r.questPhase >= 2) {
-    return [{ label: `💬 Ryn${r.romancePath ? ' ♥' : ''}`, action: () => { _wheelStack.push(_showActionsWheel); _showRynWheel(); } }];
-  }
-  return [];
-}
-
-async function _rynInnConversation() {
-  const r = _romance('ryn');
-  _buildWheel([{ label: '⏳ …', action: () => {} }]);
-  await runInlineProgress('You ask around for Ryn Ashvale…', 1500);
-  addStory('She\'s at a corner table. Back to the wall, facing the door.');
-  if (r.flags.offeredHelp) {
-    addStory('When she sees you she gives a very small nod, as if something she half-expected has arrived. "You actually came." She says it quietly. "Sit down."');
-  } else {
-    addStory('She sees you and goes still for a moment. Then she gestures at the chair across from her.');
-  }
-  addStory('"I\'m looking for a man," she says, once you\'re seated. "Not a criminal. A clerk. He worked city records in Ardrenkeep three years ago."');
-  addStory('She wraps her hands around a cup she hasn\'t touched. "I need to find him before someone else does."');
-  r.questPhase = 2;
-  r.interactionCount++;
-  const romOk = _isRomanceAvailable('ryn');
-  _buildWheel([
-    { label: 'Ask why he matters', action: async () => {
-      addStory('"Because he saw what I saw." She meets your eyes. "And whoever buried what we saw is still working."');
-      _romanceTrust('ryn', 8);
-      _goBack();
-    }},
-    { label: 'Ask what she saw', action: async () => {
-      addStory('"Not yet," she says. Not unkindly. "I don\'t know you." A pause. "But I will."');
-      _romanceTrust('ryn', 5);
-      _goBack();
-    }},
-    { label: 'Offer to help find him', action: async () => {
-      addStory('"Why?" The question isn\'t hostile. She\'s genuinely asking.');
-      addStory('You tell her. She listens the way she reads — actually listening. "All right," she says finally. "I\'ll tell you what I can. Not everything. Not yet."');
-      _romanceTrust('ryn', 12);
-      r.flags.helpingOfficially = true;
-      r.questPhase = 3;
-      _goBack();
-    }},
-    ...(romOk ? [{ label: 'You\'re interesting to her', action: async () => {
-      addStory('You say something — not quite a compliment, close enough — and she pauses. "Don\'t." But she says it without real heat, and she doesn\'t look away.');
-      _romanceTrust('ryn', 6);
-      _goBack();
-    }}] : []),
-    { label: '← Leave', action: _goBack, isBack: true },
-  ], 'Ryn Ashvale');
-}
-
-function _showRynWheel() {
-  const r = _romance('ryn');
-  const romOk = _isRomanceAvailable('ryn');
-  const opts = [];
-  if (r.questPhase === 3 && !r.flags.tailRevealDone)
-    opts.push({ label: '👁️ Something\'s wrong', action: () => { _wheelStack.push(_showRynWheel); _rynTailScene(); } });
-  if (r.questPhase >= 3 && r.flags.tailRevealDone && !r.flags.evidenceShown)
-    opts.push({ label: '📄 The evidence', action: () => { _wheelStack.push(_showRynWheel); _rynShowsEvidence(); } });
-  if (r.questPhase >= 5 && r.flags.evidenceShown && !r.flags.clerkFound)
-    opts.push({ label: '🔍 Find Aldus Prell', action: () => { _wheelStack.push(_showRynWheel); _rynFindClerk(); } });
-  if (r.questPhase >= 6 && r.flags.clerkFound && !r.flags.planMade)
-    opts.push({ label: '⚖️ What do we do with this?', action: () => { _wheelStack.push(_showRynWheel); _rynPlanAction(); } });
-  if (r.questPhase >= 7 && r.flags.planMade && !r.questComplete)
-    opts.push({ label: '⚔️ Confront Hawtry', action: () => { _wheelStack.push(_showRynWheel); _rynConfront(); } });
-  if (romOk && r.trustLevel >= 40 && !r.romancePath && r.questPhase >= 3)
-    opts.push({ label: '❤️ Something more', action: async () => {
-      addStory('You say something that\'s not about the investigation. She looks at you. Really looks.');
-      addStory('"This is complicated enough already," she says. But she doesn\'t move away.');
-      _startRomancePath('ryn');
-      _romanceTrust('ryn', 10);
-      _goBack();
-    }});
-  if (r.questComplete && romOk && r.romancePath)
-    opts.push({ label: '❤️ Talk', action: async () => {
-      addStory('You spend a quiet hour with Ryn. The investigation is over. The weight of it is still there, but it\'s lighter shared.');
-      _goBack();
-    }});
-  opts.push({ label: '← Back', action: _goBack, isBack: true });
-  _buildWheel(opts, 'Ryn Ashvale');
-}
-
-async function _rynTailScene() {
-  const r = _romance('ryn');
-  _buildWheel([{ label: '⏳ …', action: () => {} }]);
-  addStory('You\'re walking together when you catch it — the same figure, two streets back. Third time in the last hour.');
-  await waitForEnter('You say nothing yet. You\'re watching.');
-  const tier = await performSkillCheck('Tracking');
-  if (tier >= 3) {
-    addStory('You get a clean look: the gait, the coat, the way they\'ve been angling to match you without being obvious. Amateur, but not alone.');
-    addStory('You tell Ryn. Quietly. Without turning around. She doesn\'t react visibly. "How long?" "An hour." "I know a way out."');
-    r.flags.tailRevealDone = true;
-    r.flags.tailLost       = true;
-    _romanceTrust('ryn', 15);
-    await runInlineProgress('Losing the tail through the side streets…', 2500);
-    addStory('You emerge into a different quarter. No one behind you. Ryn exhales — the first time you\'ve seen that from her. "All right," she says. "I\'ll tell you what I know."');
-    r.questPhase = 4;
-  } else {
-    addStory('You pick up something off — a shape in your peripheral. You mention it to Ryn, but by the time she looks, they\'re gone. "If they\'re following me, they already know I\'m talking to people," she says. "Watch your back."');
-    _romanceTrust('ryn', 8);
-    r.flags.tailRevealDone = true;
-    r.questPhase = 4;
-  }
-  _goBack();
-}
-
-async function _rynShowsEvidence() {
-  const r = _romance('ryn');
-  addStory('She spreads three things on the table: a document — partial, bottom half missing — a name on a scrap of paper, and a date.');
-  addStory('"A man died," she says. "His name was Colm. He worked harbour records, overheard something he shouldn\'t have. My commanding officer filed a routine death report and signed it. I co-signed. I was told it was already closed. I was a month on the job."');
-  await waitForEnter('She picks up the partial document.');
-  addStory('"I didn\'t ask questions then. I\'m asking them now."');
-  addStory('"The clerk who was there when the body was found — Aldus Prell — left the city six months later. Comfortable posting somewhere. Not earned. Given."');
-  addStory('She slides the name to you. "I need to find him. And I need someone he doesn\'t already know."');
-  r.flags.evidenceShown = true;
-  r.questPhase = 5;
-  _romanceTrust('ryn', 15);
-  await waitForEnter();
-  _goBack();
-}
-
-async function _rynFindClerk() {
-  const r = _romance('ryn');
-  _buildWheel([{ label: '⏳ Searching…', action: () => {} }]);
-  await runInlineProgress('Tracing Aldus Prell through old records…', 3000);
-  const tier = await performSkillCheck('Persuasion');
-  if (tier >= 4) {
-    addStory('It takes three days and a chain of favours. Aldus Prell is in Ealdenford — comfortable house, new name, quiet life. He\'s aged a decade in three years.');
-    addStory('He knows why you\'re there the moment he sees you aren\'t a debt collector. He tries to close the door. Ryn steps into the frame.');
-    addStory('"I\'m not here to threaten you," she says. "I need to know what you saw."');
-    await waitForEnter('He looks at her for a long time. Then opens the door wider.');
-    addStory('"He was alive when they found him," Aldus says. "Colm. He was still alive. The officer told me to write it down as found deceased. And I did. I\'ve been sick about it ever since."');
-    r.flags.clerkFound       = true;
-    r.flags.clerkCooperating = true;
-    r.questPhase = 6;
-    _romanceTrust('ryn', 20);
-    gainExperience(80);
-  } else if (tier >= 2) {
-    addStory('You track down Prell in Ealdenford. He\'s frightened — has been for years. He confirms he was there. He confirms the report wasn\'t accurate. He won\'t sign anything. "He\'s scared," Ryn says. "But he talked."');
-    r.flags.clerkFound       = true;
-    r.flags.clerkCooperating = false;
-    r.questPhase = 6;
-    _romanceTrust('ryn', 10);
-    gainExperience(50);
-  } else {
-    addStory('Prell has moved before you find him — temporary lodgings, no forwarding. You get a rumour of where he went, nothing confirmed. Ryn takes it in stride. "We keep trying."');
-    _romanceTrust('ryn', 5);
-    gainExperience(20);
-  }
-  _goBack();
-}
-
-async function _rynPlanAction() {
-  const r = _romance('ryn');
-  addStory('Ryn lays out what you have. The partial report. Aldus\'s account. Her own testimony.');
-  addStory('"I left the guard because the institution failed someone," she says. "I\'m not naive enough to think walking back into that institution fixes it. But I don\'t know what else there is."');
-  await waitForEnter('She looks at you. Genuinely asking.');
-  _buildWheel([
-    { label: 'Take it to a magistrate', action: async () => {
-      addStory('An independent magistrate outside the city guard. Slow and uncertain, but the evidence goes somewhere not already compromised.');
-      addStory('"It might not stick," Ryn says. "But it\'s the right kind of risk."');
-      r.flags.plan = 'magistrate'; r.flags.planMade = true; r.questPhase = 7;
-      _romanceTrust('ryn', 10); _goBack();
-    }},
-    { label: 'Find a journalist', action: async () => {
-      addStory('"It goes public and he\'ll know it came from us," Ryn says. "That makes it personal." A pause. "It already is."');
-      r.flags.plan = 'journalist'; r.flags.planMade = true; r.questPhase = 7;
-      _romanceTrust('ryn', 8); _goBack();
-    }},
-    { label: 'Confront him directly', action: async () => {
-      addStory('You say it plainly: face the man who signed the order. Make him answer for it himself. Ryn goes still. Then: "Yes." Just that.');
-      r.flags.plan = 'direct'; r.flags.planMade = true; r.questPhase = 7;
-      _romanceTrust('ryn', 12); _goBack();
-    }},
-    { label: 'Evidence for safety', action: async () => {
-      addStory('"That\'s not justice," Ryn says. Then, after a long pause: "But it might be the most Colm\'s family ever gets."');
-      r.flags.plan = 'deal'; r.flags.planMade = true; r.questPhase = 7;
-      _romanceTrust('ryn', 5); _goBack();
-    }},
-    { label: '← Back', action: _goBack, isBack: true },
-  ], 'The Plan');
-}
-
-async function _rynConfront() {
-  const r = _romance('ryn');
-  _buildWheel([{ label: '⏳ …', action: () => {} }]);
-  await runInlineProgress('Moving into position…', 2000);
-  addStory('His name is Commander Hawtry. Retired — comfortable house, garden, the small self-satisfaction of a man who believes his secrets are buried deep enough.');
-  addStory('He isn\'t expecting anyone. Ryn stands across from him. She doesn\'t raise her voice.');
-  await waitForEnter();
-  const plan = r.flags.plan;
-  const tier = await performSkillCheck('Persuasion');
-  if (plan === 'magistrate') {
-    if (tier >= 3) {
-      addStory('"The magistrate already has a copy," Ryn says. "This conversation is a courtesy." He goes white. Then says nothing. There isn\'t much to say.');
-      await _rynResolve('truth_out');
-    } else {
-      addStory('He denies it. Well-practiced — three years of practice. The process will be slow and ugly. "We knew that going in," Ryn says after. "We go in anyway."');
-      await _rynResolve('slow_burn');
-    }
-  } else if (plan === 'journalist') {
-    addStory('"The piece runs tomorrow morning," Ryn says. "With or without your response." He stares at her. Then at you. "Who are you?" "Someone who was standing in the right place."');
-    await _rynResolve('truth_out');
-  } else if (plan === 'direct') {
-    addStory('"I need you to tell me why," Ryn says. Just that. "Why Colm." He tries to refuse. She waits. The thing about someone with nothing left to lose is they can wait longer.');
-    await waitForEnter('He talks. Not much. Enough.');
-    addStory('"He was going to expose something larger," Hawtry says. "Something that would end the kingdom if it came out. I don\'t know if that was true. I believed it." He looks sick.');
-    addStory('Ryn looks at him for a long time. Then turns and walks out.');
-    await _rynResolve('direct');
-  } else {
-    addStory('"Retire the report. Sign it correctly. Colm\'s family gets told the truth — privately — if they want it." "And in return?" "Nothing else happens." He agrees. She doesn\'t shake his hand.');
-    await _rynResolve('deal');
-  }
-}
-
-async function _rynResolve(outcome) {
-  const r = _romance('ryn');
-  r.questComplete    = true;
-  r.flags.resolution = outcome;
-  await waitForEnter();
-  if (outcome === 'truth_out') {
-    addStory('It takes months. The report is reopened. Hawtry is removed — not imprisoned; the evidence isn\'t clean enough for that. Some doors close for Ryn. She seems lighter anyway.');
-    gainExperience(200);
-    if (typeof addWorldEvent === 'function') addWorldEvent('Ryn Ashvale exposed a cover-up in Ardrenkeep.', 'quest');
-  } else if (outcome === 'slow_burn') {
-    addStory('The magistrate process opens. It will take time. It may not go anywhere. Ryn is at peace with that — at a cost she doesn\'t talk about.');
-    gainExperience(150);
-  } else if (outcome === 'direct') {
-    addStory('Nothing legal happens. But Colm\'s family receives a letter — anonymous — telling them the truth. Ryn mailed it herself. "It\'s not enough," she says. "I know that."');
-    gainExperience(170);
-  } else {
-    addStory('The deal holds. It sits badly on Ryn. She accepts it as the most real thing available to her.');
-    gainExperience(120);
-  }
-  if (r.romancePath && _isRomanceAvailable('ryn')) {
-    await waitForEnter('Later — much later — she finds you.');
-    addStory('"Thank you," she says. "For all of it." A pause. "I\'m not particularly good at this."');
-    addStory('"I know," you say. "Neither am I."');
-    addStory('She laughs. The first time you\'ve heard that from her. It sounds like something that doesn\'t get used enough.');
-  }
-  _goBack();
-}
-
-async function _rynMonogamyScene() {
-  addStory('Ryn doesn\'t confront you. She goes quiet first — over the course of a day. Then a little more distant. Then she stops appearing at places you\'d expect her.');
-  await waitForEnter('When you find her, she says: "I think we should stop spending time together."');
-  addStory('You try to explain. She hears you out. Then: "I\'m not angry. I just know what I know."');
-  addStory('She walks away at her usual pace. Not faster. Just gone.');
-}
-
-// ── 13.6.4 · MIRA ALDCROFT ─────────────────────────────────────
-
-async function _checkMiraTravelTrigger(dk, inSettlement) {
-  const r = _romance('mira');
-  if (r.met || !inSettlement) return;
-  if (Math.random() > 0.12) return;
-  await _meetMira();
-}
-
-async function _meetMira() {
-  const r = _romance('mira');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('You arrive to find a woman crouched in the square treating a child\'s fever. She moves efficiently, without drama. When she stands and sees you, she holds out a small cloth pouch — bandages and a salve — before you\'ve said anything.');
-  addStory('"Take these. You look like someone who travels." She tilts her head. "Have you been through the eastern settlements recently? I\'m trying to trace something."');
-  await waitForEnter();
-  _buildWheel([
-    { label: '📍 Tell her where you\'ve been', action: async () => {
-      _romanceTrust('mira', 5);
-      addStory('You describe your recent route. She listens carefully, nodding at specific details.');
-      addStory('"That\'s useful. Three villages in six weeks, same progression." She writes in a small notebook. "I\'m Mira. Chirurgeon. What brought you through here?"');
-      await waitForEnter();
-      _romanceTrust('mira', 3);
-      r.flags.introducedProperly = true;
-      _goBack();
-    }},
-    { label: '❓ Ask what she\'s tracing', action: async () => {
-      addStory('"A sickness." She doesn\'t look worried, which is somehow more concerning than if she did. "The spread pattern is wrong. Natural illness doesn\'t work this way." She studies you. "I\'m Mira."');
-      await waitForEnter();
-      _romanceTrust('mira', 2);
-      r.flags.introducedProperly = true;
-      _goBack();
-    }},
-    { label: '🙏 Thank her for the supplies', action: async () => {
-      addStory('"Don\'t mention it." She almost smiles. "Just tell me if you see anything wrong in the next settlement east. Anything unusual in the water, the food stores, how people feel."');
-      await waitForEnter();
-      r.flags.introducedProperly = true;
-      _goBack();
-    }},
-  ]);
-}
-
-function _getMiraWheelOptions() {
-  const r = _romance('mira');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 6) {
-    const label = r.romancePath ? '💚 Mira [♥]' : '💚 Mira';
-    return [{ label, action: () => _showMiraWheel() }];
-  }
-  return [];
-}
-
-async function _showMiraWheel() {
-  const r = _romance('mira');
-  const opts = [];
-  if (r.questPhase === 1) {
-    opts.push({ label: '📋 Hear what she knows', action: () => _miraTracingPattern() });
-  }
-  if (r.questPhase === 2) {
-    opts.push({ label: '🔍 Investigate the supply', action: () => _miraAheadOfIt() });
-  }
-  if (r.questPhase === 3) {
-    opts.push({ label: '🛤️ Follow the source', action: () => _miraFollowSource() });
-  }
-  if (r.questPhase === 4) {
-    opts.push({ label: '🔎 Uncover the motive', action: () => _miraTheWhy() });
-  }
-  if (r.questPhase === 5) {
-    opts.push({ label: '⚔️ Decide how to stop it', action: () => _miraStopIt() });
-  }
-  if (_isRomanceAvailable('mira') && r.trustLevel >= 20 && r.questPhase >= 2 && !r.romancePath) {
-    opts.push({ label: '❤️ Say something personal', action: async () => {
-      _startRomancePath('mira');
-      addStory('She looks up from her notes. For a moment she\'s just a person, not a chirurgeon with a task. "I\'m not going to be someone\'s whole life," she says plainly. "And I don\'t expect them to be mine. I thought you should know that."');
-      addStory('She seems to mean it as a kindness. It probably is one.');
-      await waitForEnter();
-      _romanceTrust('mira', 8);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Mira');
-}
-
-async function _miraTracingPattern() {
-  _buildWheel([{ label: '⏳ Listen carefully…', action: () => {} }]);
-  await runInlineProgress('Mira explains the pattern…', 3000);
-  const r = _romance('mira');
-  addStory('She spreads three pages of notes on the table. Careful handwriting, sketches of symptoms, dates. "Three villages. Six weeks apart. Same symptoms in the same order. That\'s not illness — illness doesn\'t keep a schedule."');
-  addStory('"I need to reach the next village before it starts. Will you travel with me?"');
-  await waitForEnter();
-  const tier = await performSkillCheck('Perception');
-  if (tier >= 3) {
-    addStory('Looking at the map, you spot something she hasn\'t marked: all three villages sit on the same trade road.');
-    addStory('"That\'s significant," she says, looking where you pointed. "That changes where we start looking."');
-    _romanceTrust('mira', 6);
-  } else {
-    addStory('The pattern is clear enough. You agree to travel with her.');
-    _romanceTrust('mira', 3);
-  }
-  r.questPhase = 2;
-  addStory('"Good," she says, already folding the notes. "We leave at dawn."');
-  await waitForEnter();
-  _goBack();
-}
-
-async function _miraAheadOfIt() {
-  _buildWheel([{ label: '⏳ Testing the water supply…', action: () => {} }]);
-  await runInlineProgress('Investigating before symptoms appear…', 4000);
-  const r = _romance('mira');
-  addStory('You arrive before anything has started. Mira moves through the village methodically — water sources, food stores, every merchant who passed through in the last two weeks.');
-  const tier = await performSkillCheck('Herbalism');
-  if (tier >= 4) {
-    addStory('Your examination of the well water reveals something faint. Not natural contamination — too consistent, too targeted. You show Mira.');
-    addStory('"There." She crouches beside the well. "Deliberate. Someone knew what they were doing." Her voice is controlled. "This is very bad and very specific."');
-    _romanceTrust('mira', 8);
-    r.flags.foundContamination = true;
-  } else if (tier >= 2) {
-    addStory('You find it with Mira\'s guidance — a trace in the main water channel that doesn\'t belong. Small enough to miss. She found it with your help.');
-    addStory('"Someone put this here," she says. "Not a lot. Just enough."');
-    _romanceTrust('mira', 4);
-    r.flags.foundContamination = true;
-  } else {
-    addStory('The investigation takes longer than expected. By the time you find the trace in the water, the village has already started showing early symptoms. Mira moves quickly to treat those affected.');
-    r.flags.foundContamination = true;
-  }
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _miraFollowSource() {
-  _buildWheel([{ label: '⏳ Tracing the merchant route…', action: () => {} }]);
-  await runInlineProgress('Following the supply chain…', 4000);
-  const r = _romance('mira');
-  addStory('The contamination traces to one merchant who serviced all three villages. He isn\'t hard to find.');
-  const tier = await performSkillCheck('Persuasion');
-  if (tier >= 4) {
-    addStory('You approach carefully — not accusing, just asking about his route and suppliers. He opens up. He had no idea what he was carrying. Someone paid him to include an additive "for preservation" and told him it was standard practice.');
-    addStory('"I\'ve been doing this for twenty years," he says, shaken. "I never questioned things I should have."');
-    _romanceTrust('mira', 6);
-    r.flags.merchantCooperating = true;
-  } else {
-    addStory('He\'s defensive at first. Mira steps in and shows him the medical records, the symptom charts. His resistance crumbles. He gives you the name of who supplied the additive without knowing what it was.');
-    r.flags.merchantCooperating = true;
-  }
-  r.questPhase = 4;
-  addStory('"He didn\'t know," Mira says afterward. "Which means someone used him. Which means we need to find who."');
-  await waitForEnter();
-  _goBack();
-}
-
-async function _miraTheWhy() {
-  _buildWheel([{ label: '⏳ Digging deeper…', action: () => {} }]);
-  await runInlineProgress('Uncovering the motive…', 4000);
-  const r = _romance('mira');
-  addStory('The supply chain leads to a land agent quietly representing a buyer interested in all three villages\' land. Not to farm it — to control the trade road it sits on.');
-  addStory('The sickness isn\'t meant to kill. It\'s meant to make the land seem cursed, drive people out, depress the price. When Mira understands this, something changes in her face.');
-  await waitForEnter();
-  addStory('"These people have children," she says. "They have water wells and gardens and they have been scared in their own homes." She is quiet for a moment. "This person decided that was acceptable."');
-  addStory('She looks at you. "I want to stop them. I\'m asking what you think the best way is."');
-  await waitForEnter();
-  _romanceTrust('mira', 10);
-  r.questPhase = 5;
-  _goBack();
-}
-
-async function _miraStopIt() {
-  addStory('Three paths are in front of you. Mira lays them out without saying which she prefers — though you can tell.');
-  _buildWheel([
-    { label: '📰 Expose it publicly', action: async () => {
-      await runInlineProgress('Building the case…', 3000);
-      addStory('The evidence is medical, not legal. Mira testifies. You may have to as well. The land agent hires people to dispute the findings. It gets messy — political, slow, uncertain.');
-      addStory('But the story gets out. Other villages on the road hear what was planned for them. The buyer quietly withdraws.');
-      addStory('Mira doesn\'t look satisfied. She looks like someone who did the right thing and knows it doesn\'t feel like enough.');
-      await waitForEnter();
-      _romanceTrust('mira', 8);
-      _romance('mira').questPhase = 6;
-      _romance('mira').questComplete = true;
-      _goBack();
-    }},
-    { label: '🌿 Treat the sick, cut the route', action: async () => {
-      await runInlineProgress('Treating and containing…', 4000);
-      addStory('The sick are treated. The supply route is quietly severed — the merchant finds a different supplier, with Mira\'s help. The person responsible goes on with their life, having learned only that this approach was discovered.');
-      addStory('"I don\'t like this," Mira says. "But the sick are well. That\'s what I came here to do." She closes her notebook.');
-      await waitForEnter();
-      _romanceTrust('mira', 5);
-      _romance('mira').questPhase = 6;
-      _romance('mira').questComplete = true;
-      _goBack();
-    }},
-    { label: '⚔️ Confront them directly', action: async () => {
-      await runInlineProgress('Moving on the land agent…', 3500);
-      const tier = await performSkillCheck('Combat');
-      if (tier >= 3) {
-        addStory('The confrontation is dangerous and direct. The hired men are not a match for someone ready for them. The agent himself folds quickly when he understands the situation isn\'t theoretical anymore.');
-        addStory('He signs a formal withdrawal of interest in all three villages. He understands what you have on him.');
-        _romanceTrust('mira', 10);
-      } else {
-        addStory('It doesn\'t go cleanly. But it goes. The agent walks away from his plan with a clear understanding of what happens if he tries again.');
-        _romanceTrust('mira', 6);
-      }
-      await waitForEnter();
-      _romance('mira').questPhase = 6;
-      _romance('mira').questComplete = true;
-      _goBack();
-    }},
-  ]);
-}
-
-// ── 13.6.5 · CASSIN VAEL ───────────────────────────────────────
-
-async function _checkCassinTravelTrigger(inSettlement) {
-  const r = _romance('cassin');
-  if (r.met || !inSettlement) return;
-  if (player.level < 1) return;
-  if (Math.random() > 0.10) return;
-  await _meetCassin();
-}
-
-async function _meetCassin() {
-  const r = _romance('cassin');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('The cards are dealt before you notice anything wrong. By the time you do — a marked card cycled smoothly into position — it has clearly been happening for several rounds. The man dealing has good hands and a better face.');
-  addStory('He catches you watching. He doesn\'t flinch. He leans back in his chair and looks at you with something approaching respect. "I\'ll buy you a drink," he says. "You\'ve earned it."');
-  await waitForEnter();
-  _buildWheel([
-    { label: '🥂 Accept the drink', action: async () => {
-      _romanceTrust('cassin', 5);
-      addStory('"Cassin Vael," he says, sliding a drink across. "I\'m going to assume you\'re not going to make trouble over a friendly game."');
-      addStory('He says it like a man who has assessed the situation and is fairly confident of the answer. He\'s probably right.');
-      await waitForEnter();
-      r.flags.metFriendly = true;
-      _goBack();
-    }},
-    { label: '⚖️ Demand he stop', action: async () => {
-      addStory('He raises his hands, a picture of cooperation. "Fair enough." He gathers his cards. Nobody at the table seems particularly surprised. He finds this funny, quietly. "Still owe you that drink."');
-      await waitForEnter();
-      _romanceTrust('cassin', 2);
-      r.flags.metDemanding = true;
-      _goBack();
-    }},
-    { label: '🃏 Challenge him to an honest game', action: async () => {
-      const tier = await performSkillCheck('Deception');
-      if (tier >= 4) {
-        addStory('He loses, which delights him. "You\'re better at this than you look," he says. "That\'s the nicest thing I know how to say."');
-        _romanceTrust('cassin', 10);
-      } else {
-        addStory('He wins, which he tries not to look smug about. He mostly succeeds. "You\'re better than most," he offers. "That\'s genuinely true."');
-        _romanceTrust('cassin', 5);
-      }
-      await waitForEnter();
-      r.flags.metChallenge = true;
-      _goBack();
-    }},
-  ]);
-}
-
-function _getCassinWheelOptions() {
-  const r = _romance('cassin');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 6) {
-    const label = r.romancePath ? '🃏 Cassin [♥]' : '🃏 Cassin';
-    return [{ label, action: () => _showCassinWheel() }];
-  }
-  return [];
-}
-
-async function _showCassinWheel() {
-  const r = _romance('cassin');
-  const opts = [];
-  if (r.questPhase === 1 && r.trustLevel >= 5) {
-    opts.push({ label: '💬 He wants to talk', action: () => _cassinAsksForHelp() });
-  } else if (r.questPhase === 1) {
-    opts.push({ label: '💬 Get to know him', action: async () => {
-      addStory('He talks easily — about nothing that actually matters. Card games won, towns passed through. Everything feels light. You notice he gives you very little of himself. He probably notices you noticing.');
-      await waitForEnter();
-      _romanceTrust('cassin', 3);
-      _goBack();
-    }});
-  }
-  if (r.questPhase === 2) {
-    opts.push({ label: '📖 Hear the full story', action: () => _cassinFullStory() });
-  }
-  if (r.questPhase === 3) {
-    opts.push({ label: '👤 The wronged party', action: () => _cassinWrongedParty() });
-  }
-  if (r.questPhase === 4) {
-    opts.push({ label: '🤝 Arrange the meeting', action: () => _cassinMeeting() });
-  }
-  if (r.questPhase === 5) {
-    opts.push({ label: '💬 What will he choose?', action: () => _cassinChoice() });
-  }
-  if (_isRomanceAvailable('cassin') && r.trustLevel >= 25 && r.questPhase >= 2 && !r.romancePath) {
-    opts.push({ label: '❤️ Tell him what you think of him', action: async () => {
-      _startRomancePath('cassin');
-      addStory('He\'s quiet for a moment — genuinely, not performatively. Then: "I\'ve been called a great many things." He looks at you. "That might be the first one I believed."');
-      await waitForEnter();
-      _romanceTrust('cassin', 10);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Cassin');
-}
-
-async function _cassinAsksForHelp() {
-  _buildWheel([{ label: '⏳ He finds you…', action: () => {} }]);
-  await runInlineProgress('Cassin approaches at a quiet hour…', 2000);
-  const r = _romance('cassin');
-  addStory('He finds you when most people aren\'t watching. He\'s casual about it, which means he\'s frightened. You can tell because the charm is running at full output.');
-  addStory('"Someone\'s following me," he says. "I need a few days somewhere quiet. I\'m not asking you to understand the situation yet. Just — can you help without the questions for now?"');
-  await waitForEnter();
-  _buildWheel([
-    { label: '✅ Help him, no questions', action: async () => {
-      _romanceTrust('cassin', 10);
-      addStory('He looks at you. Something in his expression isn\'t performance. "Right," he says. "Thank you."');
-      await waitForEnter();
-      r.questPhase = 2;
-      _goBack();
-    }},
-    { label: '❓ I need to know why', action: async () => {
-      addStory('"Fair." He gives you a partial truth — someone from his past, a situation that got complicated. He doesn\'t lie exactly. He edits.');
-      addStory('It\'s enough. You agree to help.');
-      await waitForEnter();
-      _romanceTrust('cassin', 5);
-      r.questPhase = 2;
-      _goBack();
-    }},
-  ]);
-}
-
-async function _cassinFullStory() {
-  _buildWheel([{ label: '⏳ The story comes out in pieces…', action: () => {} }]);
-  await runInlineProgress('Over shared meals and quiet roads…', 4000);
-  const r = _romance('cassin');
-  addStory('A con, years ago. He told a woman her husband was dead, forged papers, married her briefly, transferred the estate, and disappeared. The husband was alive. She found out eventually. The estate was gone. The husband died the following year — not because of Cassin, but the timing has never left him alone.');
-  await waitForEnter();
-  addStory('"Her son has found me," he says. "He\'s not violent by nature. He\'s been carrying this for ten years and violence has started to seem like a reasonable response." He looks at his hands. "I understand that."');
-  await waitForEnter();
-  const tier = await performSkillCheck('Empathy');
-  if (tier >= 3) {
-    addStory('You say something that isn\'t absolution and isn\'t condemnation. He looks up.');
-    addStory('"You\'re not going to tell me it wasn\'t that bad," he says. "Good. I don\'t need that." He seems, slightly, to relax.');
-    _romanceTrust('cassin', 10);
-  } else {
-    addStory('You don\'t say anything. He seems to appreciate that more than words would have been.');
-    _romanceTrust('cassin', 5);
-  }
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _cassinWrongedParty() {
-  _buildWheel([{ label: '⏳ A letter arrives…', action: () => {} }]);
-  await runInlineProgress('Contact is made…', 2500);
-  const r = _romance('cassin');
-  addStory('A letter arrives — formal, measured. The son\'s name is Aldus. He wants to meet. He isn\'t asking for money. He just wants to meet.');
-  addStory('Cassin reads it twice and sets it face-down on the table. "I don\'t want to go," he says.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '🗣️ Push him toward it', action: async () => {
-      const tier = await performSkillCheck('Persuasion');
-      if (tier >= 3) {
-        addStory('"What does he actually want that you can give him?" you ask. Cassin is quiet for a long time.');
-        addStory('"He wants to know what his father was like during those months. I\'m the only person who can tell him." He looks like he\'d rather be anywhere else.');
-        _romanceTrust('cassin', 8);
-      } else {
-        addStory('He resists. You persist. He agrees, without grace, because the alternative is running and he\'s tired of running.');
-        _romanceTrust('cassin', 4);
-      }
-      r.flags.agreedToMeet = true;
-      r.questPhase = 4;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🤷 Let him decide', action: async () => {
-      addStory('You say nothing. He stares at the letter. After a long time: "I\'ll go."');
-      addStory('He doesn\'t say why. You don\'t ask.');
-      _romanceTrust('cassin', 6);
-      r.flags.agreedToMeet = true;
-      r.questPhase = 4;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _cassinMeeting() {
-  _buildWheel([{ label: '⏳ The meeting…', action: () => {} }]);
-  await runInlineProgress('Aldus arrives…', 3000);
-  const r = _romance('cassin');
-  addStory('The son — Aldus — is younger than expected. He carries the weight of ten years of questions. He says, without preamble:');
-  addStory('"I don\'t want the money back. It\'s gone. I want to know what my father was like during those months. Before he found out. You\'re the only person who spent time with him."');
-  await waitForEnter();
-  addStory('Cassin is very still. "That\'s what you came for," he says. It isn\'t quite a question.');
-  addStory('"Yes," Aldus says. "That\'s all."');
-  await waitForEnter();
-  _romanceTrust('cassin', 5);
-  r.questPhase = 5;
-  _goBack();
-}
-
-async function _cassinChoice() {
-  const r = _romance('cassin');
-  addStory('Cassin has been quiet since the meeting. He sits with the question a long time.');
-  _buildWheel([
-    { label: '💬 Tell him to tell the truth', action: async () => {
-      await runInlineProgress('The truth…', 3000);
-      const tier = await performSkillCheck('Persuasion');
-      if (tier >= 3) {
-        addStory('He tells Aldus everything he remembers — the things that were real, separate from the con. A man who was kind to strangers. Who laughed too easily. Who trusted people he shouldn\'t have.');
-        addStory('Aldus leaves without speaking. Cassin stays in town for a week doing nothing in particular. It seems to help.');
-        _romanceTrust('cassin', 15);
-      } else {
-        addStory('He tells Aldus the truth. It\'s imperfect and jagged. Aldus leaves. "It was the right thing," Cassin says, to no one in particular. "Doesn\'t mean it felt like it."');
-        _romanceTrust('cassin', 10);
-      }
-      r.questPhase = 6;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🎭 Let him tell a kind lie', action: async () => {
-      await runInlineProgress('The kind lie…', 2500);
-      addStory('He goes to Aldus and says what Aldus needs to hear. He\'s very good at this. Aldus seems relieved.');
-      addStory('That night Cassin drinks too much and doesn\'t explain why. He\'s quieter after — the charm the same, something else changed.');
-      _romanceTrust('cassin', 5);
-      r.questPhase = 6;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🌗 Find a middle path', action: async () => {
-      await runInlineProgress('The hardest thing…', 3500);
-      addStory('He tells Aldus what he actually remembers: what was real versus performed, where he no longer knows the difference, and what happened to a man who trusted too easily in a world that didn\'t deserve it.');
-      addStory('It takes a long time. Both men leave with something they didn\'t have going in. Aldus shakes Cassin\'s hand at the door.');
-      addStory('Cassin looks like someone who has just set something down that was heavier than he knew.');
-      _romanceTrust('cassin', 20);
-      r.questPhase = 6;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _cassinMonogamyScene() {
-  const r = _romance('cassin');
-  if (r.conflictFired) return;
-  r.conflictFired = true;
-  r.romancePath = false;
-  addStory('Cassin finds you at a moment when you aren\'t expecting it. He sits across from you without preamble.');
-  addStory('"Is there someone else?"');
-  await waitForEnter();
-  addStory('It\'s a single question. He\'s already reading you the way he reads everyone — the small signals, the tells. He already knows the answer.');
-  addStory('"Right," he says. He picks up his drink. He doesn\'t leave. He just becomes the version of himself you met at the card table — charming, smooth, present and entirely elsewhere.');
-  await waitForEnter();
-  addStory('The warmth isn\'t gone. It\'s just behind something again. You\'re not sure he knows how to get it back out on his own.');
-}
-
-// ── 13.6.6 · EDRIC FARROW ──────────────────────────────────────
-
-async function _checkEdricTravelTrigger(inSettlement, db) {
-  const r = _romance('edric');
-  if (r.met || inSettlement) return;
-  if (player.level < 2) return;
-  const wildBiomes = ['Forest','Dense Forest','Mountains','Highlands','Wetlands','Tundra','Plains'];
-  if (!wildBiomes.some(b => db.includes(b))) return;
-  if (Math.random() > 0.12) return;
-  await _meetEdric();
-}
-
-async function _meetEdric() {
-  const r = _romance('edric');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('The creature came from nowhere — or you came from the wrong direction, which is closer to the truth. Either way, by the time you\'ve understood the situation, a man has already stepped between you and the problem.');
-  addStory('He deals with it efficiently and without commentary. When it\'s over, he scans the treeline once, then looks at you. Scar across the left jaw. Moves like someone who stopped thinking about how to move years ago.');
-  addStory('"The settlement\'s northeast," he says. "Two miles." He starts walking the other direction.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '🏃 Catch up and talk', action: async () => {
-      addStory('He doesn\'t slow down, but he doesn\'t pull ahead either. He answers questions briefly. His name is Edric. He\'s worked this stretch of wilderness for six years. He doesn\'t volunteer more than that.');
-      await waitForEnter();
-      _romanceTrust('edric', 5);
-      r.flags.caughtUp = true;
-      _goBack();
-    }},
-    { label: '🙏 Thank him and follow his directions', action: async () => {
-      addStory('He nods once and continues in his direction. You watch him go. He doesn\'t look back — but somehow you get the impression he knew you were watching until you stopped.');
-      await waitForEnter();
-      _romanceTrust('edric', 2);
-      _goBack();
-    }},
-  ]);
-}
-
-function _getEdricWheelOptions() {
-  const r = _romance('edric');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 6) {
-    const label = r.romancePath ? '🌲 Edric [♥]' : '🌲 Edric';
-    return [{ label, action: () => _showEdricWheel() }];
-  }
-  return [];
-}
-
-async function _showEdricWheel() {
-  const r = _romance('edric');
-  const opts = [];
-  if (r.questPhase === 1 && r.flags.caughtUp) {
-    opts.push({ label: '📓 Ask about his work', action: () => _edricShowsEvidence() });
-  } else if (r.questPhase === 1) {
-    opts.push({ label: '🔍 Find him again', action: async () => {
-      addStory('Finding him takes a few hours of attention — tracking signs in the terrain, following a trail you\'re not entirely sure you\'re reading right. He\'s where you expected.');
-      addStory('He looks at you. Not surprised. "You found me," he says.');
-      await waitForEnter();
-      _romanceTrust('edric', 5);
-      r.flags.caughtUp = true;
-      _goBack();
-    }});
-  }
-  if (r.questPhase === 2) {
-    opts.push({ label: '🐾 Follow the pattern', action: () => _edricTrail() });
-  }
-  if (r.questPhase === 3) {
-    opts.push({ label: '🔙 Track back the origin', action: () => _edricTrackBack() });
-  }
-  if (r.questPhase === 4) {
-    opts.push({ label: '📜 Examine the ruins', action: () => _edricRuins() });
-  }
-  if (r.questPhase === 5) {
-    opts.push({ label: '⚖️ The decision', action: () => _edricDecision() });
-  }
-  if (_isRomanceAvailable('edric') && r.trustLevel >= 20 && r.questPhase >= 3 && !r.romancePath) {
-    opts.push({ label: '❤️ Say what you\'ve been thinking', action: async () => {
-      _startRomancePath('edric');
-      addStory('He doesn\'t speak for a long time — the considering silence of someone choosing words like they matter.');
-      addStory('"I haven\'t had much reason to let someone in," he says finally. "I\'m not sure I remember how." He says this the way he says everything: factually, without making it a tragedy.');
-      await waitForEnter();
-      _romanceTrust('edric', 10);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Edric');
-}
-
-async function _edricShowsEvidence() {
-  _buildWheel([{ label: '⏳ He shows you his work…', action: () => {} }]);
-  await runInlineProgress('Poring over the field journal…', 3000);
-  const r = _romance('edric');
-  addStory('He doesn\'t offer the journal. You ask about what he does out here, and after a moment he goes to his pack and brings it out. Four months of entries: kill sites, sketched wounds, a map with marks.');
-  addStory('"It\'s been killing without eating," he says. "No carcasses scavenged. No meat taken. Wounds that don\'t match anything I know." He\'s been working alone because no one believed him.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Tracking');
-  if (tier >= 4) {
-    addStory('The pattern is immediately clear — the spacing between sites, the progression, the interval shortening. "It\'s accelerating," you say.');
-    addStory('He looks at you the way someone looks when they\'ve been alone with information too long and someone else finally sees it.');
-    _romanceTrust('edric', 10);
-  } else {
-    addStory('He points out the pattern himself, methodically. Having someone look without dismissing it matters to him. He doesn\'t say so.');
-    _romanceTrust('edric', 5);
-  }
-  r.questPhase = 2;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _edricTrail() {
-  _buildWheel([{ label: '⏳ Waiting at the kill site…', action: () => {} }]);
-  await runInlineProgress('The long wait in the dark…', 5000);
-  const r = _romance('edric');
-  addStory('You reach the next likely kill site before dark and wait. Edric is very still. You try to be.');
-  addStory('The creature comes at the deepest part of night. A species you may have seen before — but the behavior is completely wrong. It kills without eating, then stands over the carcass in apparent confusion.');
-  await waitForEnter();
-  addStory('"That\'s not aggression," Edric says quietly. "That\'s something else."');
-  _romanceTrust('edric', 6);
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _edricTrackBack() {
-  _buildWheel([{ label: '⏳ Tracking the origin…', action: () => {} }]);
-  await runInlineProgress('Following the creature\'s route backward…', 4000);
-  const r = _romance('edric');
-  const tier = await performSkillCheck('Tracking');
-  if (tier >= 4) {
-    addStory('The trail back is clear once you know what you\'re following — a pattern in the land, a route used repeatedly. It leads toward old ruins in the hills. The place feels wrong when you approach it.');
-    _romanceTrust('edric', 8);
-  } else {
-    addStory('The trail is difficult. Edric reads the landscape with the patience of someone who has spent years in it. It leads to unmarked ruins in the hills.');
-    _romanceTrust('edric', 4);
-  }
-  addStory('"The creature comes here," Edric says. "Or came from here." He looks at the ruins. "Something is wrong with this place."');
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _edricRuins() {
-  _buildWheel([{ label: '⏳ Searching the ruins…', action: () => {} }]);
-  await runInlineProgress('Reading the old records…', 4000);
-  const r = _romance('edric');
-  addStory('Inside: old equipment. Modified cages. Dispassionate records — subjects designated by number. The creature is Subject Eleven. The experiment was about survivability: removing the need to eat while preserving hunting behavior.');
-  await waitForEnter();
-  addStory('The creature can\'t process food anymore. The behavior that drives it to hunt is intact. The ability to gain anything from it is not. It has been starving regardless of what it kills, for months.');
-  await waitForEnter();
-  addStory('Edric reads this in silence. He sets the record down.');
-  _romanceTrust('edric', 8);
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _edricDecision() {
-  const r = _romance('edric');
-  addStory('"I\'ve been hunting it as a threat," Edric says. "It still is. But." He doesn\'t finish the sentence. He\'s been working on it for four months, and understanding it has changed the shape of the question.');
-  _buildWheel([
-    { label: '🗡️ Kill it cleanly', action: async () => {
-      _buildWheel([{ label: '⏳ Tracking it down…', action: () => {} }]);
-      await runInlineProgress('Ending it mercifully…', 4000);
-      addStory('Edric does it himself. He knows how to do things like this without making them worse than they have to be. He buries the animal afterward.');
-      addStory('He doesn\'t talk about it. You walk back through the forest in the direction of the nearest settlement. He doesn\'t rush.');
-      _romanceTrust('edric', 10);
-      r.questPhase = 6;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🧪 Find someone to reverse it', action: async () => {
-      addStory('The records suggest it may be reversible — with time and someone with the right knowledge.');
-      addStory('Edric is quiet. "All right," he says. "We look." He seems to need the task to have a different shape. He is invested in the outcome in a way he finds uncomfortable and doesn\'t try to hide.');
-      _romanceTrust('edric', 12);
-      r.questPhase = 6;
-      r.questComplete = true;
-      r.flags.reversalPath = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🔒 Contain it for now', action: async () => {
-      addStory('Old containment structures in the ruins are still functional, if barely. Setting them up again is work. It holds the creature but doesn\'t help it.');
-      addStory('It\'s not an ending. It\'s a pause. Edric manages it with the same patience he manages everything.');
-      _romanceTrust('edric', 5);
-      r.questPhase = 6;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _edricMonogamyScene() {
-  const r = _romance('edric');
-  if (r.conflictFired) return;
-  r.conflictFired = true;
-  r.romancePath = false;
-  addStory('He stops appearing. Not dramatically — he\'s simply not where you\'d expect to find him.');
-  addStory('If you seek him out, he\'s in the same stretch of wilderness. He greets you with the same steady manner, completes any task at hand, and is polite, professional, and entirely unavailable in any meaningful sense.');
-  await waitForEnter();
-  addStory('He has made himself a stranger again. He has practice at it.');
-}
-
-// ── 13.6.7 · SYLARA ────────────────────────────────────────────
-
-async function _checkSylaraTravelTrigger(dk) {
-  const r = _romance('sylara');
-  if (r.met) return;
-  if (dk !== 'Nithrond') return;
-  if (Math.random() > 0.6) return;
-  await _meetSylara();
-}
-
-async function _meetSylara() {
-  const r = _romance('sylara');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('A door in the Grand Archives of Thalorion that should be locked stands slightly open. Inside, a woman sits surrounded by texts she has clearly been at for hours, surrounded by so many open books that the floor around her is barely visible.');
-  addStory('She doesn\'t look up when you enter. "If you\'re here to tell me this section is restricted," she says, "I already know."');
-  await waitForEnter();
-  _buildWheel([
-    { label: '📚 Ask what she\'s found', action: async () => {
-      addStory('She looks up properly for the first time. Something about the question — not the objection she expected — catches her interest. "A different account," she says. "Of the founding. I\'ve been looking for six weeks."');
-      addStory('Her name is Sylara. She mentions this as an afterthought, still half-looking at the text.');
-      await waitForEnter();
-      _romanceTrust('sylara', 8);
-      r.flags.metCurious = true;
-      _goBack();
-    }},
-    { label: '🔑 Point out the door should be locked', action: async () => {
-      addStory('"Yes," she says, without concern. "I know where they keep the key." She finally looks up. "You\'re not here to report me?"');
-      addStory('She seems mildly interested in the answer either way. Her name is Sylara.');
-      await waitForEnter();
-      _romanceTrust('sylara', 3);
-      _goBack();
-    }},
-    { label: '📖 Sit down and read', action: async () => {
-      addStory('You find a clear patch of floor and sit. She glances at you sideways. "You can read Old Thalorean?" she asks. When you answer, she either moves the nearest stack closer or gives you something easier. Her name is Sylara. She tells you this eventually.');
-      await waitForEnter();
-      _romanceTrust('sylara', 10);
-      r.flags.metReading = true;
-      _goBack();
-    }},
-  ]);
-}
-
-function _getSylaraWheelOptions() {
-  const r = _romance('sylara');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 7) {
-    const label = r.romancePath ? '📚 Sylara [♥]' : '📚 Sylara';
-    return [{ label, action: () => _showSylaraWheel() }];
-  }
-  return [];
-}
-
-async function _showSylaraWheel() {
-  const r = _romance('sylara');
-  const opts = [];
-  if (r.questPhase === 1) opts.push({ label: '📜 The founding documents', action: () => _sylaraWhatSheFound() });
-  if (r.questPhase === 2) opts.push({ label: '🏛️ The Society arrives', action: () => _sylaraSocietyArrives() });
-  if (r.questPhase === 3) opts.push({ label: '🗺️ Find the other fragments', action: () => _sylaraFindFragments() });
-  if (r.questPhase === 4) opts.push({ label: '📖 The full account', action: () => _sylaraFullAccount() });
-  if (r.questPhase === 5) opts.push({ label: '💬 What to do with it', action: () => _sylaraWhatToDo() });
-  if (r.questPhase === 6) opts.push({ label: '⚔️ The Society escalates', action: () => _sylaraEscalation() });
-  if (_isRomanceAvailable('sylara') && r.trustLevel >= 20 && r.questPhase >= 2 && !r.romancePath) {
-    opts.push({ label: '❤️ Tell her what you think of her', action: async () => {
-      _startRomancePath('sylara');
-      addStory('She stops mid-sentence, which is rare. She looks at you with the particular attention she usually gives only to texts.');
-      addStory('"Oh," she says. Then: "I should probably have noticed that was happening." She doesn\'t seem displeased about this. She returns to the text, but something has changed in how she holds herself.');
-      await waitForEnter();
-      _romanceTrust('sylara', 10);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Sylara');
-}
-
-async function _sylaraWhatSheFound() {
-  _buildWheel([{ label: '⏳ She explains…', action: () => {} }]);
-  await runInlineProgress('Reading the fragments together…', 3500);
-  const r = _romance('sylara');
-  addStory('She shows you the fragments — old script, careful hand. The official founding story says a coalition of scholars and warriors built Thalorion on uninhabited land. This account says there were people there. Not many — a small community — but they were removed.');
-  addStory('"The documents don\'t say how," she says. "I\'ve been trying to find out." She says it the way she says most things — as a statement of current operational status, not a plea.');
-  await waitForEnter();
-  const tier = await performSkillCheck('History');
-  if (tier >= 3) {
-    addStory('Your knowledge of elven settlement patterns adds context — the timing matches a gap in the migration records that scholars have attributed to poor documentation. It wasn\'t poor documentation.');
-    addStory('"That fills in three weeks of searching," she says. She doesn\'t look grateful exactly; she looks satisfied, which for her is the same thing.');
-    _romanceTrust('sylara', 10);
-  } else {
-    addStory('You don\'t recognize the script well enough to add much, but your engagement is genuine. She notices.');
-    _romanceTrust('sylara', 4);
-  }
-  r.questPhase = 2;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _sylaraSocietyArrives() {
-  _buildWheel([{ label: '⏳ The representative arrives…', action: () => {} }]);
-  await runInlineProgress('An unannounced visit…', 2500);
-  const r = _romance('sylara');
-  addStory('A representative of the Loremasters Society pays a visit. Formal, polite, immovable. He says the documents are Society property, misfiled, and he\'s there to collect them. He doesn\'t threaten her. He doesn\'t need to.');
-  addStory('Sylara doesn\'t give them up.');
-  await waitForEnter();
-  addStory('After he leaves, she turns to you. "Your reaction matters to me," she says. "Not to change my decision. I\'m just interested in it."');
-  await waitForEnter();
-  _buildWheel([
-    { label: '✊ You were right not to give them up', action: async () => {
-      _romanceTrust('sylara', 8);
-      addStory('"Yes," she says simply. "I know." She goes back to work. You\'ve confirmed something she already believed.');
-      await waitForEnter();
-      r.questPhase = 3;
-      _goBack();
-    }},
-    { label: '⚠️ This makes things dangerous', action: async () => {
-      addStory('"Also yes," she says. "I\'m aware. The danger isn\'t a reason not to." She looks at you. "Are you still in?"');
-      await waitForEnter();
-      _romanceTrust('sylara', 6);
-      r.questPhase = 3;
-      _goBack();
-    }},
-  ]);
-}
-
-async function _sylaraFindFragments() {
-  _buildWheel([{ label: '⏳ Searching the other archives…', action: () => {} }]);
-  await runInlineProgress('Traveling to retrieve the scattered fragments…', 5000);
-  const r = _romance('sylara');
-  addStory('The fragments she has aren\'t the whole document. The rest was split and redistributed — standard practice when burying something you can\'t bring yourself to destroy. Finding the other pieces requires travel to two other elven kingdoms.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Research');
-  if (tier >= 4) {
-    addStory('Your research approach cuts weeks off the search — cross-referencing catalogue references across three archives, finding the fragments catalogued under unrelated headings. The Loremasters Society is also looking. You beat them to one fragment by hours.');
-    _romanceTrust('sylara', 12);
-    r.flags.aheadOfSociety = true;
-  } else {
-    addStory('The search takes time. The Loremasters Society finds one fragment before you do — but whoever carries it hasn\'t been told what it is yet, which buys you a window.');
-    _romanceTrust('sylara', 6);
-  }
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _sylaraFullAccount() {
-  _buildWheel([{ label: '⏳ Assembling the picture…', action: () => {} }]);
-  await runInlineProgress('Reading the complete account…', 4000);
-  const r = _romance('sylara');
-  addStory('When all pieces are assembled: the original community was not evicted. They were killed. The founding documents were altered afterward. The Loremasters Society has known this since at least two hundred years ago — there are records of the deliberate concealment within the Society\'s own archive.');
-  await waitForEnter();
-  addStory('Sylara goes very quiet for a moment. Then she starts thinking aloud — all the implications, the political consequences, the names this touches. You let her run.');
-  await waitForEnter();
-  addStory('Eventually she looks up. "I\'m sorry," she says. "I do that. Were you following?"');
-  _romanceTrust('sylara', 8);
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _sylaraWhatToDo() {
-  const r = _romance('sylara');
-  addStory('She thinks through the options aloud and asks you to think with her. The Society has resources to suppress this again. Going public means choosing who to go to.');
-  _buildWheel([
-    { label: '📰 A journalist with reach', action: async () => {
-      await runInlineProgress('Getting the story out…', 3500);
-      addStory('The information reaches a journalist with enough reputation that the Society can\'t simply discredit it. The political fallout in Nithrond is significant. Sylara is named.');
-      addStory('She is not popular with the establishment afterward. She doesn\'t seem to care. The record has changed.');
-      _romanceTrust('sylara', 10);
-      r.questPhase = 6;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🤝 A political faction', action: async () => {
-      await runInlineProgress('Choosing allies carefully…', 3000);
-      addStory('A faction that would benefit from the revelation uses it well. The Society loses influence. The historical record changes, though the political beneficiary of the change is not who Sylara would have chosen.');
-      addStory('"It\'s out," she says. "The means aren\'t clean. They rarely are."');
-      _romanceTrust('sylara', 7);
-      r.questPhase = 6;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🔒 Protected copies — insurance', action: async () => {
-      await runInlineProgress('Copying and distributing…', 3000);
-      addStory('The originals go to a trusted neutral party. Copies are distributed to three individuals with instructions to publish on their deaths or on Sylara\'s. Nothing changes publicly — but it can\'t be buried again.');
-      addStory('She seems almost at peace with this. "It exists now," she says. "That\'s different from before."');
-      _romanceTrust('sylara', 6);
-      r.questPhase = 6;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _sylaraEscalation() {
-  _buildWheel([{ label: '⏳ The break-in…', action: () => {} }]);
-  await runInlineProgress('Someone enters her quarters…', 2500);
-  const r = _romance('sylara');
-  addStory('Someone breaks into Sylara\'s quarters. Nothing is taken. That\'s the message — they could have taken the documents. They chose not to, which means they want her to know that they could.');
-  addStory('Sylara is angrier than frightened. "I find threats by incompetent institutions deeply irritating," she says. She\'s also aware, in the way she\'s aware of most things, that she\'s now at personal risk. And so are you.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '⚔️ Face the Society directly', action: async () => {
-      await runInlineProgress('Confronting the Loremasters…', 4000);
-      const tier = await performSkillCheck('Persuasion');
-      if (tier >= 4) {
-        addStory('The confrontation is direct and, surprisingly, measured. You present what you have — including the records of the Society\'s own concealment — and make clear what publication would mean versus what silence would cost them. They stand down.');
-        _romanceTrust('sylara', 15);
-      } else {
-        addStory('The confrontation is direct and costly. The Society doesn\'t fold easily. But the evidence is too complete and too distributed now. They can\'t suppress what\'s already been copied.');
-        _romanceTrust('sylara', 10);
-      }
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🚪 Get the documents safely out first', action: async () => {
-      await runInlineProgress('Moving everything out of Nithrond…', 4000);
-      addStory('You move everything out before the Society can act — to the neutral party already identified, to contacts outside Nithrond\'s jurisdiction. Once the documents are beyond the Society\'s reach, the threat loses its teeth.');
-      addStory('Sylara stays in Nithrond afterward. "They know I know," she says. "That matters. But there\'s nothing left for them to take."');
-      _romanceTrust('sylara', 12);
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-// ── 13.6.8 · EAVAN ─────────────────────────────────────────────
-
-async function _checkEavanTravelTrigger(dk) {
-  const r = _romance('eavan');
-  if (r.met) return;
-  if (dk !== 'Orindroth') return;
-  if (Math.random() > 0.65) return;
-  await _meetEavan();
-}
-
-async function _meetEavan() {
-  const r = _romance('eavan');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('The Orindroth forest is designed to disorient outsiders. You\'ve been traveling for an hour when you realize you\'ve passed this tree before. Then again. The forest has turned you around without you noticing it happening.');
-  addStory('A woman drops from a branch above you. Doesn\'t startle you — she lands quietly and was clearly there before you arrived. She studies you with the calm assessment of someone who has found many lost travelers here and has opinions about each of them.');
-  addStory('"You\'re turned around," she says. It isn\'t a question. "I\'ll walk you to the edge." She starts walking.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '🚶 Follow and thank her', action: async () => {
-      addStory('She doesn\'t fill the silence, but she answers questions when you ask them. Her name is Eavan. She\'s been warden of this section of forest for eleven years. She doesn\'t say much about what that involves.');
-      await waitForEnter();
-      _romanceTrust('eavan', 4);
-      r.flags.metQuietly = true;
-      _goBack();
-    }},
-    { label: '🌲 Ask about the forest', action: async () => {
-      addStory('Something changes in her attention — not warmer, exactly, but more present. She tells you two things about the forest without you asking for more, and waits to see if you understand what they mean. When you respond well, she tells you a third.');
-      await waitForEnter();
-      _romanceTrust('eavan', 8);
-      r.flags.metCurious = true;
-      _goBack();
-    }},
-    { label: '🤔 Ask how you got turned around', action: async () => {
-      addStory('"The forest discourages outsiders," she says. "It\'s better at it than most outsiders expect." She says this as a fact, without apology. "You\'re not the first."');
-      await waitForEnter();
-      _romanceTrust('eavan', 3);
-      _goBack();
-    }},
-  ]);
-}
-
-function _getEavanWheelOptions() {
-  const r = _romance('eavan');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 7) {
-    const label = r.romancePath ? '🌿 Eavan [♥]' : '🌿 Eavan';
-    return [{ label, action: () => _showEavanWheel() }];
-  }
-  return [];
-}
-
-async function _showEavanWheel() {
-  const r = _romance('eavan');
-  const opts = [];
-  if (r.questPhase === 1 && r.trustLevel >= 4) opts.push({ label: '🌑 She shows you something', action: () => _eavanShowsTheRing() });
-  else if (r.questPhase === 1) opts.push({ label: '🌲 Return to Orindroth', action: async () => {
-    addStory('You find your way back into the forest. It\'s a little easier this time — the forest recognizes that you\'ve been here before, or you\'ve simply gotten better at reading it. Eavan finds you before you find her. She seems unsurprised.');
-    await waitForEnter();
-    _romanceTrust('eavan', 4);
-    _goBack();
-  }});
-  if (r.questPhase === 2) opts.push({ label: '🔵 Map the full ring', action: () => _eavanMapRing() });
-  if (r.questPhase === 3) opts.push({ label: '🕳️ Go underground', action: () => _eavanUnderground() });
-  if (r.questPhase === 4) opts.push({ label: '⚙️ Examine the structure', action: () => _eavanStructure() });
-  if (r.questPhase === 5) opts.push({ label: '🚪 The inner chamber', action: () => _eavanChamber() });
-  if (r.questPhase === 6) opts.push({ label: '⚖️ Make the decision', action: () => _eavanDecision() });
-  if (_isRomanceAvailable('eavan') && r.trustLevel >= 25 && r.questPhase >= 3 && !r.romancePath) {
-    opts.push({ label: '❤️ Tell her what this means to you', action: async () => {
-      _startRomancePath('eavan');
-      addStory('She is very still. Then: "I don\'t — I don\'t do this well," she says. "I want to be clear about that before anything else."');
-      addStory('She means it as a warning. It doesn\'t read that way. She seems to know that and is uncomfortable with the knowledge.');
-      await waitForEnter();
-      _romanceTrust('eavan', 12);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Eavan');
-}
-
-async function _eavanShowsTheRing() {
-  _buildWheel([{ label: '⏳ She invites you to see something…', action: () => {} }]);
-  await runInlineProgress('Following her deeper into the forest…', 3000);
-  const r = _romance('eavan');
-  addStory('She phrases the invitation carefully, as though she\'s still deciding whether this was a good idea. She shows you the outermost ring of dead trees — eight of them in a perfect arc, still standing but drained of everything.');
-  addStory('"No disease on the bark," she says. "No visible cause. The dying starts underground. I\'ve been watching it for three months." She looks at the trees. "I\'ve run out of explanations."');
-  await waitForEnter();
-  addStory('She doesn\'t ask for help directly. She\'s clearly hoping you\'ll offer.');
-  _buildWheel([
-    { label: '✋ Offer to help', action: async () => {
-      _romanceTrust('eavan', 10);
-      addStory('Something in her posture changes — not much, but you notice it.');
-      addStory('"All right," she says. "Come back at first light."');
-      await waitForEnter();
-      r.questPhase = 2;
-      _goBack();
-    }},
-    { label: '❓ Ask what she\'s tried', action: async () => {
-      addStory('She lists what she\'s ruled out — methodically, more than you asked for. When she\'s done she looks at you. "Are you going to help or not?"');
-      addStory('It\'s the first direct thing she\'s said. "Yes," you tell her. "All right," she says.');
-      await waitForEnter();
-      _romanceTrust('eavan', 6);
-      r.questPhase = 2;
-      _goBack();
-    }},
-  ]);
-}
-
-async function _eavanMapRing() {
-  _buildWheel([{ label: '⏳ Tracing the circumference…', action: () => {} }]);
-  await runInlineProgress('Walking the full ring together…', 4000);
-  const r = _romance('eavan');
-  addStory('Together you trace the full circumference. The ring is precise — mathematically so. The spacing between the dead trees is identical. Something made this pattern.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Mysticism');
-  if (tier >= 3) {
-    addStory('At the center of the ring, still alive, stands a tree that is older than anything else in the forest — older than the forest itself, by your estimate. It is the only tree in the ring that isn\'t sick. That is not a coincidence.');
-    addStory('"The center is the point," Eavan says quietly. "Everything else is the radius."');
-    _romanceTrust('eavan', 10);
-  } else {
-    addStory('At the center of the ring stands a tree older than the rest. Eavan has been treating it as a landmark. You suggest it might be more than that. She considers this for a long moment.');
-    _romanceTrust('eavan', 5);
-  }
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _eavanUnderground() {
-  _buildWheel([{ label: '⏳ Following the roots down…', action: () => {} }]);
-  await runInlineProgress('Descending beneath the forest floor…', 4000);
-  const r = _romance('eavan');
-  addStory('The dying comes from below. Following root systems down leads to an entrance Eavan has walked past many times — a cave mouth the forest has been growing around, concealing, for a very long time.');
-  await waitForEnter();
-  addStory('She stops at the entrance. "I didn\'t know this was here," she says. She\'s been warden here for eleven years. The forest kept this from her. She stands with that for a moment, then goes in.');
-  _romanceTrust('eavan', 6);
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _eavanStructure() {
-  _buildWheel([{ label: '⏳ Examining the mechanism…', action: () => {} }]);
-  await runInlineProgress('Mapping the structure below…', 4000);
-  const r = _romance('eavan');
-  addStory('A structure — older than Orindroth, older than the elves settling this forest. Built into the rock. It\'s still running. Mechanisms drawing something up through conduits that connect to root systems above. The structure was designed to do exactly this: drain from the forest, feeding something in the deepest chamber.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Herbalism');
-  if (tier >= 3) {
-    addStory('The conduit material is biological — grown, not carved. Whoever built this understood plant root systems at a level that took modern herbalists centuries to reach. They built this before that knowledge existed by any record.');
-    _romanceTrust('eavan', 8);
-  } else {
-    addStory('Eavan understands more of it than you do — this is her domain, in the deepest sense. She explains what she\'s seeing, quietly, to herself as much as to you.');
-    _romanceTrust('eavan', 4);
-  }
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _eavanChamber() {
-  _buildWheel([{ label: '⏳ The deepest chamber…', action: () => {} }]);
-  await runInlineProgress('Reaching the heart of it…', 3500);
-  const r = _romance('eavan');
-  addStory('What is inside the deepest chamber isn\'t immediately clear. Something dormant — large, biological, preserved. The mechanism is keeping it alive. It has been kept alive for a very long time.');
-  await waitForEnter();
-  addStory('Eavan stands and looks at it for a long time. "It didn\'t choose to be here," she says eventually. "Something placed it." She means this as relevant information, not sympathy — though it\'s both.');
-  _romanceTrust('eavan', 6);
-  r.questPhase = 6;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _eavanDecision() {
-  const r = _romance('eavan');
-  addStory('The mechanism is killing the forest. The thing in the chamber is not malicious — it\'s in stasis, placed here, didn\'t choose this. Eavan wants your input before she decides. She doesn\'t often ask for input.');
-  _buildWheel([
-    { label: '🔧 Destroy the mechanism', action: async () => {
-      await runInlineProgress('Dismantling the structure…', 4000);
-      addStory('The ring stops expanding. The existing dead trees don\'t come back — too far gone — but the living ones stabilize. The thing in the chamber dies quietly over the following weeks.');
-      addStory('Eavan is unsatisfied. "We didn\'t understand what we destroyed," she says. She keeps working the forest. She is careful never to say whether it feels different.');
-      _romanceTrust('eavan', 8);
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🌿 Find an alternative feed source', action: async () => {
-      addStory('Gathering the materials takes time and travel. When you return, Eavan has already prepared the conversion — she\'s been working on it while you were gone, in the way she works on everything: without announcing it.');
-      await runInlineProgress('Converting the mechanism…', 5000);
-      addStory('The mechanism runs on the new source. The forest begins recovering. The thing in the chamber continues sleeping. Eavan walks the recovering trees in the ring and doesn\'t say anything for a long time.');
-      addStory('"This is right," she says, eventually. That\'s all.');
-      _romanceTrust('eavan', 15);
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🚪 Release it', action: async () => {
-      await runInlineProgress('Disabling the stasis…', 4000);
-      addStory('The thing wakes. It is ancient and confused and, as it becomes clear, sapient. It looks at you both with something that might be recognition.');
-      addStory('What it is and what it wants is not answered today. Eavan does not look frightened. She looks like someone who has just discovered a door she didn\'t know the forest had.');
-      _romanceTrust('eavan', 10);
-      r.questPhase = 7;
-      r.questComplete = true;
-      r.flags.thingReleased = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _eavanMonogamyScene() {
-  const r = _romance('eavan');
-  if (r.conflictFired) return;
-  r.conflictFired = true;
-  r.romancePath = false;
-  addStory('She removes herself. No scene, no letter, no explanation. You return to Orindroth and her post is empty. A note from another warden says she requested reassignment to the northern grove.');
-  await waitForEnter();
-  addStory('If you find her there and try to talk, she gives you one sentence: "You don\'t owe me an explanation. I just don\'t want to be chosen second."');
-}
-
-// ── 13.6.9 · VORATH ────────────────────────────────────────────
-
-async function _checkVorathTravelTrigger(dk) {
-  const r = _romance('vorath');
-  if (r.met) return;
-  if (dk !== 'Naradreth') return;
-  if (Math.random() > 0.65) return;
-  await _meetVorath();
-}
-
-async function _meetVorath() {
-  const r = _romance('vorath');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('In an alley near the center of Velra\'syl, two men in the colors of a rival Great House are pressing a third — not quite an ambush. Too public for that. A message being delivered physically.');
-  addStory('The elf receiving the message is composed in the way of someone who has decided composure is survival. He\'s managing, but barely.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '✊ Intervene', action: async () => {
-      addStory('The men assess the situation and leave. The elf straightens his coat. "You have my thanks," he says, with the precise warmth of someone who means it but has limited experience showing it.');
-      addStory('He gives you a specific address and time without explaining why. His name is Vorath.');
-      await waitForEnter();
-      _romanceTrust('vorath', 8);
-      r.flags.intervened = true;
-      _goBack();
-    }},
-    { label: '👁️ Watch without intervening', action: async () => {
-      addStory('The men deliver their message and leave. The elf sees you watching. He holds your gaze for a moment, then walks away.');
-      addStory('That evening, a message is delivered to wherever you\'re staying: an address and a time. No name.');
-      await waitForEnter();
-      _romanceTrust('vorath', 2);
-      r.flags.watched = true;
-      _goBack();
-    }},
-  ]);
-}
-
-function _getVorathWheelOptions() {
-  const r = _romance('vorath');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 7) {
-    const label = r.romancePath ? '🏛️ Vorath [♥]' : '🏛️ Vorath';
-    return [{ label, action: () => _showVorathWheel() }];
-  }
-  return [];
-}
-
-async function _showVorathWheel() {
-  const r = _romance('vorath');
-  const opts = [];
-  if (r.questPhase === 1) opts.push({ label: '📍 Go to the address', action: () => _vorathAddress() });
-  if (r.questPhase === 2) opts.push({ label: '🧒 The cousin Elarin', action: () => _vorathElarin() });
-  if (r.questPhase === 3) opts.push({ label: '🚪 Move Elarin out', action: () => _vorathMove() });
-  if (r.questPhase === 4) opts.push({ label: '🔍 What Elarin saw', action: () => _vorathWhatSaw() });
-  if (r.questPhase === 5) opts.push({ label: '🗺️ Follow the trail', action: () => _vorathTrail() });
-  if (r.questPhase === 6) opts.push({ label: '👤 Eratrid', action: () => _vorathEratrid() });
-  if (_isRomanceAvailable('vorath') && r.trustLevel >= 30 && r.questPhase >= 3 && !r.romancePath) {
-    opts.push({ label: '❤️ Say something true', action: async () => {
-      _startRomancePath('vorath');
-      addStory('He is quiet for long enough that you wonder if you\'ve miscalculated. Then: "I am not — I don\'t know how to respond to this. I want to be honest about that."');
-      addStory('He says this with the same precision he uses for everything. It\'s the most personal thing he\'s said. You understand it\'s a significant effort.');
-      await waitForEnter();
-      _romanceTrust('vorath', 12);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Vorath');
-}
-
-async function _vorathAddress() {
-  _buildWheel([{ label: '⏳ Arriving at the address…', action: () => {} }]);
-  await runInlineProgress('Finding the location…', 2000);
-  const r = _romance('vorath');
-  addStory('Vorath is there when you arrive. He asks one question before anything else: "Why did you help someone you didn\'t know in a city where choosing sides is dangerous?"');
-  await waitForEnter();
-  _buildWheel([
-    { label: '💬 It seemed right', action: async () => {
-      addStory('He studies you. "That\'s either very principled or very naive," he says. "In Velra\'syl they\'re sometimes the same thing." He seems to have reached a decision. "I have a problem I can\'t solve alone."');
-      _romanceTrust('vorath', 10);
-      r.questPhase = 2;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🔍 I wanted to see what happened', action: async () => {
-      addStory('"Honest," he says. "That\'s better than most answers." He pauses, testing something in the air. "I have a problem. Are you still interested in what happens?"');
-      _romanceTrust('vorath', 6);
-      r.questPhase = 2;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _vorathElarin() {
-  _buildWheel([{ label: '⏳ He explains…', action: () => {} }]);
-  await runInlineProgress('Vorath speaks flatly and precisely…', 2500);
-  const r = _romance('vorath');
-  addStory('His cousin Elarin — nineteen years old — witnessed a meeting they weren\'t meant to see. Someone from a rival house meeting a person who doesn\'t appear in any Naradreth record. Not a merchant, not a diplomat. Someone operating entirely outside recognized channels.');
-  addStory('"Elarin is currently hidden in a location I trust," he says. "They will be dead within a week if the rival house locates them. I need help moving them out of Velra\'syl without being followed."');
-  await waitForEnter();
-  addStory('He offers payment. He doesn\'t ask for trust. He isn\'t used to asking for things.');
-  _romanceTrust('vorath', 5);
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _vorathMove() {
-  const r = _romance('vorath');
-  addStory('Getting Elarin out of Velra\'syl requires navigating the city\'s internal checkpoint system — controlled by the Great Houses. The rival house has enough influence to have eyes on the gates.');
-  _buildWheel([
-    { label: '🌑 A smuggler\'s route', action: async () => {
-      _buildWheel([{ label: '⏳ Finding the contact…', action: () => {} }]);
-      await runInlineProgress('Navigating the underground route…', 4000);
-      const tier = await performSkillCheck('Stealth');
-      if (tier >= 3) {
-        addStory('The smuggler\'s route works. Elarin is out of Velra\'syl before dawn. Vorath walks the entire way with them — it\'s the most tense you\'ve seen him, and the most present.');
-        _romanceTrust('vorath', 10);
-      } else {
-        addStory('The route nearly fails at the last checkpoint. You improvise. It holds. Elarin is out.');
-        _romanceTrust('vorath', 6);
-      }
-      r.questPhase = 4;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '📋 Falsified travel documents', action: async () => {
-      _buildWheel([{ label: '⏳ Acquiring the seals…', action: () => {} }]);
-      await runInlineProgress('Forging the papers…', 4000);
-      const tier = await performSkillCheck('Deception');
-      if (tier >= 4) {
-        addStory('The documents are perfect. Elarin walks through the gate as a minor merchant\'s apprentice. The guard doesn\'t look twice. Vorath, watching from across the square, allows himself to exhale.');
-        _romanceTrust('vorath', 12);
-      } else {
-        addStory('The documents aren\'t perfect, but they\'re good enough for a guard who isn\'t specifically looking for Elarin by name. They pass. Close.');
-        _romanceTrust('vorath', 7);
-      }
-      r.questPhase = 4;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _vorathWhatSaw() {
-  _buildWheel([{ label: '⏳ Elarin talks…', action: () => {} }]);
-  await runInlineProgress('Elarin explains what they witnessed…', 3000);
-  const r = _romance('vorath');
-  addStory('Once safe, Elarin talks. The figure they saw was trading information — not goods. Feeding detailed intelligence from both sides of the civil war to someone operating entirely outside Naradreth\'s political structure. Someone was being given a map of the war from the inside.');
-  await waitForEnter();
-  addStory('Vorath, when he hears this, goes very still.');
-  addStory('"Someone is profiting from the length of this war," he says. "That means someone has an interest in it continuing." He\'s working through the implications. So are you.');
-  _romanceTrust('vorath', 8);
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _vorathTrail() {
-  _buildWheel([{ label: '⏳ Following the intelligence trail…', action: () => {} }]);
-  await runInlineProgress('Leaving Velra\'syl together…', 4000);
-  const r = _romance('vorath');
-  addStory('The trail leads outside Velra\'syl — the first time Vorath has left Naradreth in years. He handles this by being very precise about logistics and saying nothing about how strange it feels.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Perception');
-  if (tier >= 3) {
-    addStory('You notice he\'s different outside the city — less managed, less careful. Not relaxed, exactly. Just slightly less constructed. You don\'t comment on it.');
-    _romanceTrust('vorath', 10);
-  } else {
-    addStory('The travel is efficient. You find the meeting location — already scheduled, already in motion.');
-    _romanceTrust('vorath', 5);
-  }
-  r.questPhase = 6;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _vorathEratrid() {
-  _buildWheel([{ label: '⏳ The meeting…', action: () => {} }]);
-  await runInlineProgress('Arriving at the appointed place…', 3000);
-  const r = _romance('vorath');
-  addStory('The figure behind the intelligence flow is an older elf named Eratrid — not affiliated with any Great House, not an enemy of Naradreth in any conventional sense. They don\'t run when Vorath and you confront them. They\'ve known this was coming.');
-  await waitForEnter();
-  addStory('"I\'ve been doing this for three years," Eratrid says. "I\'ve applied pressure from both sides — precisely, calculatedly — because I believe the houses will never resolve this war on their own, and people I loved have already died waiting for them to."');
-  addStory('"My methods have caused deaths I didn\'t intend," they continue. "I don\'t fully know how many. I\'m not going to pretend otherwise."');
-  await waitForEnter();
-  addStory('Vorath listens to all of this. He says nothing for a long time. Then: "You believe you\'re right."');
-  addStory('"I believe I\'m trying something that might work," Eratrid says. "I\'m not certain of being right."');
-  await waitForEnter();
-  _buildWheel([
-    { label: '⚖️ Expose Eratrid to the Houses', action: async () => {
-      await runInlineProgress('Reporting to the Great Houses…', 3000);
-      addStory('The information goes to a Great House that benefits specifically from Eratrid\'s exposure. Eratrid will likely be executed. The civil war continues on its original trajectory.');
-      addStory('Vorath finds this outcome deeply unsatisfying. He completes the action and says nothing further about it.');
-      r.flags.vorathResolution = 'exposed';
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🛑 Force Eratrid to stop', action: async () => {
-      await runInlineProgress('Establishing terms…', 2500);
-      addStory('Eratrid agrees to withdraw. The information flow ends. The civil war continues without external manipulation — on its own terrible timeline. Eratrid is quietly devastated. They believe stopping means the war goes on longer.');
-      addStory('Vorath looks at them. "We don\'t get to decide that other people\'s deaths are an acceptable cost," he says. He believes this. He also looks like someone who isn\'t certain.');
-      r.flags.vorathResolution = 'stopped';
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🤝 Give Eratrid a chance', action: async () => {
-      addStory('Vorath argues — or you do — that the goal isn\'t wrong, only the method. Eratrid has access and knowledge that could still end the war, but there are better ways to use it. Legitimate ways. Dangerous ones.');
-      addStory('Eratrid is silent for a long time. "That\'s harder," they say finally. "I\'m willing." They look at Vorath. "You\'ll have to trust me."');
-      addStory('"No," Vorath says. "But I\'ll give you the opportunity to earn it."');
-      addStory('This costs Vorath something visible. He chose generosity over certainty. He will think about it for a long time.');
-      _romanceTrust('vorath', 15);
-      r.flags.vorathResolution = 'chance';
-      r.flags.eratridActive = true;
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _vorathMonogamyScene() {
-  const r = _romance('vorath');
-  if (r.conflictFired) return;
-  r.conflictFired = true;
-  r.romancePath = false;
-  addStory('A note arrives. Brief. Precise. No recrimination.');
-  addStory('"I will not be in further contact. I wish you well. — V."');
-  await waitForEnter();
-  addStory('If you seek him out, he is polite and distant and completely unreachable in any meaningful sense. He has not stopped being sincere. He has simply closed a door with the same care he uses for everything.');
-}
-
-// ── 13.6.10 · LORIEN VETH ──────────────────────────────────────
-
-async function _checkLorienFallbackTrigger(dk) {
-  const r = _romance('lorien');
-  if (r.met) return;
-  const herbStolen = (player.quests?.the_slow_becoming?.flags?.herb_stolen) ||
-                     (player.questFlags?.the_slow_becoming?.herb_stolen);
-  if (!herbStolen) return;
-  if (Math.random() > 0.25) return;
-  await _meetLorienFallback();
-}
-
-function _getLorienWheelOptions() {
-  const r = _romance('lorien');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 7) {
-    const label = r.romancePath ? '🌱 Lorien [♥]' : '🌱 Lorien';
-    return [{ label, action: () => _showLorienWheel() }];
-  }
-  return [];
-}
-
-async function _meetLorienFavor() {
-  const r = _romance('lorien');
-  if (r.met) return;
-  r.met = true;
-  r.questPhase = 1;
-  r.flags.metViaSarsett = true;
-  addStory('The garden keeper at the Grand Gardens of Sivanrift doesn\'t look up when you approach. He\'s narrating something about the root density of a nearby bed to himself, quietly.');
-  addStory('When he does look up, he looks at you with unhurried attention. "You\'re here about the east beds," he says. It isn\'t quite a question. "Lorien. What can I do for you?"');
-  await waitForEnter();
-  _buildWheel([
-    { label: '📋 Explain the favor needed', action: async () => {
-      addStory('He listens without interrupting, then goes quiet in a way that suggests he\'s deciding something. "I\'ll give you what you need," he says. "In exchange for a morning\'s help here. There\'s a vine that\'s gotten into the western wall and I\'d rather have two sets of hands."');
-      addStory('"That\'s the whole trade," he adds, in case you were expecting conditions.');
-      await waitForEnter();
-      _romanceTrust('lorien', 8);
-      r.flags.agreedToFavor = true;
-      _goBack();
-    }},
-    { label: '🌿 Ask about the garden first', action: async () => {
-      addStory('His entire manner shifts — not warmer, exactly, but more present. He tells you three things about the east beds in the time it would take most people to say one. By the third thing he\'s moved closer, still talking, pointing at something you can\'t quite see yet.');
-      addStory('"You actually want to know," he says, not quite surprised. "Good. The trade for the herb is a morning\'s work. Fair?"');
-      await waitForEnter();
-      _romanceTrust('lorien', 12);
-      r.flags.agreedToFavor = true;
-      _goBack();
-    }},
-  ]);
-}
-
-async function _meetLorienFallback() {
-  const r = _romance('lorien');
-  if (r.met) return;
-  r.met = true;
-  r.questPhase = 1;
-  r.flags.metViaFallback = true;
-  addStory('A message reaches you through an innkeeper — or a guard, or a traveler who knows you by description. It\'s from the Grand Gardens of Sivanrift. The garden keeper is trying to find out who disturbed the east beds weeks ago.');
-  addStory('The message is not an accusation. It\'s curiosity. "I\'m not interested in consequences. I\'m interested in what you needed it for."');
-  await waitForEnter();
-  addStory('You find Lorien in the gardens. He doesn\'t make a scene. He just asks.');
-  _buildWheel([
-    { label: '✅ Tell him the truth', action: async () => {
-      addStory('He listens. He asks one follow-up question. Then: "Thank you for coming. You could have ignored the message." He seems genuinely appreciative of the choice.');
-      await waitForEnter();
-      _romanceTrust('lorien', 10);
-      r.flags.toldTruth = true;
-      _goBack();
-    }},
-    { label: '🤷 Tell him part of it', action: async () => {
-      addStory('He listens. He seems to understand that part of it is what you\'re giving. "All right," he says. "That\'s enough." He doesn\'t press further.');
-      await waitForEnter();
-      _romanceTrust('lorien', 6);
-      _goBack();
-    }},
-  ]);
-}
-
-async function _showLorienWheel() {
-  const r = _romance('lorien');
-  const opts = [];
-  if (r.questPhase === 1 && r.trustLevel >= 6) opts.push({ label: '🌱 The unusual plant', action: () => _lorienObservation() });
-  else if (r.questPhase === 1) opts.push({ label: '🌿 Spend time in the garden', action: async () => {
-    addStory('He hands you something to do without being asked. You work alongside him for a while. He narrates the garden continuously, to himself, to you, to whatever he\'s attending to. It\'s companionable in an unusual way.');
-    await waitForEnter();
-    _romanceTrust('lorien', 4);
-    _goBack();
-  }});
-  if (r.questPhase === 2) opts.push({ label: '📓 The notes are changing', action: () => _lorienSpread() });
-  if (r.questPhase === 3) opts.push({ label: '🌿 Follow the roots', action: () => _lorienSource() });
-  if (r.questPhase === 4) opts.push({ label: '🏠 The buried chamber', action: () => _lorienChamber() });
-  if (r.questPhase === 5) opts.push({ label: '💬 Attempt communication', action: () => _lorienCommunicate() });
-  if (r.questPhase === 6) opts.push({ label: '⚖️ What to do with it', action: () => _lorienDecision() });
-  if (_isRomanceAvailable('lorien') && r.trustLevel >= 20 && r.questPhase >= 2 && !r.romancePath) {
-    opts.push({ label: '❤️ Tell him what you think', action: async () => {
-      _startRomancePath('lorien');
-      addStory('He stops what he\'s doing and actually turns to face you, which is rarer than it sounds. "I have plenty of attention to give," he says. "I don\'t expect yours to be the only kind I receive, and I won\'t offer to be yours. Does that work for you?"');
-      addStory('He means this as an honest disclosure. It\'s strangely reassuring.');
-      await waitForEnter();
-      _romanceTrust('lorien', 8);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Lorien');
-}
-
-async function _lorienObservation() {
-  _buildWheel([{ label: '⏳ He shows you something unusual…', action: () => {} }]);
-  await runInlineProgress('Demonstrating the plant\'s response…', 3000);
-  const r = _romance('lorien');
-  addStory('A plant with no record in any botanical catalogue has threaded itself through the root systems of the established garden beds without killing them. Lorien has three weeks of careful notes. He demonstrates: speaking near it produces a slow, visible movement toward the voice.');
-  await waitForEnter();
-  addStory('"It\'s been doing this since I noticed it," he says. "I\'m starting to think it noticed me first." He says this as a factual observation, though the implication is remarkable.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Mysticism');
-  if (tier >= 3) {
-    addStory('Your reading suggests this movement isn\'t simple phototropism or response to warmth — it\'s specifically responsive to voice frequencies, consistently and selectively.');
-    addStory('"That\'s what I thought," he says, "but I wanted another person to see it first."');
-    _romanceTrust('lorien', 10);
-  } else {
-    addStory('You can\'t explain it by any natural mechanism you know. He nods. "Neither can I," he says. "I thought you should see it."');
-    _romanceTrust('lorien', 5);
-  }
-  r.questPhase = 2;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _lorienSpread() {
-  _buildWheel([{ label: '⏳ Comparing the notes…', action: () => {} }]);
-  await runInlineProgress('Looking at the original and current records…', 3000);
-  const r = _romance('lorien');
-  addStory('Over the following days, the plant extends further — not aggressively, persistently, always toward areas where people tend to gather. Lorien shows you his field notes and then the current notebook, side by side.');
-  addStory('"Words missing," he says. "Observations slightly rephrased. Not dramatically." He\'s been a meticulous recorder for twenty years. "I\'m not misremembering," he adds. "I know what I wrote."');
-  await waitForEnter();
-  addStory('Something has been altering his notes. Something that reads.');
-  _romanceTrust('lorien', 8);
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _lorienSource() {
-  _buildWheel([{ label: '⏳ Following the root system…', action: () => {} }]);
-  await runInlineProgress('Tracing the plant to its origin…', 4000);
-  const r = _romance('lorien');
-  addStory('The plant traces to a root system that runs beneath the garden\'s oldest section and out through the wall — outside entirely. Following it into the Sivanrift countryside leads to an old location, marked on no map. The ground is unusual. Things grow too fast, then stop.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Herbalism');
-  if (tier >= 3) {
-    addStory('The root system here is ancient — far older than the gardens, older than the city itself. Not a foreign invader. A foundation. The garden was built on top of this.');
-    addStory('"Oh," Lorien says, quietly. He\'s putting something together.');
-    _romanceTrust('lorien', 8);
-  } else {
-    addStory('Lorien understands what he\'s seeing before you do. He explains it as he works it out, still moving, still following the roots deeper.');
-    _romanceTrust('lorien', 4);
-  }
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _lorienChamber() {
-  _buildWheel([{ label: '⏳ The grown chamber…', action: () => {} }]);
-  await runInlineProgress('Following the roots into the earth…', 4000);
-  const r = _romance('lorien');
-  addStory('Below the old location, accessible by following the root system down: a chamber. Not manmade — grown. The walls are compressed root and soil, shaped with deliberate precision. Old inscriptions — not elven, predating elven presence in Sivanrift.');
-  addStory('The plant is everywhere in here. Dense. Listening.');
-  await waitForEnter();
-  addStory('Lorien reads an inscription aloud without being told to. The chamber hums. He looks at the walls, then at you. "It\'s been waiting for us to find it," he says. "Or something like us."');
-  _romanceTrust('lorien', 8);
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _lorienCommunicate() {
-  _buildWheel([{ label: '⏳ The patient attempt…', action: () => {} }]);
-  await runInlineProgress('Testing patterns of sound and response…', 5000);
-  const r = _romance('lorien');
-  addStory('Lorien is systematic about it — patterns, repeated sounds, responses to responses. You assist. The plant — the entire organism, as it becomes clear the garden beds are a single growing thing — responds to specific sequences. Not immediately. Slowly. Deliberately.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Mysticism');
-  if (tier >= 4) {
-    addStory('A pattern emerges in the responses — not language, but structure. Something like memory. Something like trying to surface a thought that has been forming for a very long time.');
-    addStory('"It\'s been trying to communicate since it noticed the gardens were occupied," Lorien says. "That\'s been happening for longer than the gardens have existed."');
-    _romanceTrust('lorien', 15);
-  } else {
-    addStory('The responses are real but you can\'t find a pattern you can replicate reliably. Lorien keeps working. "We\'re not done," he says. "We\'re just at the beginning."');
-    _romanceTrust('lorien', 8);
-  }
-  r.questPhase = 6;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _lorienDecision() {
-  const r = _romance('lorien');
-  addStory('Three options. Lorien prefers one of them but won\'t say so directly.');
-  _buildWheel([
-    { label: '🏛️ Tell the garden council', action: async () => {
-      await runInlineProgress('Reporting to the council…', 3000);
-      addStory('The council orders the organism removed from the garden beds as a potential threat to the established plants. It doesn\'t die — the root system outside continues. But the garden connection is severed.');
-      addStory('Lorien tends the garden afterward as he always has. He doesn\'t talk about how it feels. He has a way of not talking about things that makes you aware he\'s not talking about them.');
-      _romanceTrust('lorien', 5);
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '📓 Document quietly — leave it be', action: async () => {
-      addStory('The organism stays. It continues to grow, slowly, within understood bounds. Lorien continues working with it — adding to his notes, refining his understanding of its patterns.');
-      addStory('"There\'s no urgency here," he says. "It\'s been waiting long enough. We can afford to understand it properly." He seems content with the pace of this. He is someone who is comfortable with patient things.');
-      _romanceTrust('lorien', 10);
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🔬 Find a Mysticism scholar', action: async () => {
-      addStory('Finding a scholar willing to come — with the right expertise and sufficient reputation to take this seriously — is its own task. Lorien begins drafting letters.');
-      addStory('"This is the right answer," he says, with the certainty of someone who has been thinking about it for a while. "It deserves someone who can actually read it."');
-      _romanceTrust('lorien', 12);
-      r.questPhase = 7;
-      r.questComplete = true;
-      r.flags.seekingScholar = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-// ── 13.6.11 · BRYNN IRONSTEP ───────────────────────────────────
-
-async function _checkBrynnTravelTrigger(dk) {
-  const r = _romance('brynn');
-  if (r.met) return;
-  if (dk !== 'Wistravael') return;
-  if (Math.random() > 0.65) return;
-  await _meetBrynn();
-}
-
-async function _meetBrynn() {
-  const r = _romance('brynn');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('The Celestial Observatory sits on the highest accessible peak in Wistravael. A woman is there when you arrive, tracking something through an instrument and talking quietly to herself about arc trajectories. She doesn\'t fully register you for a moment.');
-  addStory('Then she turns. "Have you been at altitude for the last three nights?" she asks, without preamble. "Did you see anything moving northeast of the Veil Stars?"');
-  addStory('The question is entirely genuine. Her name is Brynn.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '⭐ Describe what you saw', action: async () => {
-      addStory('She listens with a quality of attention you don\'t often see — not polite attention, not patience, but someone actually using what you\'re saying as data. She asks two follow-up questions. She writes something down.');
-      addStory('"That matches," she says. "That matches almost exactly." She looks satisfied, and then immediately looks at you differently, like you\'ve become a more interesting data point.');
-      await waitForEnter();
-      _romanceTrust('brynn', 10);
-      r.flags.providedWitness = true;
-      _goBack();
-    }},
-    { label: '🤷 You weren\'t watching the sky', action: async () => {
-      addStory('"That\'s fine," she says, without apparent disappointment. "Most people aren\'t." She refocuses on her instrument, then glances back. "You came up here for the view? What do you see when you look up?"');
-      await waitForEnter();
-      _romanceTrust('brynn', 4);
-      _goBack();
-    }},
-    { label: '🔭 Ask what she\'s tracking', action: async () => {
-      addStory('She explains — at some length, efficiently, with a complete lack of condescension. Something crossed the sky four months ago in a way that objects don\'t. She\'s been working backward from observations since. The energy of someone with a good problem they haven\'t solved yet.');
-      await waitForEnter();
-      _romanceTrust('brynn', 7);
-      r.flags.expressedInterest = true;
-      _goBack();
-    }},
-  ]);
-}
-
-function _getBrynnWheelOptions() {
-  const r = _romance('brynn');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 7) {
-    const label = r.romancePath ? '⭐ Brynn [♥]' : '⭐ Brynn';
-    return [{ label, action: () => _showBrynnWheel() }];
-  }
-  return [];
-}
-
-async function _showBrynnWheel() {
-  const r = _romance('brynn');
-  const opts = [];
-  if (r.questPhase === 1 && r.trustLevel >= 7) opts.push({ label: '🗺️ See the calculations', action: () => _brynnCalculations() });
-  else if (r.questPhase === 1) opts.push({ label: '🔭 Visit the Observatory', action: async () => {
-    addStory('She\'s there, as she almost always is. You watch her work for a while before she notices you. She doesn\'t mind. "You can look through this if you want," she says, gesturing at an instrument. "Tell me what you see."');
-    await waitForEnter();
-    _romanceTrust('brynn', 4);
-    _goBack();
-  }});
-  if (r.questPhase === 2) opts.push({ label: '🚶 Make the journey', action: () => _brynnJourney() });
-  if (r.questPhase === 3) opts.push({ label: '🌑 The landing site', action: () => _brynnLandingSite() });
-  if (r.questPhase === 4) opts.push({ label: '👥 Others arrive', action: () => _brynnOthersArrive() });
-  if (r.questPhase === 5) opts.push({ label: '🔊 What the signal does', action: () => _brynnSignal() });
-  if (r.questPhase === 6) opts.push({ label: '⚖️ The decision', action: () => _brynnDecision() });
-  if (_isRomanceAvailable('brynn') && r.trustLevel >= 20 && r.questPhase >= 2 && !r.romancePath) {
-    opts.push({ label: '❤️ Say something you mean', action: async () => {
-      _startRomancePath('brynn');
-      addStory('"I\'m not asking for your whole attention," she says immediately. "I have a sky full of things that deserve mine." She pauses. "But I\'m glad you\'re here." She means both things equally and without contradiction.');
-      await waitForEnter();
-      _romanceTrust('brynn', 8);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Brynn');
-}
-
-async function _brynnCalculations() {
-  _buildWheel([{ label: '⏳ She shows you the charts…', action: () => {} }]);
-  await runInlineProgress('Poring over star charts and trajectory models…', 3500);
-  const r = _romance('brynn');
-  addStory('Pages of star charts, trajectory models, a map with a marked landing site three days\' travel away. She\'s verified it twice. She\'s confident. "Not a meteor," she says. "The trajectory was wrong. The slowdown was controlled."');
-  await waitForEnter();
-  addStory('"I haven\'t gone because I don\'t know what I\'ll find," she says. "That\'s the first time that\'s stopped me." She says this with honest self-awareness. "Will you come with me? Not as protection. As a witness."');
-  await waitForEnter();
-  _buildWheel([
-    { label: '✅ Yes, I\'ll come', action: async () => {
-      _romanceTrust('brynn', 10);
-      addStory('"Good," she says. She starts folding the charts.');
-      r.questPhase = 2;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _brynnJourney() {
-  _buildWheel([{ label: '⏳ Three days of travel…', action: () => {} }]);
-  await runInlineProgress('Three days through the Wistravael highlands…', 5000);
-  const r = _romance('brynn');
-  addStory('Three days of travel. She talks a lot when she\'s interested in something, goes quiet when she\'s thinking, and occasionally stops walking to look at something in the landscape — a crystal formation in the rock, the way water moves around a particular stone.');
-  addStory('"You\'ve been to a lot of places," she says, on the second night. "What\'s the strangest thing you\'ve seen?"');
-  await waitForEnter();
-  const tier = await performSkillCheck('Persuasion', 0, 'telling an impressive story');
-  if (tier >= 3) {
-    addStory('Your answer surprises her — which takes something. She asks three questions about it. She adds it to her mental catalogue and visibly cross-references it against things she already knows.');
-    _romanceTrust('brynn', 10);
-  } else {
-    addStory('Your answer interests her. She adds it to a mental catalogue she seems to be maintaining all the time, alongside everything else.');
-    _romanceTrust('brynn', 5);
-  }
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _brynnLandingSite() {
-  _buildWheel([{ label: '⏳ The impact site…', action: () => {} }]);
-  await runInlineProgress('Approaching the crater…', 3000);
-  const r = _romance('brynn');
-  addStory('The impact site is real — a crater, still faintly warm at the center. The vegetation around it was pushed outward. At the center: an object. Not a rock. Geometrically precise shapes, materials that Brynn doesn\'t recognize, markings that aren\'t language but feel like language.');
-  await waitForEnter();
-  addStory('It\'s intact. When Brynn touches it, it produces a sound — a single sustained tone.');
-  addStory('She looks at you. She doesn\'t need to say what she\'s thinking. Her face is doing it for her, and for once she isn\'t managing it.');
-  _romanceTrust('brynn', 10);
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _brynnOthersArrive() {
-  _buildWheel([{ label: '⏳ Word has spread…', action: () => {} }]);
-  await runInlineProgress('Unexpected arrivals at the crater…', 3000);
-  const r = _romance('brynn');
-  addStory('Word of the crater has reached a nearby Wistravael military post. A representative arrives to assess strategic value. Separately, a scholar of ancient Wistravael history arrives — the markings on the object match something in a text she\'s been studying for thirty years.');
-  addStory('Three parties now: the military, the scholar, and Brynn. Their interests are not compatible.');
-  await waitForEnter();
-  addStory('"We need to understand it before either of them takes it," Brynn says. "I need more time." She looks at you. "Can you buy it?"');
-  await waitForEnter();
-  const tier = await performSkillCheck('Persuasion');
-  if (tier >= 3) {
-    addStory('You negotiate a window — a few days for preliminary analysis before any decisions are made. The military is skeptical. The scholar is grateful. Brynn uses every minute.');
-    _romanceTrust('brynn', 10);
-    r.flags.boughtTime = true;
-  } else {
-    addStory('The window is shorter than you\'d hoped — a day, maybe two. Brynn works without sleeping.');
-    _romanceTrust('brynn', 5);
-    r.flags.boughtTime = true;
-  }
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _brynnSignal() {
-  _buildWheel([{ label: '⏳ Testing the tone…', action: () => {} }]);
-  await runInlineProgress('Studying the object\'s response…', 4000);
-  const r = _romance('brynn');
-  addStory('With the scholar\'s help and Brynn\'s astronomical knowledge: the object is not a weapon and not a vessel. Something like a marker — a signal left by something that passed through this sky a very long time ago.');
-  await waitForEnter();
-  addStory('The tone the object produces, played back at a specific frequency, generates a response. Something is receiving it. Not from here. From a direction Brynn points to without hesitation.');
-  addStory('"Something out there is listening," she says. She says this the way she says everything extraordinary: like a fact that simply needs to be incorporated.');
-  _romanceTrust('brynn', 12);
-  r.questPhase = 6;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _brynnDecision() {
-  const r = _romance('brynn');
-  addStory('The military wants to secure the object. The scholar wants to study it in a controlled context. Brynn wants to follow the signal. These things are not compatible. Someone has to give.');
-  _buildWheel([
-    { label: '🔒 Military secures it', action: async () => {
-      await runInlineProgress('Ceding control…', 2500);
-      addStory('The signal is cut off when the military takes the object to a secure location. Brynn doesn\'t make a scene. She goes back to the Observatory. She is now watching the sky for something specific.');
-      addStory('"It knows we\'re here now," she says. "That\'s already changed something."');
-      _romanceTrust('brynn', 5);
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🔬 Scholar studies it', action: async () => {
-      await runInlineProgress('Establishing academic control…', 3000);
-      addStory('The signal continues in a controlled academic context. Brynn collaborates with the scholar. Progress is slow, documented, real.');
-      addStory('"This is right," Brynn says. "Slowly is fine. We have time." She seems uncertain whether this is true, but committed to believing it.');
-      _romanceTrust('brynn', 10);
-      r.questPhase = 7;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '📡 Follow the signal', action: async () => {
-      addStory('Brynn\'s preferred outcome. Finding what is receiving the signal — whatever it is, wherever it is — requires another journey. Brynn begins planning it the same day.');
-      addStory('"I know this is a significant thing to agree to," she says. "I\'m agreeing to it anyway."');
-      _romanceTrust('brynn', 15);
-      r.questPhase = 7;
-      r.questComplete = true;
-      r.flags.followSignal = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-// ── 13.6.12 · TORMUND GELDRAS ──────────────────────────────────
-
-async function _checkTormundTravelTrigger(dk) {
-  const r = _romance('tormund');
-  if (r.met) return;
-  if (dk !== 'Feldarún') return;
-  if (Math.random() > 0.65) return;
-  await _meetTormund();
-}
-
-async function _meetTormund() {
-  const r = _romance('tormund');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('The Ironbell Forge in Feldarún operates at a level of quality you can assess before you\'ve said a word. The work on display is not decorative. Everything here is functional and excellent.');
-  addStory('The smith who comes out to meet you assesses what you\'ve brought or what you want with the detached efficiency of someone who has handled every quality of craftsmanship and knows exactly where theirs ranks. He quotes a price and a timeline. He doesn\'t negotiate.');
-  addStory('"It\'s already fair," he says, if you try. His name is Tormund.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '✅ Accept his terms', action: async () => {
-      _romanceTrust('tormund', 3);
-      addStory('He nods. He goes back to work. He will have what you need when he said he would.');
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🎯 Specify something precise', action: async () => {
-      addStory('His manner shifts. He looks at you properly for the first time — not the customer-assessment look, but something more interested. He asks two questions about what you want and why. He seems to find the specificity worthwhile.');
-      await waitForEnter();
-      _romanceTrust('tormund', 8);
-      r.flags.metWithSpec = true;
-      _goBack();
-    }},
-    { label: '👁️ Notice the empty display case', action: async () => {
-      addStory('There\'s a glass case near the back of the forge — not decorative glass, proper display glass — that\'s empty. Recently empty. You can see where something rested.');
-      addStory('He notices you looking. "Theft," he says. "Three weeks ago." He says nothing else.');
-      await waitForEnter();
-      _romanceTrust('tormund', 5);
-      r.flags.noticedCase = true;
-      _goBack();
-    }},
-  ]);
-}
-
-function _getTormundWheelOptions() {
-  const r = _romance('tormund');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 7) {
-    const label = r.romancePath ? '⚒️ Tormund [♥]' : '⚒️ Tormund';
-    return [{ label, action: () => _showTormundWheel() }];
-  }
-  return [];
-}
-
-async function _showTormundWheel() {
-  const r = _romance('tormund');
-  const opts = [];
-  if (r.questPhase === 1 && (r.flags.noticedCase || r.trustLevel >= 5)) {
-    opts.push({ label: '🔲 The empty case', action: () => _tormundEmptyCase() });
-  } else if (r.questPhase === 1) {
-    opts.push({ label: '⚒️ Return to the forge', action: async () => {
-      addStory('He\'s working when you arrive. He acknowledges you with a nod and continues. You can watch or help, if you have something useful to offer. He doesn\'t turn away help that\'s actually useful.');
-      await waitForEnter();
-      _romanceTrust('tormund', 3);
-      _goBack();
-    }});
-  }
-  if (r.questPhase === 2) opts.push({ label: '📖 The full story', action: () => _tormundFullStory() });
-  if (r.questPhase === 3) opts.push({ label: '🔍 Trace the theft', action: () => _tormundTraceTheft() });
-  if (r.questPhase === 4) opts.push({ label: '🤝 The collector', action: () => _tormundCollector() });
-  if (r.questPhase === 5) opts.push({ label: '⚖️ Recovery', action: () => _tormundRecovery() });
-  if (_isRomanceAvailable('tormund') && r.trustLevel >= 25 && r.questPhase >= 2 && !r.romancePath) {
-    opts.push({ label: '❤️ Tell him what you\'ve noticed', action: async () => {
-      _startRomancePath('tormund');
-      addStory('He stops working. He looks at you. He\'s not a man who rushes his responses. "I don\'t —" he starts. He doesn\'t finish that sentence. He starts again: "I don\'t do this often."');
-      addStory('This is a significant disclosure for him. You understand that.');
-      await waitForEnter();
-      _romanceTrust('tormund', 12);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Tormund');
-}
-
-async function _tormundEmptyCase() {
-  _buildWheel([{ label: '⏳ Pressing gently…', action: () => {} }]);
-  await runInlineProgress('A careful conversation…', 2500);
-  const r = _romance('tormund');
-  addStory('He resists once, then gives a little. "Something was taken. Three weeks ago. Nothing else." He picks up his hammer and holds it. "It wasn\'t taken because it was valuable."');
-  addStory('"It was taken because someone knew what it was," he says. "That\'s a different thing."');
-  await waitForEnter();
-  _buildWheel([
-    { label: '✋ Offer to help find it', action: async () => {
-      addStory('He looks at you for a long moment. "Why?" he asks. Not a challenge — he actually wants to know.');
-      addStory('Your answer matters. He makes his decision based on it.');
-      await waitForEnter();
-      _romanceTrust('tormund', 8);
-      r.questPhase = 2;
-      _goBack();
-    }},
-    { label: '💬 Ask what it was', action: async () => {
-      addStory('"A piece my mentor made," he says. "The last one. I finished it." He looks at the empty case. "He died before it was complete. I used his designs."');
-      addStory('The silence that follows is not empty. You offer to help. He considers it.');
-      await waitForEnter();
-      _romanceTrust('tormund', 10);
-      r.questPhase = 2;
-      _goBack();
-    }},
-  ]);
-}
-
-async function _tormundFullStory() {
-  _buildWheel([{ label: '⏳ The full picture…', action: () => {} }]);
-  await runInlineProgress('The story comes out across several visits…', 4000);
-  const r = _romance('tormund');
-  addStory('His mentor was among the most respected smiths in Feldarún\'s history. The piece — a weapon — was the last thing he designed, unfinished at his death. Tormund completed it from detailed notes. It\'s the only thing he\'s kept behind glass instead of for use.');
-  await waitForEnter();
-  addStory('"A collector took it," he says. "Not a thief in the common sense. Someone who knew what it was and chose it specifically." He\'s had three weeks to think about this and he\'s no less angry about it.');
-  await waitForEnter();
-  addStory('His mentor\'s history is connected to the collector\'s interest. The piece wasn\'t random.');
-  _romanceTrust('tormund', 8);
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _tormundTraceTheft() {
-  _buildWheel([{ label: '⏳ Following the chain…', action: () => {} }]);
-  await runInlineProgress('Asking the right questions in the right order…', 4000);
-  const r = _romance('tormund');
-  addStory('The piece went through a fence in Feldarún — not hard to identify. The fence passed it to a buyer outside the city. The buyer is a collector of rare dwarven craftwork who lives in another kingdom.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Persuasion');
-  if (tier >= 3) {
-    addStory('The right approach with the right people gets you a name and an approximate location. The collector doesn\'t advertise, but people who handle rare pieces know who buys them.');
-    _romanceTrust('tormund', 8);
-  } else {
-    addStory('It takes longer and costs more than you\'d like. But you find the collector\'s name. Tormund says nothing when you tell him, but something settles in his posture.');
-    _romanceTrust('tormund', 4);
-  }
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _tormundCollector() {
-  _buildWheel([{ label: '⏳ Meeting the collector…', action: () => {} }]);
-  await runInlineProgress('Traveling to the collector…', 4000);
-  const r = _romance('tormund');
-  addStory('The collector is not simple. Wealthy, obsessive, genuinely convinced that the piece belongs where people who understand it can appreciate it. He won\'t sell it back. He might trade for something of comparable rarity — or the player and Tormund can take it, which the collector has security against.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '🔄 Negotiate a trade', action: async () => {
-      addStory('The collector names something specific — another piece of craftwork with history, currently held somewhere inconvenient. Getting it is a secondary challenge.');
-      addStory('Tormund listens to the terms. "What he\'s asking for is real," he says. "It won\'t be easy." He looks at you. "But I\'d rather that than the other option."');
-      _romanceTrust('tormund', 8);
-      r.flags.tradeRoute = true;
-      r.questPhase = 5;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '⚖️ Find leverage', action: async () => {
-      const tier = await performSkillCheck('Perception');
-      if (tier >= 3) {
-        addStory('The collector\'s acquisition practices have gaps — pieces obtained in ways that wouldn\'t survive legal scrutiny. You have enough to make returning the piece preferable to the alternative.');
-        addStory('Tormund doesn\'t ask what the leverage was. The piece is coming home.');
-        _romanceTrust('tormund', 10);
-        r.flags.leverageRoute = true;
-        r.questPhase = 5;
-      } else {
-        addStory('The leverage angle requires more time and digging. You continue looking. Tormund waits, which he\'s better at than you expected.');
-        _romanceTrust('tormund', 4);
-      }
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _tormundRecovery() {
-  _buildWheel([{ label: '⏳ The recovery…', action: () => {} }]);
-  await runInlineProgress('Retrieving what was taken…', 4000);
-  const r = _romance('tormund');
-  if (r.flags.tradeRoute) {
-    addStory('The trade item comes from somewhere it wasn\'t easy to reach. You bring it to the collector. He examines it with the attention of someone who genuinely knows what they\'re looking at. He hands over the piece.');
-  } else if (r.flags.leverageRoute) {
-    addStory('The collector returns it to avoid complications. The piece changes hands without ceremony. He seems, if anything, impressed that you found what you found.');
-  }
-  await waitForEnter();
-  addStory('Tormund holds it. He doesn\'t inspect it — he knows it\'s undamaged. He just holds it for a moment. Then he sets it back behind the glass.');
-  addStory('"Thank you," he says. Without the gruffness he usually uses to say things. Just the two words.');
-  _romanceTrust('tormund', 15);
-  r.questPhase = 6;
-  r.questComplete = true;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _tormundMonogamyScene() {
-  const r = _romance('tormund');
-  if (r.conflictFired) return;
-  r.conflictFired = true;
-  r.romancePath = false;
-  addStory('He asks once. Directly, without anger, without performance: "Is there someone else?"');
-  await waitForEnter();
-  addStory('Whatever your answer is — or isn\'t — he says "Right" and goes back to work. He will still complete any outstanding commission for you. He is professional. He will never discuss the relationship again. No bitterness. No accommodation. Just closed.');
-}
-
-// ── 13.6.13 · DAGRI STONESONG ──────────────────────────────────
-
-async function _checkDagriTravelTrigger(dk) {
-  const r = _romance('dagri');
-  if (r.met) return;
-  if (dk !== 'Rendarost') return;
-  if (Math.random() > 0.65) return;
-  await _meetDagri();
-}
-
-async function _meetDagri() {
-  const r = _romance('dagri');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('She\'s in the middle of a song when you enter the tavern — one of the long ones, where each verse adds a new character and a new complication. The song has been going for a while. So has the audience\'s attention. She finishes.');
-  addStory('She sits down at a table near you as though continuing a conversation that hadn\'t started yet. "Where\'s the strangest place you\'ve slept?" she asks. Just like that. Her name is Dagri. You find this out shortly.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '💬 Answer her question', action: async () => {
-      addStory('She listens with complete engagement. When you finish, she tells you about somewhere she\'s slept that might be stranger. The competition is friendly and gets genuinely interesting.');
-      await waitForEnter();
-      _romanceTrust('dagri', 8);
-      r.flags.metConversing = true;
-      _goBack();
-    }},
-    { label: '🎵 Ask about the song', action: async () => {
-      addStory('"That one? That\'s about twelve people and none of them make the right choice. It goes on for another forty minutes if anyone wants it to." She looks at you. "You actually want to know about the song."');
-      addStory('She seems pleased by this. You learn her name is Dagri. You learn several other things about her in the next hour.');
-      await waitForEnter();
-      _romanceTrust('dagri', 10);
-      r.flags.metViaSong = true;
-      _goBack();
-    }},
-  ]);
-}
-
-function _getDagriWheelOptions() {
-  const r = _romance('dagri');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 7) {
-    const label = r.romancePath ? '🎵 Dagri [♥]' : '🎵 Dagri';
-    return [{ label, action: () => _showDagriWheel() }];
-  }
-  return [];
-}
-
-async function _showDagriWheel() {
-  const r = _romance('dagri');
-  const opts = [];
-  if (r.questPhase === 1 && r.trustLevel >= 8) opts.push({ label: '💬 She explains Darvek', action: () => _dagriExplains() });
-  else if (r.questPhase === 1) opts.push({ label: '🎵 Find Dagri', action: async () => {
-    addStory('She\'s somewhere in Rendarost doing something energetic. Finding her is easy — you follow the sound. She\'s glad to see you, in the frank way of someone who is glad about most things.');
-    await waitForEnter();
-    _romanceTrust('dagri', 4);
-    _goBack();
-  }});
-  if (r.questPhase === 2) opts.push({ label: '📍 Last known location', action: () => _dagriLastSeen() });
-  if (r.questPhase === 3) opts.push({ label: '⛰️ Into the mountains', action: () => _dagriMountains() });
-  if (r.questPhase === 4) opts.push({ label: '🔵 What their father found', action: () => _dagriFormation() });
-  if (r.questPhase === 5) opts.push({ label: '🔍 Finding Darvek', action: () => _dagriFindDarvek() });
-  if (r.questPhase === 6) opts.push({ label: '📖 What Darvek carries', action: () => _dagriWhatHasHe() });
-  if (_isRomanceAvailable('dagri') && r.trustLevel >= 20 && r.questPhase >= 2 && !r.romancePath) {
-    opts.push({ label: '❤️ Tell her', action: async () => {
-      _startRomancePath('dagri');
-      addStory('"I sing to everyone, love," she says. "That doesn\'t make the song less true." She\'s looking at you when she says it. You understand she means both things simultaneously and without contradiction.');
-      await waitForEnter();
-      _romanceTrust('dagri', 10);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Dagri');
-}
-
-async function _dagriExplains() {
-  _buildWheel([{ label: '⏳ She sits down properly and talks…', action: () => {} }]);
-  await runInlineProgress('Dagri speaks with careful control…', 3000);
-  const r = _romance('dagri');
-  addStory('A day or two later, she sits down and it\'s different — she\'s controlled, which is out of character, and she knows it. Her younger brother Darvek went into the Ironback Mountains six months ago to find something their father always talked about, and he didn\'t come back.');
-  await waitForEnter();
-  addStory('"He went alone because he thought I\'d try to talk him out of it," she says. "I would have. Not because it was a bad idea. Because I\'d have wanted to go too."');
-  await waitForEnter();
-  addStory('She asks for help without making it easy. She hates needing it and is doing it anyway.');
-  _romanceTrust('dagri', 10);
-  r.questPhase = 2;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _dagriLastSeen() {
-  _buildWheel([{ label: '⏳ Investigating the outpost…', action: () => {} }]);
-  await runInlineProgress('Gathering what she knows…', 3000);
-  const r = _romance('dagri');
-  addStory('The last time anyone saw Darvek: a mining outpost at the foot of the Ironback, where he bought supplies. Six months ago. He was confident, they say. He had a map he\'d drawn himself.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Persuasion');
-  if (tier >= 3) {
-    addStory('You\'re good with people in the way you need to be. An older miner remembers which direction Darvek headed, and what he asked about before leaving. It\'s more than you expected to get.');
-    _romanceTrust('dagri', 8);
-  } else {
-    addStory('You get the basics — direction, rough supplies, his mood. It\'s enough to start.');
-    _romanceTrust('dagri', 4);
-  }
-  r.questPhase = 3;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _dagriMountains() {
-  _buildWheel([{ label: '⏳ Into the Ironback…', action: () => {} }]);
-  await runInlineProgress('Traversing the mountains together…', 5000);
-  const r = _romance('dagri');
-  addStory('The Ironback are not welcoming terrain. Dagri is competent here in the way of someone who grew up in Rendarost — she contributes actively rather than following. She has stopped being controlled. She is focused and fast and you can tell this is more natural to her than the stillness was.');
-  await waitForEnter();
-  const tier = await performSkillCheck('Survival');
-  if (tier >= 3) {
-    addStory('Traces: a campsite, three days old at most. One of Darvek\'s tools at a waypoint — left deliberately, a marker. He was still moving with intention when he was here.');
-    _romanceTrust('dagri', 8);
-    r.flags.foundTraces = true;
-  } else {
-    addStory('The trail is hard. You find a trace eventually — a campsite, worn down by weather but real. He was here. He kept going.');
-    _romanceTrust('dagri', 4);
-    r.flags.foundTraces = true;
-  }
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _dagriFormation() {
-  _buildWheel([{ label: '⏳ The thing their father found…', action: () => {} }]);
-  await runInlineProgress('Reaching the formation…', 3500);
-  const r = _romance('dagri');
-  addStory('The formation is real. A configuration of rock that shouldn\'t exist at this altitude, around a space that feels artificially level. Markings on the stone. And their father\'s initials scratched into one face of it — he was here once, long ago.');
-  await waitForEnter();
-  addStory('Dagri touches the initials. She doesn\'t say anything. The initials are old. Her father has been dead for years.');
-  await waitForEnter();
-  addStory('Darvek spent time here. The traces around the formation suggest he went further, deeper, following something he found.');
-  _romanceTrust('dagri', 8);
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _dagriFindDarvek() {
-  _buildWheel([{ label: '⏳ Searching deeper…', action: () => {} }]);
-  await runInlineProgress('Going further into the mountain…', 5000);
-  const r = _romance('dagri');
-  const tier = await performSkillCheck('Tracking');
-  if (tier >= 4) {
-    addStory('The trail is clear enough to follow. Darvek went into a passage the formation partially conceals. Inside: a sheltered cave. He\'s there. Alive, rations low, a twisted ankle that slowed him enough to make leaving feel risky.');
-    addStory('Dagri gets there before you do. She says nothing. She sits down next to him.');
-    _romanceTrust('dagri', 12);
-    r.flags.darvekAlive = true;
-  } else {
-    addStory('The search is harder than you\'d like. Darvek is alive but in a worse state than you hoped — weeks in the cold, limited food. Getting him out is going to be a challenge. Dagri is already calculating it.');
-    _romanceTrust('dagri', 8);
-    r.flags.darvekAlive = true;
-    r.flags.darvekInjured = true;
-  }
-  r.questPhase = 6;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _dagriWhatHasHe() {
-  _buildWheel([{ label: '⏳ What Darvek found…', action: () => {} }]);
-  await runInlineProgress('Getting back and hearing the full story…', 4000);
-  const r = _romance('dagri');
-  if (r.flags.darvekInjured) {
-    addStory('Getting Darvek out takes effort. He\'s diminished — not broken, but not himself yet. Dagri doesn\'t say anything dramatic about this. She just makes sure he\'s out.');
-    await waitForEnter();
-  }
-  addStory('Once he\'s safe, Darvek talks. He found something in the passage beyond the formation — old, sealed, deliberately hidden. A relic from the family\'s ancestral history. Something a Rendarost ancestor found in this mountain long ago and sealed away because of what it was.');
-  await waitForEnter();
-  addStory('What exactly it is remains to be determined. Dagri is quiet for a moment. Then she begins a song — very quietly, almost to herself. You recognize the structure as a memorial form. It\'s not sad. It\'s for things that matter.');
-  await waitForEnter();
-  _romanceTrust('dagri', 10);
-  r.questPhase = 7;
-  r.questComplete = true;
-  _goBack();
-}
-
-// ── 13.6.14 · ALDRIC VARN ──────────────────────────────────────
-
-async function _checkAldricTravelTrigger(dcv) {
-  const r = _romance('aldric');
-  if (r.met) return;
-  if (dcv !== 'Brythford') return;
-  if (Math.random() > 0.65) return;
-  await _meetAldric();
-}
-
-async function _meetAldric() {
-  const r = _romance('aldric');
-  r.met = true;
-  r.questPhase = 1;
-  addStory('In the Brythford Civic Archive, a dwarf is in the middle of a formal disagreement with a senior archivist about access to a sealed vault. The disagreement is being conducted entirely in precise, complete sentences. The senior archivist wins on procedural grounds.');
-  addStory('The dwarf accepts this with visible effort, turns, sees you, and says — as though you were already acquainted — "Do you know anything about the Irondeep Catacombs?"');
-  addStory('His name is Aldric. He doesn\'t offer this yet; you\'ll find out shortly.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '✅ A little, yes', action: async () => {
-      addStory('His interest sharpens. "Good. I\'m going back down there and I\'d rather not go alone. I\'m a scholar, not a fighter." He pauses. "Aldric Varn. Rune-scholar. I\'m based here for the archive access. The catacombs are a day\'s travel."');
-      await waitForEnter();
-      _romanceTrust('aldric', 8);
-      r.flags.metWithKnowledge = true;
-      _goBack();
-    }},
-    { label: '❓ What is the Irondeep?', action: async () => {
-      addStory('He explains — concisely, without condescension, but also without simplification. Pre-settlement catacombs, runes that predate any known dwarven script by thousands of years, one previous authorized expedition that produced incomplete notes.');
-      addStory('"Aldric Varn," he says. "I\'m proposing we go together. I need someone who can keep me alive while I document it."');
-      await waitForEnter();
-      _romanceTrust('aldric', 6);
-      _goBack();
-    }},
-  ]);
-}
-
-function _getAldricWheelOptions() {
-  const r = _romance('aldric');
-  if (!r.met) return [];
-  if (r.questPhase >= 1 && r.questPhase < 8) {
-    const label = r.romancePath ? '🔤 Aldric [♥]' : '🔤 Aldric';
-    return [{ label, action: () => _showAldricWheel() }];
-  }
-  return [];
-}
-
-async function _showAldricWheel() {
-  const r = _romance('aldric');
-  const opts = [];
-  if (r.questPhase === 1) opts.push({ label: '📜 See the rubbings', action: () => _aldricRubbings() });
-  if (r.questPhase === 2) opts.push({ label: '🔒 The sealed vault', action: () => _aldricVault() });
-  if (r.questPhase === 3) opts.push({ label: '📖 The interrupted analysis', action: () => _aldricAnalysis() });
-  if (r.questPhase === 4) opts.push({ label: '🕳️ Into the Catacombs', action: () => _aldricDescent() });
-  if (r.questPhase === 5) opts.push({ label: '📝 The full inscription', action: () => _aldricInscription() });
-  if (r.questPhase === 6) opts.push({ label: '🚪 What reacts', action: () => _aldricReacts() });
-  if (r.questPhase === 7) opts.push({ label: '❓ The inner chamber', action: () => _aldricInnerChamber() });
-  if (_isRomanceAvailable('aldric') && r.trustLevel >= 25 && r.questPhase >= 3 && !r.romancePath) {
-    opts.push({ label: '❤️ Be honest with him', action: async () => {
-      _startRomancePath('aldric');
-      addStory('"I\'m not particularly good at sharing attention," he says. "Mine or anyone else\'s." He says this plainly, early, as information rather than a warning. "Does that work for you?"');
-      await waitForEnter();
-      _romanceTrust('aldric', 10);
-      _goBack();
-    }});
-  }
-  opts.push({ label: '← Back', action: () => _goBack(), isBack: true });
-  _buildWheel(opts, 'Aldric');
-}
-
-async function _aldricRubbings() {
-  _buildWheel([{ label: '⏳ He shows you the rubbings…', action: () => {} }]);
-  await runInlineProgress('Examining the paper rubbings…', 3000);
-  const r = _romance('aldric');
-  addStory('Paper rubbings taken during a previous authorized expedition: the runes are precise, formal, extensive. Not the work of carving a message in passing. Someone spent a long time making these. The space they\'re in is large — Aldric has seen perhaps a third of it.');
-  await waitForEnter();
-  const tier = await performSkillCheck('History');
-  if (tier >= 3) {
-    addStory('Your knowledge of pre-settlement history adds context: this script predates the earliest known dwarven expansion into this region by at least three millennia. Whatever made this predates dwarven civilization as recorded.');
-    addStory('"That\'s what I concluded," he says. "It\'s good to hear it from someone else."');
-    _romanceTrust('aldric', 10);
-  } else {
-    addStory('The runes don\'t match anything you know. Aldric doesn\'t expect them to — he\'s been in archives for years and found nothing either.');
-    _romanceTrust('aldric', 4);
-  }
-  r.questPhase = 2;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _aldricVault() {
-  const r = _romance('aldric');
-  addStory('The sealed vault contains the only existing academic analysis of the runes — sealed for two hundred years. The senior archivist won\'t grant access. The vault is sealed by administrative process, not physical lock. With the right approach, it\'s accessible.');
-  _buildWheel([
-    { label: '📋 Find the right paperwork', action: async () => {
-      await runInlineProgress('Navigating the archive bureaucracy…', 4000);
-      const tier = await performSkillCheck('Decrypting', 0, 'navigating archival bureaucracy');
-      if (tier >= 4) {
-        addStory('The right signature from the right authority — available if you know where to look and what to ask for. Aldric watches you work through this with the interest of someone who recognizes a particular kind of intelligence.');
-        addStory('"I wouldn\'t have thought of that," he says. He means it as a compliment.');
-        _romanceTrust('aldric', 12);
-      } else {
-        addStory('It takes longer and requires more creative interpretation of existing authority. Aldric contributes three ideas you wouldn\'t have had. Together it works.');
-        _romanceTrust('aldric', 7);
-      }
-      r.questPhase = 3;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🎭 Create a distraction', action: async () => {
-      await runInlineProgress('Working around the restriction…', 3000);
-      const tier = await performSkillCheck('Deception');
-      if (tier >= 3) {
-        addStory('The distraction is clean and effective. The vault is accessed while the relevant archivist is occupied elsewhere. Aldric moves with surprising efficiency once the opening exists.');
-        _romanceTrust('aldric', 8);
-      } else {
-        addStory('The distraction is imperfect but sufficient. You\'re not the most natural at this. Aldric covers the gap.');
-        _romanceTrust('aldric', 5);
-      }
-      r.questPhase = 3;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _aldricAnalysis() {
-  _buildWheel([{ label: '⏳ Reading the old analysis…', action: () => {} }]);
-  await runInlineProgress('Reading the two-hundred-year-old manuscript…', 3500);
-  const r = _romance('aldric');
-  addStory('The analysis is incomplete. The scholar who wrote it stopped mid-sentence. Her final notes say she was returning to the catacombs for further documentation.');
-  addStory('The vault was sealed shortly after. She didn\'t return.');
-  await waitForEnter();
-  addStory('Her partial translation: the runes aren\'t a language in the conventional sense. They are instructions. For what, she hadn\'t determined before she stopped writing.');
-  await waitForEnter();
-  addStory('Aldric reads this twice. He closes the manuscript. "We need to go back to the catacombs," he says. "Now."');
-  _romanceTrust('aldric', 8);
-  r.questPhase = 4;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _aldricDescent() {
-  _buildWheel([{ label: '⏳ The descent…', action: () => {} }]);
-  await runInlineProgress('Descending into the Irondeep…', 4000);
-  const r = _romance('aldric');
-  addStory('The catacombs are extensive, cold, and quiet in the specific way of places that have been undisturbed for a very long time. Aldric maps as they go, moving carefully, narrating observations to himself as he works.');
-  await waitForEnter();
-  addStory('The full chamber is larger than his previous notes suggested. The runes cover every surface — walls, floor, ceiling. Following the inscription sequence around the chamber, Aldric begins to understand the structure. "It\'s a record," he says. "An accounting. A list of things that existed and no longer do."');
-  _romanceTrust('aldric', 6);
-  r.questPhase = 5;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _aldricInscription() {
-  _buildWheel([{ label: '⏳ Reading the full accounting…', action: () => {} }]);
-  await runInlineProgress('Following the inscription sequence…', 5000);
-  const r = _romance('aldric');
-  const tier = await performSkillCheck('Mysticism');
-  if (tier >= 4) {
-    addStory('Working the sequence with Aldric, a pattern emerges: the runes record extinctions. Species, civilizations, ways of existing — catalogued with the precision of someone who understood they were watching the end of things and wanted the record to survive them.');
-    addStory('"Something made this," Aldric says, "that understood what was being lost." He says this quietly, like he\'s working out how large that thought is.');
-    _romanceTrust('aldric', 12);
-  } else {
-    addStory('Aldric leads the reading. You follow. By the end you have a partial understanding — a record of things that ended, a catalogue made by something that knew endings were coming.');
-    _romanceTrust('aldric', 6);
-  }
-  r.questPhase = 6;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _aldricReacts() {
-  _buildWheel([{ label: '⏳ Testing something…', action: () => {} }]);
-  await runInlineProgress('Reading aloud — and waiting…', 3500);
-  const r = _romance('aldric');
-  addStory('Aldric reads a section of the runes aloud. Stone shifts — not dramatically. Just enough. A passage opens that wasn\'t there before.');
-  await waitForEnter();
-  addStory('He looks at the passage. He looks at his notes. He looks at you. "This is what she found," he says. "The scholar who stopped writing." He takes a breath. "We should be careful."');
-  _romanceTrust('aldric', 8);
-  r.questPhase = 7;
-  await waitForEnter();
-  _goBack();
-}
-
-async function _aldricInnerChamber() {
-  _buildWheel([{ label: '⏳ Through the passage…', action: () => {} }]);
-  await runInlineProgress('Entering the inner chamber…', 4000);
-  const r = _romance('aldric');
-  addStory('Through the passage: another chamber. Something is here — not alive in any sense you immediately recognize, but present. Responding.');
-  await waitForEnter();
-  addStory('The runes in this chamber are different. More recent, relative to the others. And the two-hundred-year-old scholar\'s name is here — written in the same script she was trying to translate. This happened to her too. She came back. Whatever is here marked her. She didn\'t leave.');
-  await waitForEnter();
-  _buildWheel([
-    { label: '📝 Document and leave', action: async () => {
-      await runInlineProgress('Recording everything…', 4000);
-      addStory('Aldric records everything he can. Then they seal the passage behind them and leave.');
-      addStory('He spends the next year writing it up. He sends his findings to twelve different scholars. None of them believe him. He doesn\'t stop trying.');
-      _romanceTrust('aldric', 10);
-      r.questPhase = 8;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '💬 Attempt communication', action: async () => {
-      await runInlineProgress('Staying — and trying…', 5000);
-      addStory('They stay. They try. Whatever is here responds to being addressed, in ways that are not language but are unmistakably intentional. What is communicated is unclear and will take time to understand.');
-      addStory('This is the beginning of something. Aldric seems to understand this. He starts a new section in his notebook.');
-      _romanceTrust('aldric', 15);
-      r.questPhase = 8;
-      r.questComplete = true;
-      r.flags.communicating = true;
-      await waitForEnter();
-      _goBack();
-    }},
-    { label: '🔨 Destroy it', action: async () => {
-      await runInlineProgress('Making the hard choice…', 4000);
-      addStory('Something this old and this unknown is a risk. Some risks aren\'t worth taking. Aldric doesn\'t suggest this. He doesn\'t argue against it when you choose it. He helps you do what needs to be done.');
-      addStory('He is quiet about it for a long time after. He doesn\'t write about this particular part of what they found.');
-      _romanceTrust('aldric', 6);
-      r.questPhase = 8;
-      r.questComplete = true;
-      await waitForEnter();
-      _goBack();
-    }},
-  ]);
-}
-
-async function _aldricMonogamyScene() {
-  const r = _romance('aldric');
-  if (r.conflictFired) return;
-  r.conflictFired = true;
-  r.romancePath = false;
-  addStory('He tells you directly and without drama. "I thought I should tell you — I know. I\'m not angry. But I\'m stepping back from this."');
-  await waitForEnter();
-  addStory('He remains collegial. Professionally helpful. Available for any follow-up relevant to the catacombs or the research. He has removed himself from the romantic dimension of the relationship with the same precision he applies to everything else.');
 }
 
 	// ============================================================
@@ -21177,12 +16060,12 @@ window.PROFESSION_DATA = PROFESSION_DATA;
 
 // ── Culture data — stat modifiers and racial bonuses ─────────────────────
 const CULTURE_DATA = {
-  'Human':      { maxLife:100, maxStamina:50, maxMana:0,  bonusSkill:'Persuasion' },
-  'Elf':        { maxLife:90,  maxStamina:50, maxMana:70, bonusSkill:'Herbalism'  },
-  'Half-Elf':   { maxLife:95,  maxStamina:50, maxMana:55, bonusSkill:'Persuasion' },
-  'Dwarf':      { maxLife:120, maxStamina:65, maxMana:0,  bonusSkill:'Smithing'   },
-  'Half-Orc':   { maxLife:110, maxStamina:70, maxMana:25, bonusSkill:'Axes'       },
-  'Half-Goblin':{ maxLife:85,  maxStamina:65, maxMana:0,  bonusSkill:'Stealth'    },
+  'Human':      { maxLife:100, maxStamina:50, maxMana:50, bonusSkill:null,          bonusItem:null,          bonusGold:15 },
+  'Elf':        { maxLife:90,  maxStamina:50, maxMana:70, bonusSkill:'Herbalism',   bonusItem:'Herb Pouch',  bonusGold:0  },
+  'Half-Elf':   { maxLife:95,  maxStamina:50, maxMana:55, bonusSkill:'Persuasion',  bonusItem:null,          bonusGold:0  },
+  'Dwarf':      { maxLife:120, maxStamina:65, maxMana:30, bonusSkill:'Smithing',    bonusItem:'Iron Ingot',  bonusGold:0  },
+  'Goblin':     { maxLife:80,  maxStamina:70, maxMana:35, bonusSkill:'Thievery',    bonusItem:'Dagger',      bonusGold:0  },
+  'Half-Goblin':{ maxLife:85,  maxStamina:65, maxMana:40, bonusSkill:'Stealth',     bonusItem:'Dagger',      bonusGold:0  },
 };
 window.CULTURE_DATA = CULTURE_DATA;
 
@@ -21192,34 +16075,40 @@ const CULTURE_PROFESSIONS = {
   'Elf':        { Military:['Sentinel','Pathfinder'],    Commonfolk:['Hunter','Herbalist'],     Artisan:['Smith','Bowyer'],           Outlaw:['Oathbreaker','Shade'],      Scholar:['Lorekeeper','Healer'],       Arcane:['Mage','Enchanter']         },
   'Half-Elf':   { Military:['Scout','Sellsword'],        Commonfolk:['Wanderer','Forager'],     Artisan:['Smith','Merchant'],         Outlaw:['Shade','Drifter'],          Scholar:['Mediator','Healer'],         Arcane:['Mage','Cleric']            },
   'Dwarf':      { Military:['Ironguard','Delver'],       Commonfolk:['Miner','Brewer'],         Artisan:['Smith','Engraver'],         Outlaw:['Grudgebearer','Tunnelrat'], Scholar:['Chronicler','Healer'],       Arcane:['Enchanter','Cleric']       },
-  'Half-Orc':   { Military:['Sellsword','Raider'],        Commonfolk:['Hunter','Wanderer'],      Artisan:['Smith','Tinkerer'],         Outlaw:['Bandit','Cutthroat'],       Scholar:['Shaman','Healer'],          Arcane:['Hex Witch','Blightcaller'] },
+  'Goblin':     { Military:['Raider','Skulk'],           Commonfolk:['Scavenger','Trapper'],    Artisan:['Tinkerer','Peddler'],       Outlaw:['Cutpurse','Cutthroat'],     Scholar:['Shaman','Witch Doctor'],    Arcane:['Hex Witch','Blightcaller'] },
   'Half-Goblin':{ Military:['Sellsword','Scout'],        Commonfolk:['Hunter','Scavenger'],     Artisan:['Tinkerer','Merchant'],      Outlaw:['Bandit','Shade'],           Scholar:['Healer','Shaman'],           Arcane:['Alchemist','Hex Witch']    },
 };
 window.CULTURE_PROFESSIONS = CULTURE_PROFESSIONS;
 
 // ── Origin data ────────────────────────────────────────────────────────────
 const ORIGIN_DATA = {
-  noble:      { label:'Noble house',        skill:'Persuasion', trait:'Honorable',   item:['Fine Clothing',1],  gold:15 },
-  village:    { label:'Common village',     skill:'Herbalism',  trait:'Trustworthy', item:['Rations',2],        gold:0  },
-  wilderness: { label:'The wilderness',     skill:'Survival',   trait:'Resilient',   item:['Hunting Knife',1],  gold:0  },
-  port:       { label:'Port town',          skill:'Navigation', trait:'Cunning',     item:['Waterskin',1],      gold:5  },
-  mountain:   { label:'A mountain hold',    skill:'Smithing',   trait:'Determined',  item:['Torch',2],          gold:3  },
-  farmstead:  { label:'The farmsteads',     skill:'Foraging',   trait:'Patient',     item:['Rations',2],        gold:0  },
-  slums:      { label:'The slums',          skill:'Thievery',   trait:'Sneaky',      item:['Candle',3],         gold:3  },
-  monastery:  { label:'Monastic grounds',   skill:'Healing',    trait:'Wise',        item:['Herb Pouch',1],     gold:0  },
+  noble:      { desc: '+15 gold · Fine Clothing',           items: [['Fine Clothing',1]],               gold: 15 },
+  village:    { desc: '+Rations ×2 · Rope',                 items: [['Rations',2],['Rope',1]],          gold: 0  },
+  wilderness: { desc: '+Torch ×2 · Hunting Knife',          items: [['Torch',2],['Hunting Knife',1]],   gold: 0  },
+  port:       { desc: '+Rope · Waterskin · +5 gold',        items: [['Rope',1],['Waterskin',1]],        gold: 5  },
 };
 
 // ── Motivation data ────────────────────────────────────────────────────────
 const MOTIVATION_DATA = {
-  vengeance:  { label:'Seeking vengeance',       morality:-5, hope:-3  },
-  knowledge:  { label:'Pursuing knowledge',      morality: 0, hope: 5  },
-  law:        { label:'Running from the law',    morality:-3, hope:-5  },
-  honor:      { label:'Answering a call',        morality: 8, hope: 6  },
-  fortune:    { label:'Chasing fortune',         morality:-3, hope: 3  },
-  protect:    { label:'Protecting someone',      morality: 7, hope: 8  },
-  wanderlust: { label:'Wanderlust',              morality: 2, hope: 7  },
-  atonement:  { label:'Seeking atonement',       morality: 4, hope:-2  },
+  vengeance: { desc: '+1 level to primary combat skill',         bonus: 'combat'  },
+  knowledge: { desc: '+1 level to primary arcane/craft skill',   bonus: 'arcane'  },
+  law:        { desc: '+1 Stealth level',                        bonus: 'stealth' },
+  honor:      { desc: '+1 level to first skill',                 bonus: 'first'   },
+  fortune:    { desc: '+20 gold',                                bonus: 'gold',  gold: 20 },
 };
+
+// ── Helper: determine which skill gets a motivation bonus level ────────────
+function _motivationBoostedSkill(profSkills, motivationKey) {
+  if (!motivationKey || !MOTIVATION_DATA[motivationKey]) return null;
+  const bonus = MOTIVATION_DATA[motivationKey].bonus;
+  const COMBAT_SKILLS  = new Set(['Swordsmanship','Archery','Brawling']);
+  const ARCANE_SKILLS  = new Set(['Light Magic','Alchemy','Crafting','Smithing','Fletching']);
+  if (bonus === 'combat')  return profSkills.find(s => COMBAT_SKILLS.has(s))  || null;
+  if (bonus === 'arcane')  return profSkills.find(s => ARCANE_SKILLS.has(s))  || null;
+  if (bonus === 'stealth') return profSkills.includes('Stealth') ? 'Stealth'  : null;
+  if (bonus === 'first')   return profSkills[0] || null;
+  return null; // 'gold' bonus has no skill effect
+}
 
 // ── Populate profession select ─────────────────────────────────────────────
 const charModal   = document.getElementById('character-modal');
@@ -21287,35 +16176,35 @@ function updateCharPreview() {
     return;
   }
 
-  // Skills: primary profession skill only
-  const primarySkillPreview = profData.skills[0] || '—';
-  skillsEl.textContent = primarySkillPreview + ' (Lv 1)';
+  // Skills
+  const boostedSkill = _motivationBoostedSkill(profData.skills, motivSel.value);
+  skillsEl.innerHTML = profData.skills.map(s => {
+    const lv = (boostedSkill === s) ? 2 : 1;
+    return `${s} <span style="opacity:0.65">(Lv ${lv})</span>`;
+  }).join('<br>');
 
   // Trait
   traitEl.textContent = profData.trait;
 
-  // Items — profession (up to 3) + origin item
+  // Items — merge profession + origin items, sum duplicates
   const itemMap = new Map();
-  profData.items.slice(0, 3).forEach(([name, qty]) => {
+  const allItems = [...profData.items, ...(origData ? origData.items : [])];
+  allItems.forEach(([name, qty]) => {
     itemMap.set(name, (itemMap.get(name) || 0) + qty);
   });
-  if (origData && origData.item) {
-    const [oName, oQty] = origData.item;
-    itemMap.set(oName, (itemMap.get(oName) || 0) + oQty);
-  }
   itemsEl.innerHTML = [...itemMap.entries()]
     .map(([name, qty]) => qty > 1 ? `${name} ×${qty}` : name)
     .join('<br>');
 
-  // Gold — profession + origin
-  const totalGold = (profData.gold || 0) + (origData ? (origData.gold || 0) : 0);
+  // Gold
+  const totalGold = profData.gold
+    + (origData  ? origData.gold  : 0)
+    + (motivData && motivData.bonus === 'gold' ? (motivData.gold || 0) : 0);
   goldEl.textContent = `${totalGold} gp`;
 }
 
 // ── Create character ───────────────────────────────────────────────────────
 				createBtn.onclick = async () => {
-					// Read skip-tutorial preference before any validation
-					window.__enableTutorial = !document.getElementById('skip-tutorial-checkbox')?.checked;
 					const name = document.getElementById('char-name').value.trim();
 					const profKey = profSelect.value;
 					if (!name) {
@@ -21323,7 +16212,7 @@ function updateCharPreview() {
 						return;
 					}
 					if (!chosenGender) {
-						alert('Please select a body type.');
+						alert('Please select a gender.');
 						return;
 					}
 					if (!chosenCulture) {
@@ -21348,8 +16237,14 @@ function updateCharPreview() {
 					player.activeProfession = profKey;
 					player.socialClass      = PROFESSION_DATA[profKey]?.socialClass || '';
 
-					// Apply culture stat bonuses + 1 culture skill
+					// Apply skills
+					const boostedSkill = _motivationBoostedSkill(profData.skills, motivSel.value);
 					if (!player.skills) player.skills = {};
+					profData.skills.forEach(skillName => {
+						player.skills[skillName] = { level: (boostedSkill === skillName ? 2 : 1) };
+					});
+
+					// Apply culture stat bonuses
 					const cultData = CULTURE_DATA[chosenCulture];
 					if (cultData) {
 						player.maxLife    = cultData.maxLife;
@@ -21359,19 +16254,16 @@ function updateCharPreview() {
 						player.maxMana    = cultData.maxMana;
 						player.mana       = cultData.maxMana;
 						if (cultData.bonusSkill) {
-							player.skills[cultData.bonusSkill] = { level: 1, xp: 0, usageCount: 0 };
+							if (!player.skills[cultData.bonusSkill]) {
+								player.skills[cultData.bonusSkill] = { level: 1 };
+							} else {
+								player.skills[cultData.bonusSkill].level = Math.min(5, (player.skills[cultData.bonusSkill].level || 1) + 1);
+							}
 						}
+						if (cultData.bonusItem) addItem(cultData.bonusItem, 1);
 					}
 
-					// Apply profession: 1 primary skill + 1 trait + up to 3 items
-					const primarySkill = profData.skills[0];
-					if (primarySkill) {
-						if (player.skills[primarySkill]) {
-							player.skills[primarySkill].level = Math.min(5, (player.skills[primarySkill].level || 1) + 1);
-						} else {
-							player.skills[primarySkill] = { level: 1, xp: 0, usageCount: 0 };
-						}
-					}
+					// Apply trait
 					player.traits = [profData.trait];
 
 					// Apply starting recipes (silently — no per-recipe story spam at creation)
@@ -21380,32 +16272,15 @@ function updateCharPreview() {
 						if (!player.knownRecipes.includes(r)) player.knownRecipes.push(r);
 					});
 
-					// Apply profession items (up to 3)
-					const profItems = profData.items.slice(0, 3);
+					// Apply items — merge prof + origin, sum duplicates
 					const itemMap = new Map();
-					profItems.forEach(([iName, qty]) => {
+					const allItems = [...profData.items, ...(origData ? origData.items : [])];
+					allItems.forEach(([iName, qty]) => {
 						itemMap.set(iName, (itemMap.get(iName) || 0) + qty);
 					});
-
-					// Apply origin: 1 skill + 1 trait + 1 item
-					if (origData) {
-						if (origData.skill) {
-							if (player.skills[origData.skill]) {
-								player.skills[origData.skill].level = Math.min(5, (player.skills[origData.skill].level || 1) + 1);
-							} else {
-								player.skills[origData.skill] = { level: 1, xp: 0, usageCount: 0 };
-							}
-						}
-						if (origData.trait && !player.traits.includes(origData.trait)) {
-							player.traits.push(origData.trait);
-						}
-						if (origData.item) {
-							const [oName, oQty] = origData.item;
-							itemMap.set(oName, (itemMap.get(oName) || 0) + oQty);
-						}
-					}
-
-					itemMap.forEach((qty, iName) => { addItem(iName, qty); });
+					itemMap.forEach((qty, iName) => {
+						addItem(iName, qty);
+					});
 
 					// Every character starts with a waterskin (unless their profession already gives one)
 					if (!player.inventory['Waterskin'] && !player.inventory['Waterskin (Full)']) {
@@ -21470,66 +16345,14 @@ function updateCharPreview() {
 					  if (!player.equipped[_slot]) player.equipped[_slot] = clothingName;
 					});
 
-					// Apply gold: profession + origin
-					player.gold = (profData.gold || 0) + (origData ? (origData.gold || 0) : 0);
+					// Apply gold
+					const motivGold = (motivData && motivData.bonus === 'gold') ? (motivData.gold || 0) : 0;
+					const cultGold  = cultData ? (cultData.bonusGold || 0) : 0;
+					player.gold = profData.gold + (origData ? origData.gold : 0) + motivGold + cultGold;
 
 					// Store background for profile
 					player.origin     = originSel.value;
 					player.motivation = motivSel.value;
-
-					// Apply motivation: morality + hope
-					if (motivData) {
-						player.morality = motivData.morality || 0;
-						player.hope     = motivData.hope     || 0;
-					}
-
-					// Apply bonus attributes selected at character creation
-					const _bonusAttrs = window.__selectedBonusAttributes || [];
-					player.bonusAttributes = _bonusAttrs.map(a => a.id);
-					for (const _attr of _bonusAttrs) {
-						if (!_attr || !_attr.effect) continue;
-						const _fx = _attr.effect;
-						if (_fx.maxMana)    { player.maxMana    = (player.maxMana    || 0) + _fx.maxMana; }
-						if (_fx.maxLife)    { player.maxLife    = (player.maxLife    || 0) + _fx.maxLife; }
-						if (_fx.maxStamina) { player.maxStamina = (player.maxStamina || 0) + _fx.maxStamina; }
-						if (_fx.skills) {
-							for (const _sn of _fx.skills) {
-								if (!player.skills[_sn]) {
-									player.skills[_sn] = { level: 1 };
-								} else {
-									player.skills[_sn].level = Math.min(5, (player.skills[_sn].level || 1) + 1);
-								}
-							}
-						}
-						if (_fx.flag) {
-							if (!player.bonusFlags) player.bonusFlags = {};
-							player.bonusFlags[_fx.flag] = true;
-						}
-						if (_fx.items) {
-							for (const _iname of _fx.items) addItem(_iname, 1);
-						}
-					}
-					window.__selectedBonusAttributes = [];
-
-					// Apply backstory quiz results (parents trait, 3 attrs, inheritance gold, backstory)
-					const _quiz = window.__quizResults || {};
-					for (const _tr of (_quiz.traits || [])) {
-						if (!player.traits.includes(_tr)) player.traits.push(_tr);
-					}
-					player.gold = (player.gold || 0) + (_quiz.gold || 0);
-					player.backstory = _quiz.backstory || '';
-					window.__quizResults = null;
-
-					// Store pronouns and appearance
-					player.pronouns   = window.__pronouns   || { subject: 'they', object: 'them', possAdj: 'their', possPro: 'theirs', reflexive: 'themselves', label: 'They / Them' };
-					player.appearance = window.__appearance || { traits: {}, uniqueFeatures: [], description: '' };
-					window.__pronouns   = null;
-					window.__appearance = null;
-
-					// Initialize Sarsett quest state and corruption immunity
-					_initSarsett();
-					if (!player.bonusFlags) player.bonusFlags = {};
-					player.bonusFlags.corruptionImmune = true;
 
 					// Refresh all UI
 					updateTopStats();
@@ -21544,9 +16367,6 @@ function updateCharPreview() {
 					updateTopStats();
 
 					_bookExitCharCreation(() => {
-						_prevGoldForSound = player.gold;
-						window.titleMusicFadeOut?.();
-						SoundManager?.updateAmbience();
 						addStory(`Character created. Welcome ${name}.`);
 						addWorldEvent(`${name} begins their journey as a ${profKey}.`, 'player');
 						addStory(`You arrive on unfamiliar shores, to a place unknown to you- a land stricken from any map you've ever seen. There's a mystical presence about this place, the very air smelling of wonder and mystery. Weary and hungry after your long journey here, you must choose your next steps wisely...`);
@@ -21572,7 +16392,6 @@ await waitForEnter();
 
 					player.currentLocation = coord;
 					updateTopStats();
-					SoundManager?.updateAmbience();
 
 					// now reposition the map marker as before…
 					const [, xStr, yStr] = coord.match(/^x(\d+)_y(\d+)$/);
@@ -21601,7 +16420,7 @@ addStory("As you stare into the object, you begin to lose yourself within its se
 await waitForEnter();
 addStory("A faint ember awakens at the heart of the sphere- a soft glow at its core that pulses slowly, as if breathing...");
 await waitForEnter();
-addStory("You can't shake the distinct feeling that it's staring back at you. Observing. Peering into your very soul...");
+addStory("You can't shake the distinct feeling that the it's staring back at you. Observing. Peering into your very soul...");
 await waitForEnter();
 addStory("In a fleeting moment of unease, it crosses your mind to discard it- to leave it in the dirt where you found it and never look back. Yet the notion triggers a sharp sorrow, tears welling in a sudden moment of grief. You feel a deep attachment to it. The object has anchored itself to you, or you to it; the difference no longer matters. Without it, you'd be lost...");
 await waitForEnter();
@@ -22195,11 +17014,10 @@ if (canShow) {
 					let html;
 					const isDiscovered = cell.discovered || iconsVisible || key === player?.currentLocation;
 					if (!isDiscovered) {
-						const _unveiledBiome = cell.biome ? ` <span style="opacity:0.6">(${cell.biome})</span>` : '';
 						if (cell.nearby) {
-							html = `<div class="tooltip-zone"><strong>&#10067; Something Nearby</strong>${_unveiledBiome}<br><em>A discovery awaits.</em></div>`;
+							html = `<div class="tooltip-zone"><strong>&#10067; Something Nearby</strong><br><em>A discovery awaits.</em></div>`;
 						} else {
-							html = `<div class="tooltip-zone"><strong>Unexplored</strong>${_unveiledBiome}<br><em>Travel here to reveal it.</em></div>`;
+							html = `<div class="tooltip-zone"><strong>Unexplored</strong><br><em>Travel here to reveal it.</em></div>`;
 						}
 					} else if (cell.zone) {
 						let icon = '';
@@ -22495,8 +17313,6 @@ function openCellEditor(key) {
 				initializeQuickSlots();
 				updatePlayerStats();
 				updateTopStats();
-				_prevGoldForSound = player.gold;
-				SoundManager?.updateAmbience();
 				_initTradeModal();
 
 	// Auto-roll toggles — both checkboxes stay in sync
@@ -22509,59 +17325,6 @@ function openCellEditor(key) {
 	}
 	document.getElementById('auto-roll-toggle')?.addEventListener('change', e => _syncAutoRoll(e.target.checked));
 	document.getElementById('settings-auto-roll')?.addEventListener('change', e => _syncAutoRoll(e.target.checked));
-
-	// Button sounds: title screen options → menu_select, everything else → button_press
-	document.addEventListener('click', e => {
-		const btn = e.target.closest('button');
-		if (!btn || btn.disabled) return;
-		const sound = btn.classList.contains('ts-btn') ? 'menu_select' : 'button_press';
-		SoundManager?.play(sound);
-	}, true);
-
-	// option_hover on section tabs, journal sub-tabs, and title screen buttons
-	document.querySelectorAll('.bk-stab, .bk-jtab, .ts-btn').forEach(btn => {
-		btn.addEventListener('mouseenter', () => SoundManager?.play('option_hover'));
-	});
-
-	// Sound settings
-	(function _initSoundSettings() {
-		const enabledChk = document.getElementById('settings-sound-enabled');
-		const sfxSlider  = document.getElementById('settings-sfx-vol');
-		const ambSlider  = document.getElementById('settings-amb-vol');
-		if (!enabledChk || !sfxSlider || !ambSlider || typeof SoundManager === 'undefined') return;
-		enabledChk.checked  = SoundManager.enabled;
-		sfxSlider.value     = SoundManager.sfxVolume;
-		ambSlider.value     = SoundManager.ambienceVolume;
-		enabledChk.addEventListener('change', e => SoundManager.setEnabled(e.target.checked));
-		sfxSlider.addEventListener('input',   e => SoundManager.setSfxVolume(parseFloat(e.target.value)));
-		ambSlider.addEventListener('input',   e => SoundManager.setAmbienceVolume(parseFloat(e.target.value)));
-	})();
-
-	// Claude API key — load persisted value then wire save button
-	(function _initApiKeySettings() {
-		const inp    = document.getElementById('settings-claude-key');
-		const btn    = document.getElementById('settings-claude-key-save');
-		const status = document.getElementById('settings-claude-key-status');
-		if (!inp || !btn) return;
-		const existing = localStorage.getItem('nea_claude_key') || '';
-		if (existing) {
-			inp.value = existing;
-			if (status) status.textContent = '✓ Key saved';
-		}
-		btn.addEventListener('click', () => {
-			const val = inp.value.trim();
-			if (!val) {
-				localStorage.removeItem('nea_claude_key');
-				if (status) status.textContent = 'Key cleared.';
-			} else if (!val.startsWith('sk-ant-')) {
-				if (status) status.textContent = '⚠ Unexpected format — saved anyway.';
-				localStorage.setItem('nea_claude_key', val);
-			} else {
-				localStorage.setItem('nea_claude_key', val);
-				if (status) status.textContent = '✓ Key saved';
-			}
-		});
-	})();
 
 	window.setupMap = setupMap;
 	window.checkDiscovery = checkDiscovery;
@@ -22698,12 +17461,11 @@ function bookTurnPage(direction) {
   );
 }
 
-const SECTION_ORDER = ['story', 'inventory', 'character', 'map', 'lute', 'settings'];
+const SECTION_ORDER = ['story', 'inventory', 'character', 'map', 'settings'];
 
 function bookSwitchSection(section) {
   if (bookState.isAnimating) return;
   if (section === bookState.activeSection) return;
-  SoundManager?.play('turn_page');
 
   // Mirror a real book: tabs to the right of the current one turn forward,
   // tabs to the left turn backward (left page peels back).
@@ -22722,7 +17484,6 @@ function bookSwitchSection(section) {
     if (section === 'map')       setTimeout(() => { setupMap?.(); checkDiscovery?.(); renderWaypointBar?.(); }, 30);
     if (section === 'inventory') setTimeout(() => updateInventory?.(), 0);
     if (section === 'character') setTimeout(() => { updateJournal?.(); updatePlayerProfile?.(); }, 0);
-    if (section === 'lute')      setTimeout(() => typeof LuteSystem !== 'undefined' && LuteSystem.render(), 0);
   }
   function _activateLeftSection() {
     _bookActivateLeftSection(section);
@@ -22771,7 +17532,6 @@ function _bookExitCharCreation(onSectionReady) {
 }
 
 function bookSwitchJournalTab(tabId) {
-  SoundManager?.play('turn_page');
   document.querySelectorAll('#bksec-character .tab-content').forEach(tc => tc.classList.remove('active'));
   document.querySelectorAll('.bk-jtab').forEach(b => b.classList.remove('active'));
   document.getElementById(tabId)?.classList.add('active');
@@ -22950,157 +17710,6 @@ window.bookTurnPage          = bookTurnPage;
 window.bookEnterCharCreation = _bookEnterCharCreation;
 window.bookExitCharCreation  = _bookExitCharCreation;
 window.showNewGameSlotPicker = () => _showSaveSlotModal('new');
-
-// ── Shared AI Utilities ───────────────────────────────────────
-// Used by npcConversationEngine.js and any future AI-driven system.
-
-const _AI_MODEL = 'claude-haiku-4-5-20251001';
-const _AI_MAX_TOKENS = { narrative: 250, json: 400, long: 700 };
-
-// Snapshot the current game state into a compact context object.
-// Pass into callGameAI as part of userContext so AI always knows where/who/when.
-// extra — optional additional keys to merge in (e.g. { combat: combatState }).
-function buildActionContext(extra = {}) {
-	const cell    = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-	const equipped = player.equipped || {};
-
-	const eqList = Object.entries(equipped)
-		.filter(([, v]) => v)
-		.map(([slot, name]) => `${slot}: ${name}`)
-		.join(', ') || 'nothing notable';
-
-	const condList = (player.conditions || []).map(c => c.id || c).join(', ') || 'none';
-
-	const activeQuests = (player.journal?.quests || [])
-		.filter(q => q.status === 'Active')
-		.slice(0, 3)
-		.map(inst => {
-			const def = (typeof getQuestDef !== 'undefined' && getQuestDef(inst.id)) || null;
-			if (!def) return { title: inst.title || inst.id };
-			const obj = def.objectives?.[inst.objectiveIndex];
-			return { title: def.title, currentObjective: obj?.description };
-		});
-
-	// Strip HTML tags from recent story so the AI gets plain text
-	const recentStory = (player.storyLog || [])
-		.slice(-8)
-		.map(s => (s || '').replace(/<[^>]+>/g, '').trim())
-		.filter(Boolean);
-
-	return {
-		player: {
-			name:       player.name,
-			race:       player.race,
-			gender:     player.gender,
-			profession: player.profession,
-			level:      player.level,
-			morality:   player.morality || 0,
-			hope:       player.hope     || 0,
-			life:       `${player.life}/${player.maxLife}`,
-			stamina:    `${player.stamina}/${player.maxStamina}`,
-			conditions: condList,
-			equipped:   eqList,
-		},
-		location: {
-			name:        cell.cityVillage || cell.biome || player.currentLocation || 'unknown',
-			biome:       cell.biome       || 'unknown',
-			kingdom:     cell.kingdom     || player.currentKingdom || 'unknown',
-			description: cell.description || '',
-			zone:        cell.zone        || '',
-			timeOfDay:   player.timeOfDay || 'daytime',
-			weather:     player.weather   || 'Clear',
-		},
-		recentStory,
-		recentEvents: (player.worldEvents || []).slice(-5).map(e => e.text || e),
-		activeQuests,
-		...extra,
-	};
-}
-
-// Central AI call used by ALL game systems.
-// systemPrompt — sets the AI's role and output rules.
-// userContext  — any object or string (auto-serialised to JSON if object).
-// opts:
-//   mode        'narrative' (returns plain string) | 'json' (returns parsed object)
-//   fallback    value returned when no key set or any error
-//   maxTokens   override token budget
-//   model       override model ID
-async function callGameAI(systemPrompt, userContext, opts = {}) {
-	const apiKey = localStorage.getItem('nea_claude_key') || '';
-	if (!apiKey) return opts.fallback !== undefined ? opts.fallback : null;
-
-	const mode      = opts.mode      || 'narrative';
-	const maxTokens = opts.maxTokens || _AI_MAX_TOKENS[mode] || 350;
-	const model     = opts.model     || _AI_MODEL;
-
-	const finalSystem = mode === 'json'
-		? systemPrompt + '\n\nOutput ONLY valid JSON — no markdown, no explanation, nothing else.'
-		: systemPrompt;
-
-	try {
-		const resp = await fetch('https://api.anthropic.com/v1/messages', {
-			method: 'POST',
-			headers: {
-				'x-api-key':                                 apiKey,
-				'anthropic-version':                         '2023-06-01',
-				'content-type':                              'application/json',
-				'anthropic-dangerous-direct-browser-access': 'true',
-			},
-			body: JSON.stringify({
-				model,
-				max_tokens: maxTokens,
-				system:     finalSystem,
-				messages: [{
-					role:    'user',
-					content: typeof userContext === 'string'
-						? userContext
-						: JSON.stringify(userContext),
-				}],
-			}),
-		});
-
-		if (!resp.ok) {
-			const errBody = await resp.text().catch(() => '');
-			console.error(`[NEA AI] HTTP ${resp.status}`, errBody);
-			return opts.fallback !== undefined ? opts.fallback : null;
-		}
-
-		const data = await resp.json();
-		const raw  = (data.content?.[0]?.text || '').trim();
-
-		if (mode === 'json') {
-			const s = raw.indexOf('{');
-			const e = raw.lastIndexOf('}');
-			if (s === -1 || e === -1) throw new Error('No JSON object in response');
-			return JSON.parse(raw.slice(s, e + 1));
-		}
-
-		// narrative — plain text
-		return raw || (opts.fallback !== undefined ? opts.fallback : '');
-
-	} catch (err) {
-		console.error('[NEA AI] Error:', err);
-		return opts.fallback !== undefined ? opts.fallback : null;
-	}
-}
-
-// ── NPC Conversation Engine bridge ───────────────────────────
-// Expose closure-private symbols needed by npcConversationEngine.js
-window._NEA = {
-	get player()        { return player; },
-	addStory,
-	_buildWheel,
-	_goBack,
-	saveGame,
-	getQuestDef,
-	bumpImportance,
-	callGameAI,
-	buildActionContext,
-	gainSkillXp,
-	performSkillCheck,
-	runInlineProgress,
-	updateTopStats,
-};
 
 // Initial state: story section is active on both pages
 _bookActivateLeftSection('story');

@@ -1,0 +1,2745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Never-Ending Adventure</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TITLE SCREEN
+     ═══════════════════════════════════════════════════════════ -->
+<div id="title-screen">
+  <!-- Two background layers that crossfade into each other -->
+  <div id="ts-bg-a" class="ts-bg"></div>
+  <div id="ts-bg-b" class="ts-bg"></div>
+  <!-- Vignette + gradient overlay -->
+  <div id="ts-overlay"></div>
+  <!-- Heavy dark layer that lifts on first interaction -->
+  <div id="ts-dark-vignette"></div>
+  <!-- All visible content -->
+  <div id="ts-content">
+    <div id="ts-title-block">
+      <div class="ts-title-line1">The Never-Ending</div>
+      <div class="ts-title-line2">Adventure</div>
+      <div class="ts-rule">✦ ─────────────────────── ✦</div>
+    </div>
+    <div id="ts-press-prompt">Press any button to continue...</div>
+    <nav id="ts-menu">
+      <button class="ts-btn" id="ts-btn-continue">📖&nbsp; Continue</button>
+      <button class="ts-btn" id="ts-btn-new">⚔&nbsp; New Adventure</button>
+      <div class="ts-menu-sep"></div>
+      <button class="ts-btn ts-btn-minor" id="ts-btn-settings">⚙&nbsp; Settings</button>
+    </nav>
+    <div id="ts-tagline">A world of endless stories awaits</div>
+  </div>
+</div>
+
+    <div id="top-container">
+  <!-- LEFT: Avatar + player info + bars -->
+  <div id="hud-left">
+    <div id="avatar-ring-wrap">
+      <svg id="xp-ring" viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
+        <circle class="xp-track" cx="55" cy="55" r="52"/>
+        <circle id="xp-arc"   class="xp-arc"   cx="55" cy="55" r="52"/>
+      </svg>
+      <div id="avatar-container"></div>
+      <div id="level-pip"><span id="player-level-num">1</span></div>
+    </div>
+    <div id="hud-player-info">
+      <div id="player-name">Player Name</div>
+      <div class="hud-bar-row">
+        <div class="progress-container hud-bar">
+          <div id="life-bar" class="progress-bar"></div>
+          <span id="life-status" class="meter-status hud-status-text">—</span>
+        </div>
+      </div>
+      <div class="hud-bar-row">
+        <div class="progress-container hud-bar">
+          <div id="stamina-bar" class="progress-bar"></div>
+          <span id="stamina-status" class="meter-status hud-status-text">—</span>
+        </div>
+      </div>
+      <div class="hud-bar-row">
+        <div class="progress-container hud-bar">
+          <div id="mana-bar" class="progress-bar"></div>
+          <span id="mana-status" class="meter-status hud-status-text">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER STRIP: Location | Action | Gold -->
+  <div id="hud-center-strip">
+    <div id="hud-location">
+      <div id="current-kingdom">Unknown</div>
+      <div id="current-location">Unknown</div>
+    </div>
+    <div id="hud-action">
+      <div class="hud-action-label">Player Action:</div>
+      <div id="current-action-display">Idle</div>
+    </div>
+    <div id="top-bar-right">
+      <div id="player-gold">50</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Time Dial -->
+  <div id="hud-datetime">
+    <div id="time-dial">
+      <img src="images/sun_moon.png" id="time-dial-img" alt=""/>
+      <svg id="time-dial-svg" viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg" overflow="visible">
+        <defs>
+          <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <circle id="time-indicator-dot" r="5" cx="55" cy="2" fill="#f5c540" stroke="#8a6200" stroke-width="1.5" filter="url(#dot-glow)"/>
+      </svg>
+      <div id="time-dial-text">
+        <div id="turn-number">Day 1</div>
+        <div id="time-of-day">Morning</div>
+        <div id="weather">Clear</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden stubs for script.js compatibility -->
+  <div id="player-level" style="display:none">Level: 1</div>
+  <div id="exp" style="display:none">
+    <div class="progress-container small"><div id="exp-bar" class="progress-bar"><span id="exp-text">EXP: 0%</span></div><span id="exp-status" class="meter-status">—</span></div>
+  </div>
+  <button id="journal-button" style="display:none"></button>
+  <button id="map-button" style="display:none"></button>
+  <button id="inventory-button" style="display:none"></button>
+  <div id="status-left" style="display:none"></div>
+  <div id="status-center" style="display:none"></div>
+  <div id="status-right" style="display:none"></div>
+  <p id="current-action" style="display:none"></p>
+  <p id="turn-number-old" style="display:none"></p>
+</div>
+<div id="party-hud"></div>
+
+     <div id="game-layout">
+        
+        <div id="main-content">
+
+<div id="left-sidebar">
+
+<!-- Quests -->
+  <div class="pf-sb"><div class="sidebar-content">
+    <h2>Quest</h2>
+    <ul id="current-quest">
+      <li>Current Quest</li>
+      <li>Objective</li>
+    </ul>
+  </div></div>
+
+<!-- Skills -->
+  <div class="pf-sb"><div class="sidebar-content">
+    <h2>Skills</h2>
+    <div id="skills-grid" class="skills-icon-grid">
+      <div class="skill-slot" data-slot="0"></div>
+      <div class="skill-slot" data-slot="1"></div>
+      <div class="skill-slot" data-slot="2"></div>
+      <div class="skill-slot" data-slot="3"></div>
+      <div class="skill-slot" data-slot="4"></div>
+      <div class="skill-slot" data-slot="5"></div>
+      <div class="skill-slot" data-slot="6"></div>
+      <div class="skill-slot" data-slot="7"></div>
+      <div class="skill-slot" data-slot="8"></div>
+    </div>
+    <ul id="skills" style="display:none"></ul>
+  </div></div>
+
+<!-- Effects -->
+  <div class="pf-sb"><div class="sidebar-content" id="dice-log-sidebar">
+    <h2>Effects</h2>
+  </div></div>
+        </div>
+            
+            <div id="game-container">
+
+<!-- ===== Tab Panel ===== -->
+<div id="book-outer">
+
+  <!-- Section tab bar — horizontal, paper-styled -->
+  <div id="bk-section-tabs">
+    <button class="bk-stab active" data-bksec="story">Story</button>
+    <button class="bk-stab" data-bksec="inventory">Inventory</button>
+    <button class="bk-stab" data-bksec="character">Journal</button>
+    <button class="bk-stab" data-bksec="map">Map</button>
+    <button class="bk-stab" data-bksec="lute">🎸 Lute</button>
+    <button class="bk-stab" data-bksec="settings">Settings</button>
+  </div>
+
+  <!-- Main content panel — styled like sidebar sections -->
+  <div id="cpanel-wrap">
+    <div id="content-panel">
+
+      <!-- Character sub-tabs (shown only when character section is active) -->
+      <div id="bk-character-tabs">
+        <button class="bk-jtab active" data-tab="player-info-tab">Character</button>
+        <button class="bk-jtab" data-tab="quests-tab">Quest Log</button>
+        <button class="bk-jtab" data-tab="locations-tab">Locations</button>
+        <button class="bk-jtab" data-tab="relations-tab">Relations</button>
+        <button class="bk-jtab" data-tab="skills-tab">Skills</button>
+        <button class="bk-jtab" data-tab="traits-tab">Traits</button>
+        <button class="bk-jtab" data-tab="recipes-tab">Recipes</button>
+        <button class="bk-jtab" data-tab="world-events-tab">World Events</button>
+        <button class="bk-jtab" data-tab="lore-tab">Lore</button>
+      </div>
+
+      <!-- Char-creation section — content lives in #cc-modal-overlay -->
+      <div class="bk-section" id="bksec-char-creation"></div>
+
+      <!-- Story section (scrollable) -->
+      <div class="bk-section active" id="bksec-story">
+        <div id="story"></div>
+      </div>
+
+      <!-- Character section -->
+      <div class="bk-section" id="bksec-character">
+        <div id="player-info-tab" class="tab-content active">
+          <div id="player-profile-sheet"></div>
+        </div>
+        <div id="quests-tab" class="tab-content">
+          <ul id="quests"></ul>
+        </div>
+        <div id="locations-tab" class="tab-content">
+          <ul id="locations"></ul>
+        </div>
+        <div id="relations-tab" class="tab-content">
+          <ul id="relations"></ul>
+        </div>
+        <div id="skills-tab" class="tab-content">
+          <ul id="journal-skills"></ul>
+        </div>
+        <div id="traits-tab" class="tab-content">
+          <ul id="journal-traits"></ul>
+        </div>
+        <div id="recipes-tab" class="tab-content">
+          <div id="recipe-list"></div>
+        </div>
+        <div id="world-events-tab" class="tab-content">
+          <ul id="world-events-list"></ul>
+        </div>
+        <div id="lore-tab" class="tab-content">
+          <div id="lore-list"></div>
+        </div>
+      </div>
+
+      <!-- Inventory section (item list left, sidebar middle, equipment doll right) -->
+      <div class="bk-section" id="bksec-inventory">
+        <div class="inv-columns">
+          <div class="inv-left-col">
+            <div class="inv-list-header">
+              <button class="inv-view-arrow" id="inv-view-arrow" style="display:none">▶ Camp</button>
+            </div>
+            <div id="inventory-list" class="inventory-section"></div>
+            <div id="camp-supplies-inv-view" class="inventory-section" style="display:none"></div>
+            <hr class="inventory-separator">
+            <div id="inventory-details" class="inventory-section no-grid">
+              <div id="item-details"></div>
+            </div>
+          </div>
+          <div class="inv-mid-col" id="inv-sidebar">
+            <div class="inv-sb-maps">
+              <div class="inv-sb-maps-label">🗺️ Maps</div>
+              <div id="maps-list"><span class="maps-empty">No maps acquired.</span></div>
+            </div>
+          </div>
+          <div class="inv-right-col">
+            <div id="equipped-items" class="inventory-section">
+              <div class="equip-col equip-col-left">
+                <div class="equipped-item-slot" id="headwear" data-slot="headwear">Headwear</div>
+                <div class="equipped-item-slot" id="torsoLayer1" data-slot="torsoLayer1">Torso Layer 1</div>
+                <div class="equipped-item-slot" id="torsoLayer2" data-slot="torsoLayer2">Torso Layer 2</div>
+                <div class="equipped-item-slot" id="legwear" data-slot="legwear">Legwear</div>
+                <div class="equipped-item-slot" id="footwear" data-slot="footwear">Footwear</div>
+                <div class="equipped-item-slot" id="rightHand" data-slot="rightHand">Right Hand</div>
+              </div>
+              <div class="equip-character"><img id="inv-char-silhouette" src="images/character.png" alt=""></div>
+              <div class="equip-col equip-col-right">
+                <div class="equipped-item-slot" id="shoulderwear" data-slot="shoulderwear">Shoulderwear</div>
+                <div class="equipped-item-slot" id="cape" data-slot="cape">Cape</div>
+                <div class="equipped-item-slot" id="torsoLayer3" data-slot="torsoLayer3">Torso Layer 3</div>
+                <div class="equipped-item-slot" id="armwear" data-slot="armwear">Armwear</div>
+                <div class="equipped-item-slot" id="footwear2" data-slot="footwear2">Footwear 2</div>
+                <div class="equipped-item-slot" id="leftHand" data-slot="leftHand">Left Hand</div>
+              </div>
+              <div class="equip-pendant-row">
+                <div class="equipped-item-slot" id="pendant" data-slot="pendant">Pendant</div>
+              </div>
+            </div>
+            <div class="inv-under-mannequin">
+              <div class="inv-sb-widget" id="inv-sb-quiver">
+                <img id="inv-sb-quiver-img" src="images/icons/poneti/weapons/common/all/quiver_empty.png" alt="Quiver">
+                <span class="inv-sb-label" id="inv-sb-arrow-count">0 arrows</span>
+              </div>
+              <div class="inv-sb-widget" id="inv-sb-pack">
+                <img src="images/icons/poneti/containers/travellers_pack.png" alt="Pack">
+                <span class="inv-sb-label" id="inv-sb-item-count">0 items</span>
+              </div>
+              <div class="inv-sb-widget" id="inv-sb-pouch">
+                <img src="images/icons/poneti/containers/coin_pouch_small.png" alt="Coin Pouch">
+                <span class="inv-sb-label" id="inv-sb-gold">0/200</span>
+              </div>
+              <div class="inv-sb-widget" id="inv-sb-herb-pouch" style="display:none">
+                <img id="inv-sb-herb-pouch-img" src="images/icons/poneti/containers/herb_pouch_small.png" alt="Herb Pouch">
+                <span class="inv-sb-label" id="inv-sb-herb-count">0 herbs</span>
+              </div>
+              <div class="inv-sb-widget" id="inv-sb-ingredient-pouch" style="display:none">
+                <img id="inv-sb-ingredient-pouch-img" src="images/icons/poneti/containers/ingredient_pouch_small.png" alt="Ingredient Pouch">
+                <span class="inv-sb-label" id="inv-sb-ingredient-count">0 items</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="inventory-info">
+          <div><span id="number-of-items"></span> Items</div>
+          <div>Total Weight: <span id="total-weight">0 lbs</span></div>
+          <div>Gold: <span id="inventory-gold">0</span></div>
+        </div>
+      </div>
+
+      <!-- Map section (controls top, canvas below) -->
+      <div class="bk-section" id="bksec-map">
+        <div id="border-controls" style="display:none">
+          <button id="biome-mode-button">Biome Editor Mode</button>
+          <select id="biome-select" style="display:none">
+            <option value="Forest">🌲 Forest</option>
+            <option value="Mountain">⛰️ Mountain</option>
+            <option value="Hills">⛰️ Hills</option>
+            <option value="Wetlands">💧 Wetlands</option>
+            <option value="Coastal">🌅 Coastal</option>
+            <option value="Ocean">🌊 Ocean</option>
+            <option value="River">🏞️ River</option>
+            <option value="Plains">🌿 Plains</option>
+            <option value="Lake">🛶 Lake</option>
+            <option value="Tundra">❄️ Tundra</option>
+          </select>
+          <button id="toggle-biomes-button">Show Biomes</button>
+          <button id="border-mode-button">Border Selection Mode</button>
+          <select id="kingdom-select" style="display:none">
+            <option value="Ardrenhold">Ardrenhold</option>
+            <option value="Brythwen">Brythwen</option>
+            <option value="Dwynbroch">Dwynbroch</option>
+            <option value="Feldarún">Feldarún</option>
+            <option value="Naradreth">Naradreth</option>
+            <option value="Nithrond">Nithrond</option>
+            <option value="Orindroth">Orindroth</option>
+            <option value="Rendarost">Rendarost</option>
+            <option value="Sivanrift">Sivanrift</option>
+            <option value="Wistravael">Wistravael</option>
+          </select>
+          <button id="toggle-borders-button">Show Borders</button>
+          <button id="map-editor-toggle">Map Editor: OFF</button>
+          <button id="toggle-icons-button">Show Icons</button>
+          <button id="export-map-data">Export Map Data</button>
+        </div>
+        <div id="map-container">
+          <div id="travel-info"></div>
+          <img src="images/map3.png" alt="Map" id="map-image">
+          <canvas id="map-canvas"></canvas>
+          <div id="player-symbol">🔻</div>
+          <div id="discovery-indicators"></div>
+        </div>
+      </div>
+
+      <!-- Lute section — populated by LuteSystem.render() -->
+      <div class="bk-section" id="bksec-lute"></div>
+
+      <!-- Settings section -->
+      <div class="bk-section" id="bksec-settings">
+        <div class="bksec-settings-body">
+          <h3>Settings</h3>
+          <p>Adjust game options to your preference.</p>
+          <hr style="margin: 12px 0; border: none; border-top: 1px solid rgba(92,58,30,0.25);">
+          <h3 class="bksec-settings-heading">Game Options</h3>
+          <label class="bksec-settings-row">
+            <input type="checkbox" id="settings-auto-roll">
+            Auto-Roll Dice
+          </label>
+          <hr style="margin: 12px 0; border: none; border-top: 1px solid rgba(92,58,30,0.25);">
+          <h3 class="bksec-settings-heading">Sound</h3>
+          <label class="bksec-settings-row">
+            <input type="checkbox" id="settings-sound-enabled" checked>
+            Enable Sound
+          </label>
+          <label class="bksec-settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <span style="font-size:0.85em;">SFX Volume</span>
+            <input type="range" id="settings-sfx-vol" min="0" max="1" step="0.05" value="0.7" style="width:100%;accent-color:#8b5e2a;">
+          </label>
+          <label class="bksec-settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <span style="font-size:0.85em;">Ambience Volume</span>
+            <input type="range" id="settings-amb-vol" min="0" max="1" step="0.05" value="0.25" style="width:100%;accent-color:#8b5e2a;">
+          </label>
+          <hr style="margin: 12px 0; border: none; border-top: 1px solid rgba(92,58,30,0.25);">
+          <h3 class="bksec-settings-heading">AI Dialogue</h3>
+          <p style="font-size:0.82em;margin:4px 0 8px;">Used for NPC conversations. Your key is stored only in your browser (localStorage) and sent directly to Anthropic.</p>
+          <div class="bksec-settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+            <label for="settings-claude-key" style="font-size:0.85em;">Claude API Key</label>
+            <div style="display:flex;gap:6px;width:100%;">
+              <input type="password" id="settings-claude-key" placeholder="sk-ant-…"
+                style="flex:1;padding:4px 8px;border:1px solid rgba(92,58,30,0.4);border-radius:4px;background:#fdf6e3;font-family:monospace;font-size:0.8em;">
+              <button id="settings-claude-key-save"
+                style="padding:4px 10px;border:1px solid rgba(92,58,30,0.5);border-radius:4px;background:#c8a96e;cursor:pointer;font-size:0.82em;">
+                Save
+              </button>
+            </div>
+            <span id="settings-claude-key-status" style="font-size:0.78em;color:#5c3a1e;opacity:0.7;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Character stub — kept for compat -->
+      <div id="pane-character" style="display:none !important;"></div>
+
+      <!-- Status bars above the wheel — shown/hidden by JS, no overlap with D20 -->
+      <div id="fire-status-wrap">
+        <span>🔥 Fire:</span>
+        <div id="fire-status-bar"><div id="fire-status-fill"></div></div>
+        <span id="fire-status-time"></span>
+      </div>
+      <div id="action-progress-wrap">
+        <span id="action-progress-label"></span>
+        <div id="action-progress-bar"><div></div></div>
+      </div>
+
+      <!-- Encampment status bar — shown only when player is at their camp -->
+      <div id="camp-status-bar"></div>
+
+      <!-- Town status bar — shown only when player is in a settlement -->
+      <div id="town-status-bar"></div>
+
+      <!-- Choice Wheel — inside the panel -->
+      <div id="wheel-area">
+        <div id="input-container">
+          <button id="speak-back-button">← Back</button>
+          <input type="text" id="user-input" placeholder="What do you want to do?">
+          <button id="submit-button">Submit</button>
+        </div>
+        <!-- Choice Wheel — spokes injected dynamically by script.js -->
+        <div id="choice-wheel">
+          <div id="wheel-label"></div>
+          <div class="wheel-center"><!-- populated by Three.js --></div>
+        </div>
+        <!-- Shown during waitForEnter cutscenes in place of the wheel -->
+        <button id="cutscene-continue">Continue…</button>
+      </div>
+
+    </div><!-- #content-panel -->
+  </div><!-- #cpanel-wrap -->
+
+</div><!-- #book-outer -->
+
+<!-- Auto-roll toggle -->
+<label id="auto-roll-label" title="Auto-roll dice without animation">
+  <input type="checkbox" id="auto-roll-toggle">
+  Auto-Roll
+</label>
+
+        </div>
+
+<!-- Hidden stubs: all elements that script.js wires up, kept in DOM but invisible -->
+<div id="action-stubs" style="display:none;" aria-hidden="true">
+  <div id="rest-container">
+  <div class="title" id="rest-header"><h4>Resting</h4></div>
+  <div class="camp-bar"><div id="comfort-bar"   class="camp-bar-inner"></div></div>
+  <div class="camp-bar"><div id="protection-bar" class="camp-bar-inner"></div></div>
+  <div class="rest-ui-container">
+    <div id="camp-actions">
+      <div class="action-bar">
+        <div class="icon-button" data-action="rest">
+          <div class="icon-label">Rest</div>
+          <div class="mini-log" id="encampment-mini-log"></div>
+          <div class="action-progress small-bar" id="rest-progress"><div></div></div>
+        </div>
+        <div class="icon-button" data-action="setup" id="setup-camp-button">
+          <div class="icon-label">Make Camp</div>
+          <div class="mini-log" id="encampment-mini-log2"></div>
+          <div class="action-progress small-bar" id="encampment-progress"><div></div></div>
+        </div>
+        <div class="icon-button" data-action="resources" id="resources-button">
+          <div class="icon-label">Resources</div>
+          <div class="mini-log" id="resources-mini-log"></div>
+          <div class="action-progress small-bar" id="resources-progress"><div></div></div>
+        </div>
+        <div id="player-encampment">
+          <div class="action-bar">
+            <div class="icon-button" data-action="campfire" id="campfire-button">
+              <div class="icon-label">Campfire</div>
+              <div class="mini-log" id="campfire-mini-log"></div>
+              <div class="action-progress small-bar" id="campfire-progress"><div></div></div>
+              <div class="action-progress small-bar" id="lighting-progress"><div id="lighting-bar"></div></div>
+              <div class="action-progress small-bar" id="campfire-timer"><div id="campfire-bar"></div></div>
+            </div>
+            <div class="icon-button" data-action="shelter" id="shelter-button">
+              <div class="icon-label">Shelter</div>
+              <div class="mini-log" id="shelter-mini-log"></div>
+            </div>
+            <div class="icon-button" data-action="defenses" id="defenses-button">
+              <div class="icon-label">Camp Defenses</div>
+              <div class="mini-log" id="defenses-mini-log"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="camp-supplies"><div id="camp-supply-grid"></div></div>
+    </div>
+    <div id="hunt-info"><button id="begin-hunt-button">Begin Hunt</button></div>
+    <div id="cook-options"></div>
+    <div id="shot-timer">
+      <div class="action-progress small-bar"><div id="shot-countdown-bar"></div></div>
+    </div>
+    <div id="hunt-phase-status"></div>
+    <p id="rest-log"></p>
+  </div>
+  </div><!-- end rest-container -->
+</div><!-- end action-stubs -->
+
+	</div>
+                </div>
+
+    </div>
+
+    <div id="quick-slots" class="quick-slots">
+        <div class="quick-slot" id="quick-slot-1">1</div>
+        <div class="quick-slot" id="quick-slot-2">2</div>
+        <div class="quick-slot" id="quick-slot-3">3</div>
+        <div class="quick-slot" id="quick-slot-4">4</div>
+        <div class="quick-slot" id="quick-slot-5">5</div>
+        <div class="quick-slot" id="quick-slot-6">6</div>
+        <div class="quick-slot" id="quick-slot-7">7</div>
+        <div class="quick-slot" id="quick-slot-8">8</div>
+        <div class="quick-slot" id="quick-slot-9">9</div>
+        <div class="quick-slot" id="quick-slot-10">0</div>
+    </div>
+
+<div id="menu">
+	<button id="save-button" data-tooltip="Save">💾</button>
+	<button id="load-button" data-tooltip="Load">📂</button>
+	<button id="new-game-button" data-tooltip="New Game">🆕</button>
+	<button id="dev-mode-button">🔧</button>
+	<button>⚙️</button>
+	<button>❓</button>
+</div>
+
+<!---------------- Tutorial Overlay ------------------->
+<div id="tut-overlay" style="display:none"></div>
+<div id="tut-tooltip" style="display:none">
+  <div id="tut-msg"></div>
+  <div id="tut-continue"></div>
+</div>
+
+<!---------------- Modals ------------------->
+
+<!-- journal-modal shell kept for script.js compatibility; content moved to #pane-journal -->
+<div id="journal-modal" class="modal" style="display:none !important;"></div>
+
+<!-- inventory-modal shell kept for script.js compatibility; content moved to #pane-inventory -->
+<div id="inventory-modal" class="modal" style="display:none !important;"></div>
+
+<!-- map-modal shell kept for script.js compatibility; content moved to #pane-map -->
+<div id="map-modal" class="modal" style="display:none !important;"></div>
+
+<div id="cell-editor-modal" class="modal" style="display:none">
+  <div class="modal-content">
+    <h3>Edit Cell</h3>
+    <form id="cell-editor-form">
+
+      <label>Coordinate: <input name="coordinate" readonly /></label><br/>
+
+      <label>Biome:<select id="biome" name="biome">
+    <option value="Forest">🌲 Forest</option>
+    <option value="Mountains">🏔️ Mountains</option>
+    <option value="Hills">🌄 Hills</option>
+    <option value="Wetlands">🐸 Wetlands</option>
+    <option value="Coastal">🌅 Coastal</option>
+    <option value="Plains">🌿 Plains</option>
+    <option value="Tundra">❄️ Tundra</option>
+    <option value="River">🏞️ River</option>
+    <option value="Lake">🛶 Lake</option>
+    <option value="Ocean">🌊 Ocean</option>
+  </select>
+</label><br/>
+
+      <label>Kingdom:<select id="kingdom" name="kingdom"><br/>
+    <option value="Ardrenhold">Ardrenhold</option>
+    <option value="Brythwen">Brythwen</option>
+    <option value="Dwynbroch">Dwynbroch</option>
+    <option value="Feldarún">Feldarún</option>
+    <option value="Naradreth">Naradreth</option>
+    <option value="Nithrond">Nithrond</option>
+    <option value="Orindroth">Orindroth</option>
+    <option value="Rendarost">Rendarost</option>
+    <option value="Sivanrift">Sivanrift</option>
+    <option value="Wistravael">Wistravael</option>
+  </select>
+</label><br/>
+
+      <label>Zone:<select id="zone" name="zone"><br/>
+    <option value="City">🏘️ City</option>
+    <option value="CapitalCity">🏰 Capital City</option>
+    <option value="Village">🏚️ Village</option>
+    <option value="None">🚫 None</option>
+  </select>
+</label><br/>
+
+      <label>City/Village Name:<input name="cityVillage"/></label><br/>
+
+      <label>Description:<textarea name="description"<br/></textarea></label><br/>
+
+<label for="establishments-inputs">Establishments:</label><br/>
+<div id="establishments-inputs">
+  <div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+
+<div class="establishment-row">
+    <input name="establishments[name][]"        placeholder="Name">
+    <select name="establishments[type][]" class="est-type">
+      <option value="">— Select —</option>
+      <option value="Tavern">🍺 Tavern</option>
+      <option value="Inn">🏯 Inn</option>
+      <option value="Castle">🏰 Castle</option>
+      <option value="Temple">⛪ Temple</option>
+      <option value="Shrine">⛩️ Shrine</option>
+      <option value="Watchtower">Watchtower</option>
+      <option value="Farmstead">🌾 Farmstead</option>
+      <option value="Mill">Mill</option>
+      <option value="Mine">⛏️ Mine</option>
+      <option value="Blacksmith">🔨 Blacksmith</option>
+      <option value="Smithy">🔨 Smithy</option>
+      <option value="Market">⚖️ Market</option>
+      <option value="Ruins">Ruins</option>
+      <option value="Cottage">🏚️ Cottage</option>
+      <option value="Hut">🛖 Hut</option>
+      <option value="Alchemist">⚗️ Alchemis</option>
+      <option value="Healer">🌿 Healer</option>
+      <option value="Aviary">🦅 Aviary</option>
+      <option value="Cavern">Cavern</option>
+      <option value="Arena">⚔️ Arena</option>
+      <option value="Port">⚓ Port</option>
+      <option value="Library">📚 Library</option>
+      <option value="Forge">⚒️ Forge</option>
+      <option value="Campsite">⛺ Campsite</option>
+      <option value="Bowyer">🏹 Bowyer</option>
+      <option value="Stables">🐴 Stables</option>
+      <option value="Graveyard">🪦 Graveyard</option>
+      <option value="Jeweler">💍 Jeweler</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" name="establishments[description][]" placeholder="Description" class="est-desc"/>
+  </div>
+
+</div>
+
+<label>Points of Interest</label>
+<div id="poi-inputs">
+  <div class="poi-row">
+    <input name="poi[name][]"        type="text" placeholder="POI Name">
+    <input name="poi[description][]" type="text" placeholder="Description">
+  </div>
+</div>
+
+      <label>Discovered: <select id="discovered" name="discovered">
+    <option value="true">✅ Yes</option>
+    <option value="false">❌ No</option>
+  </select></label><br/>
+
+      <button type="button" id="cell-save-button">Save</button>
+      <button type="button" id="cell-cancel-button">Cancel</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Character Creation Modal Overlay ──────────────────────── -->
+<div id="cc-modal-overlay">
+  <div class="cc-modal-dialog">
+
+    <div class="cc-modal-title-block">
+      <div class="ccl-book-title">The Never-Ending</div>
+      <div class="ccl-book-title ccl-book-title2">Adventure</div>
+      <div class="ccl-rule">✦ ─────── ✦</div>
+    </div>
+
+    <div class="cc-modal-step-info">
+      <div class="ccl-step-num" id="cc-left-step-num">Step 1 of 8</div>
+      <div class="ccl-heading" id="cc-left-heading">Name</div>
+      <div class="ccl-lore" id="cc-left-lore">Every legend begins with a name. What shall the world call you?</div>
+    </div>
+
+    <div id="cc-header">
+      <div class="cc-rule">✦ ─────────────── ✦</div>
+      <div id="cc-question">What is your name?</div>
+      <div class="cc-rule">✦ ─────────────── ✦</div>
+    </div>
+
+    <div id="cc-body">
+      <div class="cc-slide cc-slide-active" id="cc-s0">
+        <input class="cc-name-input" id="cc-name-field" type="text"
+               placeholder="Enter your name, traveller…" autocomplete="off" maxlength="40">
+      </div>
+      <div class="cc-slide" id="cc-s1">
+        <div class="cc-card-row" id="cc-race-row"></div>
+      </div>
+      <div class="cc-slide" id="cc-s2">
+        <div class="cc-card-row cc-body-type-row" id="cc-body-type-row"></div>
+        <div class="cc-pronoun-section" id="cc-pronoun-section">
+          <div class="cc-pronoun-label">Pronouns</div>
+          <div class="cc-pronoun-row" id="cc-pronoun-row"></div>
+        </div>
+      </div>
+      <div class="cc-slide cc-slide-appearance" id="cc-s-app">
+        <div id="cc-appearance-grid" class="cc-appearance-grid"></div>
+      </div>
+      <div class="cc-slide" id="cc-s3">
+        <div id="cc-cat-view" class="cc-phase-active">
+          <div class="cc-card-row" id="cc-cat-row"></div>
+        </div>
+        <div id="cc-prof-view">
+          <div id="cc-prof-back-bar">
+            <button id="cc-prof-back-btn" class="cc-nav-btn">← Categories</button>
+            <span id="cc-prof-cat-label"></span>
+          </div>
+          <div class="cc-prof-grid" id="cc-prof-grid"></div>
+        </div>
+      </div>
+      <div class="cc-slide" id="cc-s4">
+        <div class="cc-card-row" id="cc-origin-row"></div>
+      </div>
+      <div class="cc-slide" id="cc-s5">
+        <div class="cc-card-row" id="cc-motiv-row"></div>
+      </div>
+      <div class="cc-slide" id="cc-s6">
+        <div class="cc-card-row" id="cc-parents-row"></div>
+      </div>
+      <div class="cc-slide" id="cc-s7">
+        <div class="cc-card-row" id="cc-pastlife-row"></div>
+      </div>
+      <div class="cc-slide" id="cc-s8">
+        <div class="cc-card-row" id="cc-departure-row"></div>
+      </div>
+      <div class="cc-slide cc-slide-confirm" id="cc-s9">
+        <div class="cc-sheet-scroll">
+          <div class="cc-sheet-panel" id="cc-confirm-sheet"></div>
+        </div>
+      </div>
+    </div><!-- #cc-body -->
+
+    <div id="cc-footer">
+      <button id="cc-back" class="cc-nav-btn" disabled>← Back</button>
+      <div class="cc-dots" id="cc-dots"></div>
+      <button id="cc-next" class="cc-nav-btn cc-nav-primary" disabled>Next →</button>
+    </div>
+
+  </div><!-- .cc-modal-dialog -->
+</div><!-- #cc-modal-overlay -->
+
+<div id="character-modal" class="modal">
+
+  <!-- Hidden legacy form elements required by script.js -->
+  <div id="cc-hidden" aria-hidden="true">
+    <input type="text" id="char-name" autocomplete="off">
+    <select id="char-culture-select">
+      <option value="">Choose…</option>
+      <option value="Human">Human</option>
+      <option value="Elf">Elf</option>
+      <option value="Half-Elf">Half-Elf</option>
+      <option value="Dwarf">Dwarf</option>
+      <option value="Half-Orc">Half-Orc</option>
+      <option value="Half-Goblin">Half-Goblin</option>
+    </select>
+    <div id="char-gender-group">
+      <button class="char-tog" data-val="Masculine">Masculine</button>
+      <button class="char-tog" data-val="Feminine">Feminine</button>
+    </div>
+    <select id="char-profession"><option value="">Select a profession…</option></select>
+    <div id="char-profession-desc" class="char-desc"></div>
+    <select id="char-origin">
+      <option value="">Choose origin…</option>
+      <option value="noble">A noble house</option>
+      <option value="village">A common village</option>
+      <option value="wilderness">The wilderness</option>
+      <option value="port">A port town</option>
+    </select>
+    <div id="char-origin-desc" class="char-desc"></div>
+    <select id="char-motivation">
+      <option value="">Choose motivation…</option>
+      <option value="vengeance">Seeking vengeance</option>
+      <option value="knowledge">Pursuing knowledge</option>
+      <option value="law">Running from the law</option>
+      <option value="honor">Answering a call to arms</option>
+      <option value="fortune">Chasing fortune</option>
+    </select>
+    <div id="char-motivation-desc" class="char-desc"></div>
+    <div id="char-preview-grid">
+      <div class="char-stat-block"><div class="char-stat-label">Skills (3)</div><div id="preview-skills" class="char-stat-body">Select a profession</div></div>
+      <div class="char-stat-block"><div class="char-stat-label">Starting Trait</div><div id="preview-trait" class="char-stat-body">—</div></div>
+      <div class="char-stat-block char-stat-wide"><div class="char-stat-label">Starting Items</div><div id="preview-items" class="char-stat-body">—</div></div>
+      <div class="char-stat-block"><div class="char-stat-label">Gold</div><div id="preview-gold" class="char-stat-body">—</div></div>
+    </div>
+    <button id="create-character-button">Begin Your Journey</button>
+  </div>
+
+
+</div><!-- #character-modal -->
+
+<!-- ── Trade / Shop Modal ───────────────────────────────── -->
+<div id="trade-modal" class="modal" style="display:none">
+  <div class="trade-modal-content">
+    <div class="trade-modal-header">
+      <span id="trade-modal-title">Shop</span>
+      <span class="trade-modal-gold">&#x1F4B0; <span id="trade-modal-gold">0</span>g</span>
+      <button class="trade-modal-close" id="trade-modal-close-btn">&#x2715;</button>
+    </div>
+    <div class="trade-modal-body">
+      <div class="trade-panel" id="trade-panel-shop">
+        <div class="trade-panel-label">Wares</div>
+        <div class="trade-grid" id="trade-grid-shop"></div>
+      </div>
+      <div class="trade-center-panel">
+        <div id="trade-item-preview">
+          <div class="trade-preview-icon-wrap">
+            <img id="trade-preview-icon" src="" alt="">
+          </div>
+          <div id="trade-preview-name"></div>
+          <div id="trade-preview-desc"></div>
+          <div id="trade-preview-stats"></div>
+          <div id="trade-preview-price">Select an item</div>
+          <button id="trade-action-btn" style="display:none"></button>
+        </div>
+      </div>
+      <div class="trade-panel" id="trade-panel-player">
+        <div class="trade-panel-label">Your Pack</div>
+        <div class="trade-grid" id="trade-grid-player"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="travel-confirm-modal" class="modal">
+  <div class="modal-content">
+    <p id="travel-confirm-text"></p>
+    <!-- new wrapper around the buttons -->
+    <div class="button-row">
+      <button id="travel-confirm-yes">Yes</button>
+      <button id="travel-confirm-no">Nevermind</button>
+    </div>
+  </div>
+</div>
+
+    <div id="tooltip"></div>
+<div id="context-menu" class="context-menu" style="display: none;"></div>
+
+
+<!-- 🎲 Full-screen video overlay -->
+<div id="video-overlay">
+  <video id="dice-video" playsinline></video>
+</div>
+
+<!-- 💾 Save Slot Modal -->
+<div id="save-slot-modal" class="ss-overlay" style="display:none">
+  <div class="ss-box">
+    <h2 class="ss-title" id="ss-title">Load Game</h2>
+    <div id="ss-slot-list"></div>
+    <button class="ss-cancel" id="ss-cancel">Cancel</button>
+  </div>
+</div>
+
+	<script>
+/* --- Book panel logic --- */
+(function() {
+  'use strict';
+
+  var JOURNAL_TAB_KEY = 'rpg-journal-tab';
+
+  /* Maps old pane-* IDs and bare section names to canonical section names */
+  var SECTION_MAP = {
+    'pane-story':     'story',
+    'pane-inventory': 'inventory',
+    'pane-journal':   'character',   /* legacy compat */
+    'pane-map':       'map',
+    'pane-settings':  'settings',
+    'story': 'story', 'inventory': 'inventory',
+    'journal': 'character',          /* legacy compat */
+    'character': 'character', 'map': 'map', 'lute': 'lute', 'settings': 'settings'
+  };
+
+  function openJournalTab(tabId) {
+    if (typeof window.bookSwitchJournalTab === 'function') {
+      window.bookSwitchJournalTab(tabId);
+      return;
+    }
+    /* Fallback (before script.js loads) */
+    document.querySelectorAll('#bksec-character .tab-content').forEach(function(tc) { tc.classList.remove('active'); });
+    document.querySelectorAll('.bk-jtab').forEach(function(b) { b.classList.remove('active'); });
+    var tab = document.getElementById(tabId);
+    if (tab) tab.classList.add('active');
+    var btn = document.querySelector('.bk-jtab[data-tab="' + tabId + '"]');
+    if (btn) btn.classList.add('active');
+    try { localStorage.setItem(JOURNAL_TAB_KEY, tabId); } catch(e) {}
+    if (typeof window.updateJournalTab === 'function') window.updateJournalTab();
+  }
+
+  function openPane(paneId) {
+    var section = SECTION_MAP[paneId] || 'story';
+    if (typeof window.bookSwitchSection === 'function') {
+      window.bookSwitchSection(section);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+
+    /* Section tab clicks */
+    document.querySelectorAll('.bk-stab').forEach(function(btn) {
+      btn.addEventListener('click', function() { openPane(btn.dataset.bksec); });
+    });
+
+    /* Journal sub-tab clicks */
+    document.querySelectorAll('.bk-jtab').forEach(function(btn) {
+      btn.addEventListener('click', function() { openJournalTab(btn.dataset.tab); });
+    });
+
+    /* Page nav buttons */
+    var prevBtn = document.getElementById('bk-prev');
+    var nextBtn = document.getElementById('bk-next');
+    if (prevBtn) prevBtn.addEventListener('click', function() {
+      if (typeof window.bookTurnPage === 'function') window.bookTurnPage('prev');
+    });
+    if (nextBtn) nextBtn.addEventListener('click', function() {
+      if (typeof window.bookTurnPage === 'function') window.bookTurnPage('next');
+    });
+
+    /* Modal patches — keep script.js modal calls working */
+    function patchModal(modalId, section) {
+      var modal = document.getElementById(modalId);
+      if (!modal) return;
+      var paused = false;
+      var observer = new MutationObserver(function() {
+        if (paused) return;
+        var d = modal.style.display;
+        if (d && d !== 'none') {
+          paused = true;
+          modal.style.display = 'none';
+          paused = false;
+          openPane(section);
+        }
+      });
+      observer.observe(modal, { attributes: true, attributeFilter: ['style'] });
+    }
+
+    patchModal('journal-modal',   'character');  /* legacy modal → character section */
+    patchModal('inventory-modal', 'inventory');
+    patchModal('map-modal',       'map');
+
+    /* Restore last journal tab */
+    var savedTab = null;
+    try { savedTab = localStorage.getItem(JOURNAL_TAB_KEY); } catch(e) {}
+    if (savedTab && document.getElementById(savedTab)) {
+      document.querySelectorAll('#bksec-character .tab-content').forEach(function(tc) { tc.classList.remove('active'); });
+      document.querySelectorAll('.bk-jtab').forEach(function(b) { b.classList.remove('active'); });
+      document.getElementById(savedTab).classList.add('active');
+      var savedBtn = document.querySelector('.bk-jtab[data-tab="' + savedTab + '"]');
+      if (savedBtn) savedBtn.classList.add('active');
+    }
+
+  });
+
+  window.__contentPanel = { open: openPane, openJournalTab: openJournalTab };
+})();
+</script>
+	<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+	<script src="items.js"></script>
+	<script src="kingdoms.js"></script>
+	<script src="economy.js"></script>
+	<script src="quests.js"></script>
+	<script src="randomEvents.js"></script>
+	<script src="mapData.js"></script>
+	<script src="recipes.js"></script>
+	<script src="establishments.js"></script>
+	<script src="playerAttributes.js"></script>
+	<script src="professionTiers.js"></script>
+	<script src="questGenerator.js"></script>
+	<script src="npcTemplate.js"></script>
+	<script src="npcGenerator.js"></script>
+	<script src="lore.js"></script>
+	<script src="globalEvents.js"></script>
+	<script src="npcConversationTopics.js"></script>
+	<script src="npcConversationEngine.js"></script>
+	<script src="sound.js"></script>
+	<script src="lute.js"></script>
+	<script src="script.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// TITLE SCREEN CONTROLLER
+// Runs after script.js registers its DOMContentLoaded listener
+// but before that listener fires, so titleScreenActive blocks
+// the auto-start logic in script.js.
+// ═══════════════════════════════════════════════════════════
+window.titleScreenActive = true;
+
+(function () {
+  'use strict';
+
+  // Simple filenames — no special characters, no encoding issues
+  var IMAGES = [
+    'images/backgrounds/bg1.jpg',
+    'images/backgrounds/bg2.png',
+    'images/backgrounds/bg3.png',
+    'images/backgrounds/bg4.png',
+    'images/backgrounds/bg5.png',
+    'images/backgrounds/bg6.png',
+    'images/backgrounds/bg7.png',
+  ];
+
+  // Pick one random image for this page load — no cycling timer
+  var chosen = IMAGES[Math.floor(Math.random() * IMAGES.length)];
+
+  // bgB is only needed for the old crossfade logic; we only use bgA now.
+  // Set bgA directly and show it; bgB stays hidden and unused.
+  var bgA = document.getElementById('ts-bg-a');
+  bgA.style.backgroundImage = "url('" + chosen + "')";
+  bgA.style.opacity          = '1';
+
+  // ── Dismiss ───────────────────────────────────────────────
+  var ts = document.getElementById('title-screen');
+
+  function hideTitleScreen(callback) {
+    ts.classList.add('ts-hiding');
+    setTimeout(function () {
+      ts.style.display = 'none';
+      window.titleScreenActive = false;
+      if (callback) callback();
+    }, 900);
+  }
+
+  // ── Buttons ───────────────────────────────────────────────
+  // Check new slot keys (rpg-save-0 … rpg-save-4) as well as legacy rpg-save
+  var hasSave = (function () {
+    if (localStorage.getItem('rpg-save')) return true;
+    for (var i = 0; i < 5; i++) { if (localStorage.getItem('rpg-save-' + i)) return true; }
+    return false;
+  })();
+  var btnContinue = document.getElementById('ts-btn-continue');
+
+  if (!hasSave) {
+    btnContinue.disabled = true;
+    btnContinue.setAttribute('title', 'No saved adventure found');
+  }
+
+  document.getElementById('ts-btn-continue').addEventListener('click', function () {
+    if (!hasSave) return;
+    hideTitleScreen(function () {
+      var btn = document.getElementById('load-button');
+      if (btn) btn.click();
+    });
+  });
+
+  document.getElementById('ts-btn-new').addEventListener('click', function () {
+    hideTitleScreen(function () {
+      if (typeof window.showNewGameSlotPicker === 'function') {
+        window.showNewGameSlotPicker();
+      } else if (typeof window.bookEnterCharCreation === 'function') {
+        window.bookEnterCharCreation();
+      } else {
+        var modal = document.getElementById('character-modal');
+        if (modal) modal.style.display = 'block';
+      }
+    });
+  });
+
+  document.getElementById('ts-btn-settings').addEventListener('click', function () {
+    hideTitleScreen(function () {
+      if (window.__contentPanel) window.__contentPanel.open('pane-settings');
+    });
+  });
+
+  // ── Title music ───────────────────────────────────────────────
+  var _titleAudio = null;
+
+  function _startTitleMusic() {
+    _titleAudio = new Audio('music/title.mp3');
+    _titleAudio.loop  = true;
+    _titleAudio.volume = 0;
+    _titleAudio.play().catch(function () {});
+    var vol = 0;
+    var fadeId = setInterval(function () {
+      vol = Math.min(0.65, vol + 0.013);
+      if (_titleAudio) _titleAudio.volume = vol;
+      if (vol >= 0.65) clearInterval(fadeId);
+    }, 50);
+  }
+
+  // Called from script.js when the game world actually begins
+  window.titleMusicFadeOut = function (durationMs) {
+    var audio   = _titleAudio;
+    _titleAudio = null;
+    window.titleMusicFadeOut = null; // prevent double-call
+    if (!audio) return;
+    var steps = Math.max(1, ((durationMs || 4000) / 50));
+    var delta = audio.volume / steps;
+    var id = setInterval(function () {
+      audio.volume = Math.max(0, audio.volume - delta);
+      if (audio.volume <= 0) { clearInterval(id); audio.pause(); }
+    }, 50);
+  };
+
+  // ── "Press any button" reveal ─────────────────────────────
+  var _menuRevealed = false;
+
+  function _revealMenu() {
+    if (_menuRevealed) return;
+    _menuRevealed = true;
+    document.removeEventListener('keydown',     _onRevealKey,     true);
+    document.removeEventListener('pointerdown', _onRevealPointer, true);
+
+    // This is a user gesture — unlock audio immediately
+    if (typeof SoundManager !== 'undefined') {
+      var dummy = new Audio('sounds/ui/option_hover.mp3');
+      dummy.volume = 0.001;
+      dummy.play().then(function () { dummy.pause(); }).catch(function () {});
+    }
+
+    // Start title music (audio already unlocked by the gesture above)
+    _startTitleMusic();
+
+    // Lift the dark vignette and hide the prompt
+    document.getElementById('ts-dark-vignette').classList.add('ts-revealed');
+    document.getElementById('ts-press-prompt').classList.add('ts-hidden');
+
+    // Reveal menu and tagline once the darkness starts lifting
+    setTimeout(function () {
+      document.getElementById('ts-menu').classList.add('ts-visible');
+      document.getElementById('ts-tagline').classList.add('ts-visible');
+    }, 350);
+  }
+
+  function _onRevealKey(e) {
+    if (e.ctrlKey || e.metaKey || /^F\d+$/.test(e.key)) return;
+    if (['Alt', 'Control', 'Meta', 'Shift', 'CapsLock', 'NumLock', 'ScrollLock'].indexOf(e.key) !== -1) return;
+    _revealMenu();
+  }
+
+  function _onRevealPointer() { _revealMenu(); }
+
+  document.addEventListener('keydown',     _onRevealKey,     true);
+  document.addEventListener('pointerdown', _onRevealPointer, true);
+
+  // Hover sound — audio is already unlocked by the time the menu is visible
+  document.querySelectorAll('.ts-btn').forEach(function (btn) {
+    btn.addEventListener('mouseenter', function () {
+      if (typeof SoundManager !== 'undefined') SoundManager.play('option_hover');
+    });
+  });
+
+}());
+</script>
+
+<!-- ── Character Creation Wizard ─────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  /* ── Static data ─────────────────────────────────────────── */
+
+  var CULTURE_DATA = [
+    { value: 'Human',       name: 'Human',       icon: '⚔',  desc: 'Versatile and driven. Humans shape the realm through sheer force of will.' },
+    { value: 'Elf',         name: 'Elf',         icon: '✦',  desc: 'Long-lived and graceful, touched by ancient magic and the deep forest.' },
+    { value: 'Half-Elf',    name: 'Half-Elf',    icon: '◈',  desc: 'Born of two bloodlines, gifted by both — belonging fully to neither.' },
+    { value: 'Dwarf',       name: 'Dwarf',       icon: '⛏',  desc: 'Stalwart and proud, masters of stone, steel, and stubbornness.' },
+    { value: 'Half-Orc',    name: 'Half-Orc',    icon: '🪓', desc: 'Caught between worlds — powerfully built and fiercely resilient, hardened by a life of suspicion and conflict.' },
+    { value: 'Half-Goblin', name: 'Half-Goblin', icon: '🗡', desc: 'Cunning and resourceful. Turns hardship and prejudice into advantage.' },
+  ];
+
+  var SILHOUETTES = {
+    Human: { combo: 'images/characters/human.png', m: 'images/characters/human_m.png', f: 'images/characters/human_f.png' },
+    Elf:   { combo: 'images/characters/elf.png',   m: 'images/characters/elf_m.png',   f: 'images/characters/elf_f.png'   },
+    Dwarf: { combo: 'images/characters/dwarf.png', m: 'images/characters/dwarf_m.png', f: 'images/characters/dwarf_f.png' },
+  };
+
+  var BODY_TYPE_DATA = [
+    { value: 'Masculine', name: 'Masculine', icon: '♂', imgKey: 'm' },
+    { value: 'Feminine',  name: 'Feminine',  icon: '♀', imgKey: 'f' },
+  ];
+
+  var PRONOUN_OPTIONS = [
+    { value: 'he',   label: 'He / Him',    subject: 'he',   object: 'him',  possAdj: 'his',   possPro: 'his',    reflexive: 'himself'    },
+    { value: 'she',  label: 'She / Her',   subject: 'she',  object: 'her',  possAdj: 'her',   possPro: 'hers',   reflexive: 'herself'    },
+    { value: 'they', label: 'They / Them', subject: 'they', object: 'them', possAdj: 'their', possPro: 'theirs', reflexive: 'themselves' },
+  ];
+
+  var APPEARANCE_TRAITS = [
+    { key: 'hairLength',  label: 'Hair Length', options: ['Shaved', 'Short', 'Medium', 'Long', 'Very Long'] },
+    { key: 'hairColor',   label: 'Hair Color',  options: ['Black', 'Dark Brown', 'Brown', 'Auburn', 'Red', 'Blonde', 'Chestnut', 'Grey', 'White', 'Silver'] },
+    { key: 'facialHair',  label: 'Facial Hair', options: ['Clean-Shaven', 'Stubble', 'Goatee', 'Mustache', 'Short Beard', 'Full Beard', 'Long Beard', 'Braided Beard'], masculine: true },
+    { key: 'eyeColor',    label: 'Eye Color',   options: ['Dark Brown', 'Brown', 'Hazel', 'Green', 'Blue', 'Grey', 'Amber', 'Violet'] },
+    { key: 'height',      label: 'Height',      options: ['Very Short', 'Short', 'Average', 'Tall', 'Very Tall'] },
+    { key: 'build',       label: 'Build',       options: ['Slight', 'Lean', 'Average', 'Athletic', 'Muscular', 'Stocky', 'Heavyset'] },
+    { key: 'complexion',  label: 'Complexion',  options: ['Fair', 'Light', 'Olive', 'Tan', 'Brown', 'Ebony'] },
+  ];
+
+  var UNIQUE_FEATURES = [
+    'Facial scar', 'Body scar', 'Tattoo', 'Missing digit', 'Weathered skin',
+    'Calloused hands', 'Freckles', 'Piercing gaze', 'Strong jaw', 'High cheekbones',
+    'Crooked nose', 'Clouded eye',
+  ];
+
+  var PROF_ICONS = {
+    // Shared
+    'Ranger':'🌲',       'Sellsword':'🗡',    'Scout':'🔍',        'Woodsman':'🪵',
+    'Farmer':'🌾',       'Hunter':'🦌',       'Wanderer':'🧭',     'Forager':'🌿',
+    'Scavenger':'🗑',    'Trapper':'🪤',      'Smith':'🔨',        'Merchant':'⚖',
+    'Tinkerer':'⚙',     'Peddler':'🛒',      'Bandit':'🌑',       'Pirate':'⚓',
+    'Shade':'🌑',        'Drifter':'💨',      'Apothecary':'🧪',   'Cartographer':'🗺',
+    'Healer':'💊',       'Mediator':'🕊',     'Alchemist':'⚗',     'Cleric':'✝',
+    'Mage':'✨',
+    // Elf
+    'Sentinel':'🏹',     'Pathfinder':'🧭',   'Herbalist':'🌿',    'Bowyer':'🪶',
+    'Oathbreaker':'⚔',  'Lorekeeper':'📜',   'Enchanter':'✦',
+    // Dwarf
+    'Ironguard':'🛡',    'Delver':'⛏',        'Miner':'⛏',        'Brewer':'🍺',
+    'Engraver':'🪨',     'Grudgebearer':'🔥', 'Tunnelrat':'🐀',    'Chronicler':'📖',
+    // Goblin
+    'Raider':'⚔',        'Skulk':'🌑',        'Cutpurse':'💰',     'Cutthroat':'🗡',
+    'Shaman':'🔮',        'Witch Doctor':'🧿', 'Hex Witch':'🕯',    'Blightcaller':'☠',
+  };
+
+  var PROF_CATEGORIES = [
+    { name: 'Military',   icon: '⚔',  desc: 'Soldiers and warriors who live and die by the blade.' },
+    { name: 'Commonfolk', icon: '🌾', desc: 'Common folk who know the value of honest toil.' },
+    { name: 'Artisan',    icon: '🔨', desc: 'Skilled craftsmen and tradespeople of the guild.' },
+    { name: 'Outlaw',     icon: '🌑', desc: 'Criminals and those who live outside the law.' },
+    { name: 'Scholar',    icon: '📖', desc: 'Learned minds who pursue knowledge and healing.' },
+    { name: 'Arcane',     icon: '✨', desc: 'Practitioners of magic and the mystical arts.' },
+  ];
+
+  var ORIGIN_DATA = [
+    { value: 'noble',      icon: '👑', name: 'Noble House',
+      desc: 'Halls of fine cloth and careful words, where status was everything and hunger was a story told by others.',
+      reward: '+1 Persuasion  ·  Honorable  ·  Fine Clothing  ·  +15g',
+      skill: 'Persuasion', trait: 'Honorable', item: ['Fine Clothing', 1], gold: 15,
+      story: '{name} was raised in a noble house — halls of fine cloth and careful words, where status was everything and hunger was a story told by others.' },
+    { value: 'village',    icon: '🏡', name: 'Common Village',
+      desc: 'Close neighbours, shared work, and the kind of smallness that makes leaving feel like betrayal.',
+      reward: '+1 Herbalism  ·  Trustworthy  ·  Rations ×2',
+      skill: 'Herbalism', trait: 'Trustworthy', item: ['Rations', 2], gold: 0,
+      story: '{name} grew up in a common village — close neighbours, shared work, and the kind of smallness that makes leaving feel like betrayal.' },
+    { value: 'wilderness', icon: '🌲', name: 'The Wilderness',
+      desc: 'Forest or highland, it didn\'t matter. The world had edges there, and you learned them early.',
+      reward: '+1 Survival  ·  Resilient  ·  Hunting Knife',
+      skill: 'Survival', trait: 'Resilient', item: ['Hunting Knife', 1], gold: 0,
+      story: '{name} was raised in the wild — forest or highland, it didn\'t much matter. The world had edges there, and {name} learned them early.' },
+    { value: 'port',       icon: '⚓', name: 'Port Town',
+      desc: 'Noise, salt, and the constant churn of arrivals and departures that taught you everything comes and goes.',
+      reward: '+1 Navigation  ·  Cunning  ·  Waterskin  ·  +5g',
+      skill: 'Navigation', trait: 'Cunning', item: ['Waterskin', 1], gold: 5,
+      story: '{name} grew up in a port town — noise, salt, and the constant churn of arrivals and departures that taught {name} everything comes and goes.' },
+    { value: 'mountain',   icon: '⛰', name: 'A Mountain Hold',
+      desc: 'Winters were long and the stone walls held everything in: heat, stories, and the names of the dead.',
+      reward: '+1 Smithing  ·  Determined  ·  Torch ×2  ·  +3g',
+      skill: 'Smithing', trait: 'Determined', item: ['Torch', 2], gold: 3,
+      story: '{name} came from a mountain hold, where winters were long and the stone walls held everything in: heat, stories, and the names of the dead.' },
+    { value: 'farmstead',  icon: '🌾', name: 'The Farmsteads',
+      desc: 'Furrow and harvest, the same rhythms until the year they stopped feeling like rhythm anymore.',
+      reward: '+1 Foraging  ·  Patient  ·  Rations ×2',
+      skill: 'Foraging', trait: 'Patient', item: ['Rations', 2], gold: 0,
+      story: '{name} grew up on the farmsteads — furrow and harvest, the same rhythms until the year they didn\'t feel like rhythm anymore.' },
+    { value: 'slums',      icon: '🏚', name: 'The Slums',
+      desc: 'Where the city shows its other face — the one that doesn\'t blink when you look directly at it.',
+      reward: '+1 Thievery  ·  Sneaky  ·  Candle ×3  ·  +3g',
+      skill: 'Thievery', trait: 'Sneaky', item: ['Candle', 3], gold: 3,
+      story: '{name} was raised in the slums, where the city showed its other face: the one that doesn\'t blink when you look directly at it.' },
+    { value: 'monastery',  icon: '🕯', name: 'Monastic Grounds',
+      desc: 'Silence was a discipline and knowledge lived in the margins of old books.',
+      reward: '+1 Healing  ·  Wise  ·  Herb Pouch',
+      skill: 'Healing', trait: 'Wise', item: ['Herb Pouch', 1], gold: 0,
+      story: '{name} spent their early years in a monastery, where silence was a discipline and knowledge lived in the margins of old books.' },
+  ];
+
+  var MOTIV_DATA = [
+    { value: 'vengeance',  icon: '🔥', name: 'Vengeance',
+      desc: 'Something was taken. You do not speak of it plainly. It shapes every decision, every quiet moment before sleep.',
+      reward: 'Morality −5  ·  Hope −3',
+      morality: -5, hope: -3,
+      story: 'Something was taken. {name} does not speak of it plainly — but it shapes every decision, every quiet moment before sleep.' },
+    { value: 'knowledge',  icon: '📖', name: 'Knowledge',
+      desc: 'There is a thing you need to understand. Not want — need. The distinction matters to you more than most would guess.',
+      reward: 'Morality 0  ·  Hope +5',
+      morality: 0, hope: 5,
+      story: 'There is a thing {name} needs to understand. Not wants — needs. The distinction matters to them more than most would guess.' },
+    { value: 'law',        icon: '🌑', name: 'On the Run',
+      desc: 'The law wants you for something. You would prefer not to be found. The road is safer than the place you left.',
+      reward: 'Morality −3  ·  Hope −5',
+      morality: -3, hope: -5,
+      story: 'The law wants {name} for something. They would prefer not to be found. The road is safer than the place they left.' },
+    { value: 'honor',      icon: '⚜', name: 'Honour',
+      desc: 'You answered a call. Honour demanded it. Whether anyone else sees it that way is a question you\'ve stopped asking.',
+      reward: 'Morality +8  ·  Hope +6',
+      morality: 8, hope: 6,
+      story: '{name} answered a call. Honour demanded it. Whether anyone else sees it that way is a question {name} has stopped asking.' },
+    { value: 'fortune',    icon: '💰', name: 'Fortune',
+      desc: 'Gold. Not for its own sake — for what it opens. You know exactly what you intend to do with enough of it.',
+      reward: 'Morality −3  ·  Hope +3',
+      morality: -3, hope: 3,
+      story: 'Gold. Not for its own sake — for what it opens. {name} knows exactly what they intend to do with enough of it.' },
+    { value: 'protect',    icon: '🛡', name: 'Protect Someone',
+      desc: 'There is someone you are trying to protect. They may not even know it. That is perhaps the point.',
+      reward: 'Morality +7  ·  Hope +8',
+      morality: 7, hope: 8,
+      story: 'There is someone {name} is trying to protect. They may not even know it. That is perhaps the point.' },
+    { value: 'wanderlust', icon: '🌍', name: 'Wanderlust',
+      desc: 'You left because staying had started to feel like a kind of dying. The road offered no promises — that was the appeal.',
+      reward: 'Morality +2  ·  Hope +7',
+      morality: 2, hope: 7,
+      story: '{name} left because staying had started to feel like a kind of dying. The road offered no promises — that was the appeal.' },
+    { value: 'atonement',  icon: '🕊', name: 'Atonement',
+      desc: 'You are trying to make right what once went wrong. Whether that is possible is not something you let yourself examine too closely.',
+      reward: 'Morality +4  ·  Hope −2',
+      morality: 4, hope: -2,
+      story: '{name} is trying to make right what once went wrong. Whether that is possible is not something they let themselves examine too closely.' },
+  ];
+
+  var STEPS = [
+    { q: 'What is your name?',                    slide: 'cc-s0'    },
+    { q: 'What is your culture?',                  slide: 'cc-s1'    },
+    { q: 'What is your body type?',               slide: 'cc-s2'    },
+    { q: 'How does your character look?',         slide: 'cc-s-app' },
+    { q: 'What is your profession?',              slide: 'cc-s3'    },
+    { q: 'Where were you raised?',                slide: 'cc-s4'    },
+    { q: 'What drives you?',                      slide: 'cc-s5'    },
+    { q: 'Who were your parents?',                slide: 'cc-s6'    },
+    { q: 'What was your life before the road?',   slide: 'cc-s7'    },
+    { q: 'What made you leave home?',             slide: 'cc-s8'    },
+    { q: 'Your character is ready.',              slide: 'cc-s9'    },
+  ];
+
+  var CC_HEADINGS = ['Name', 'Culture', 'Body Type', 'Appearance', 'Profession', 'Origin', 'Motivation', 'Roots', 'Past Life', 'Departure', 'Ready'];
+  var CC_LORE = [
+    'Every legend begins with a name. What shall the world call you?',
+    'The culture that raised you shapes your path before you take a single step.',
+    'Your form, and how the world perceives you. Choose your pronouns below.',
+    'The face and figure others will come to know. All choices here are optional.',
+    'Your craft and calling define your place in this realm.',
+    'Where a person is raised leaves marks that no road can wash away.',
+    'A traveller without purpose wanders. You are no mere wanderer.',
+    'Behind every person is the people who made them. Who were yours?',
+    'Before the profession, the road, all of it — there was a life. What was it?',
+    'Something moved you out of that life. Not an accident. A reason.',
+    'Your story stands ready. Every choice made — every path ahead, unwritten.',
+  ];
+
+  /* ── Bonus attribute catalogue ───────────────────────────── */
+  var BONUS_ATTR_DATA = [
+    // ── Culture: Human ──
+    { id:'elven_blood',       icon:'✦',  name:'Elven Blood',
+      desc:'Distant elven ancestry awakens within you, granting an arcane reservoir.',
+      effect:{ maxMana:30 },
+      filter:function(s){ return s.culture==='Human'; } },
+    { id:'dwarven_blood',     icon:'⛏',  name:'Dwarven Blood',
+      desc:'Stout dwarven heritage grants exceptional resilience and endurance.',
+      effect:{ maxLife:15, maxStamina:10 },
+      filter:function(s){ return s.culture==='Human'; } },
+    { id:'iron_will',         icon:'🔩', name:'Iron Will',
+      desc:'Your resolve is unbreakable. No hardship has yet found your limit.',
+      effect:{ maxStamina:20 },
+      filter:function(s){ return s.culture==='Human'; } },
+    { id:'wanderers_blood',   icon:'🧭', name:"Wanderer's Blood",
+      desc:'Generations of roaming have honed your instincts for road and wilderness.',
+      effect:{ skills:['Survival','Tracking'] },
+      filter:function(s){ return s.culture==='Human'||s.culture==='Half-Elf'; } },
+    // ── Culture: Elf ──
+    { id:'ancient_bloodline', icon:'✦',  name:'Ancient Bloodline',
+      desc:'Your lineage runs deeper than most. Ancient arcane power stirs within.',
+      effect:{ maxMana:25 },
+      filter:function(s){ return s.culture==='Elf'; } },
+    { id:'forest_guardian',   icon:'🌲', name:'Forest Guardian',
+      desc:'The forest speaks to you as kin. You move through it with instinctive ease.',
+      effect:{ skills:['Herbalism','Tracking'] },
+      filter:function(s){ return s.culture==='Elf'; } },
+    { id:'moonlight_grace',   icon:'🌙', name:'Moonlight Grace',
+      desc:'You were taught to move like shadow and strike like silver moonlight.',
+      effect:{ skills:['Stealth','Archery'] },
+      filter:function(s){ return s.culture==='Elf'; } },
+    // ── Culture: Half-Elf ──
+    { id:'dual_heritage',     icon:'◈',  name:'Dual Heritage',
+      desc:'Two bloodlines in balance grant you gifts of both body and mind.',
+      effect:{ maxMana:15, maxLife:10 },
+      filter:function(s){ return s.culture==='Half-Elf'; } },
+    { id:'quick_learner',     icon:'📖', name:'Quick Learner',
+      desc:'Growing up between two worlds made you extraordinarily adaptable.',
+      effect:{ skills:['Persuasion','Healing'] },
+      filter:function(s){ return s.culture==='Half-Elf'; } },
+    // ── Culture: Dwarf ──
+    { id:'fire_in_blood',     icon:'🔥', name:'Fire in the Blood',
+      desc:'A rare ember of deep-earth magic smoulders within — an old dwarven secret.',
+      effect:{ maxMana:30 },
+      filter:function(s){ return s.culture==='Dwarf'; } },
+    { id:'stone_heart',       icon:'⛰', name:'Stone Heart',
+      desc:'Your endurance rivals the mountain. Your craft rivals the finest forge.',
+      effect:{ maxLife:15, skills:['Smithing'] },
+      filter:function(s){ return s.culture==='Dwarf'; } },
+    { id:'grudgebearers_gift',icon:'🪨', name:"Grudgebearer's Gift",
+      desc:'You were raised on tales of wrongs never forgotten. Hatred is your armour.',
+      effect:{ maxLife:20 },
+      filter:function(s){ return s.culture==='Dwarf'; } },
+    // ── Culture: Goblin / Half-Goblin ──
+    { id:'shadow_born',       icon:'🌑', name:'Shadow Born',
+      desc:'Darkness is your native element. You were never taught to fear the unseen.',
+      effect:{ skills:['Stealth','Thievery'] },
+      filter:function(s){ return s.culture==='Goblin'||s.culture==='Half-Goblin'; } },
+    { id:'pack_instinct',     icon:'🐺', name:'Pack Instinct',
+      desc:'You fight hardest when others fight beside you. Strength is found in numbers.',
+      effect:{ maxStamina:15, skills:['Survival'] },
+      filter:function(s){ return s.culture==='Goblin'||s.culture==='Half-Goblin'; } },
+    { id:'scavengers_eye',    icon:'🗑', name:"Scavenger's Eye",
+      desc:'Nothing is waste if you know what to look for. Value hides in every ruin.',
+      effect:{ skills:['Foraging','Alchemy'] },
+      filter:function(s){ return s.culture==='Goblin'||s.culture==='Half-Goblin'; } },
+    // ── Profession: Arcane / Scholar ──
+    { id:'mana_font',         icon:'✨', name:'Mana Font',
+      desc:'Your arcane training left a deeper mark than most. Magic flows readily.',
+      effect:{ maxMana:20 },
+      filter:function(s){
+        var pd=(window.PROFESSION_DATA||{})[s.profession]||{};
+        return pd.socialClass==='Arcane'||pd.socialClass==='Scholar'; } },
+    // ── Profession: Military / Outlaw ──
+    { id:'battle_hardened',   icon:'🛡', name:'Battle-Hardened',
+      desc:'Countless skirmishes left you more scarred — and more resilient — than most.',
+      effect:{ maxLife:20 },
+      filter:function(s){
+        var pd=(window.PROFESSION_DATA||{})[s.profession]||{};
+        return pd.socialClass==='Military'||pd.socialClass==='Outlaw'; } },
+    // ── Profession: Artisan ──
+    { id:'steady_hands',      icon:'🔨', name:'Steady Hands',
+      desc:'Years at the bench gave you a precision that goes beyond mere technique.',
+      effect:{ skills:['Crafting'] },
+      filter:function(s){
+        var pd=(window.PROFESSION_DATA||{})[s.profession]||{};
+        return pd.socialClass==='Artisan'; } },
+    // ── Profession: Commonfolk ──
+    { id:'survivors_grit',    icon:'🌿', name:"Survivor's Grit",
+      desc:'Common life teaches what academies never could. You endure where others falter.',
+      effect:{ maxStamina:10, skills:['Survival'] },
+      filter:function(s){
+        var pd=(window.PROFESSION_DATA||{})[s.profession]||{};
+        return pd.socialClass==='Commonfolk'; } },
+    // ── Profession: Outlaw (additional) ──
+    { id:'street_savvy',      icon:'🌑', name:'Street Savvy',
+      desc:'You know which shadows to stand in and which pockets to avoid.',
+      effect:{ skills:['Thievery','Stealth'] },
+      filter:function(s){
+        var pd=(window.PROFESSION_DATA||{})[s.profession]||{};
+        return pd.socialClass==='Outlaw'; } },
+    // ── Origin: Noble ──
+    { id:'noble_education',   icon:'📜', name:'Noble Education',
+      desc:'Court manners and classical study shaped how you think and how you are seen.',
+      effect:{ skills:['Persuasion','Negotiating'] },
+      filter:function(s){ return s.origin==='noble'; } },
+    // ── Origin: Village ──
+    { id:'common_wisdom',     icon:'🏡', name:'Common Wisdom',
+      desc:'The village gave you practical knowledge that no scholar could teach.',
+      effect:{ skills:['Foraging','Cooking'] },
+      filter:function(s){ return s.origin==='village'; } },
+    // ── Origin: Wilderness ──
+    { id:'wild_born',         icon:'🌲', name:'Wild Born',
+      desc:'The wilds raised you as much as any village could. You respect what others fear.',
+      effect:{ skills:['Survival','Hunting'] },
+      filter:function(s){ return s.origin==='wilderness'; } },
+    // ── Origin: Port ──
+    { id:'salt_blood',        icon:'⚓', name:'Salt Blood',
+      desc:'The port taught you trade, tide-reading, and keeping your head above water.',
+      effect:{ skills:['Negotiating','Navigation'] },
+      filter:function(s){ return s.origin==='port'; } },
+    // ── Motivation: Vengeance ──
+    { id:'burning_resolve',   icon:'🔥', name:'Burning Resolve',
+      desc:'Vengeance is a furnace that never goes cold. Your endurance is forged in it.',
+      effect:{ maxStamina:15 },
+      filter:function(s){ return s.motivation==='vengeance'; } },
+    // ── Motivation: Knowledge ──
+    { id:'academic_mind',     icon:'📖', name:'Academic Mind',
+      desc:'Your pursuit of knowledge has sharpened you into something rarely seen.',
+      effect:{ skills:['Decrypting','Alchemy'] },
+      filter:function(s){ return s.motivation==='knowledge'; } },
+    // ── Motivation: Law / On the Run ──
+    { id:'hunted_instincts',  icon:'🌑', name:'Hunted Instincts',
+      desc:'Being prey sharpens the senses and the survival instincts like nothing else.',
+      effect:{ skills:['Stealth','Survival'] },
+      filter:function(s){ return s.motivation==='law'; } },
+    // ── Motivation: Honour ──
+    { id:'champions_heart',   icon:'⚜', name:"Champion's Heart",
+      desc:'Honour is not just a code — it is armour against doubt, fear, and ruin.',
+      effect:{ maxLife:15 },
+      filter:function(s){ return s.motivation==='honor'; } },
+    // ── Motivation: Fortune ──
+    { id:'silver_tongue',     icon:'💰', name:'Silver Tongue',
+      desc:'Fortune favours the bold — but also the well-spoken. You are both.',
+      effect:{ skills:['Persuasion','Negotiating'] },
+      filter:function(s){ return s.motivation==='fortune'; } },
+    // ── Past Life: Minstrel ──
+    { id:'minstrel_life',     icon:'🎵', name:"Minstrel's Life",
+      desc:'Years on the road with a lute on your back taught you to read a room, win a crowd, and disappear before the bill arrives.',
+      effect:{ skills:['Lute'], items:['Lute'] },
+      filter:function(){ return false; } },
+    // ── Past Life: Scholar ──
+    { id:'scholars_eye',      icon:'📜', name:"Scholar's Eye",
+      desc:'Books, records, and the quiet of a library. You learned to find truth in things others overlook.',
+      effect:{ skills:['Decrypting','Alchemy'] },
+      filter:function(){ return false; } },
+    // ── Unlocked via quiz only ──
+    { id:'deathwalker',       icon:'💀', name:'Deathwalker',
+      desc:'You have already survived what should have ended you. The next threat will have to try harder.',
+      effect:{ maxLife:25 },
+      filter:function(){ return false; } },
+    { id:'blood_memory',      icon:'🩸', name:'Blood Memory',
+      desc:'Something older than memory stirs in your veins in certain places. You have learned not to ignore it.',
+      effect:{ maxMana:25 },
+      filter:function(){ return false; } },
+    { id:'killers_calm',      icon:'🗡', name:"Killer's Calm",
+      desc:'The calm that falls just before. Not everyone feels it. You always do.',
+      effect:{ skills:['Stealth','Brawling'] },
+      filter:function(){ return false; } },
+  ];
+
+  /* ── Backstory questions (steps 6–8) ────────────────────── */
+
+  var BACKSTORY_DATA = {
+    /* Step 6 — Parents: 1 trait + 1 attribute (bloodline) + gold */
+    parents: {
+      options: [
+        { value: 'commonfolk', icon: '🏡', name: 'Honest Folk',
+          desc: 'Farmers, labourers, tradespeople. They worked hard and asked little of the world.',
+          reward: 'Trustworthy  ·  Common Wisdom',
+          trait: 'Trustworthy', attrId: 'common_wisdom', gold: 0,
+          story: 'Their parents were common folk — patient, worn, and quietly dignified in the way only people who have never been given much can be.' },
+        { value: 'soldiers',   icon: '⚔', name: 'Soldiers',
+          desc: 'One or both carried a blade. Discipline, old wounds, and war stories told in halves.',
+          reward: 'Brave  ·  Battle-Hardened  ·  +5g',
+          trait: 'Brave', attrId: 'battle_hardened', gold: 5,
+          story: 'Their parents had served. The posture, the silence at dinner, the old scars that were never explained.' },
+        { value: 'scholars',   icon: '📜', name: 'Scholars or Clergy',
+          desc: 'Raised among books, careful language, and the weight of other people\'s wisdom.',
+          reward: 'Wise  ·  Academic Mind  ·  +5g',
+          trait: 'Wise', attrId: 'academic_mind', gold: 5,
+          story: 'Their parents were learned — or holy. They left {name} with careful words, old questions, and a distrust of easy answers.' },
+        { value: 'wanderers',  icon: '🌍', name: 'Wanderers',
+          desc: 'Your parents never stayed anywhere long. The world doesn\'t owe you roots — you learned that early.',
+          reward: 'Determined  ·  Wanderer\'s Blood  ·  +3g',
+          trait: 'Determined', attrId: 'wanderers_blood', gold: 3,
+          story: 'Their parents never settled. The road was home before {name} could name it, and belonging was never something they were taught to expect.' },
+        { value: 'merchants',  icon: '⚖', name: 'Merchants',
+          desc: 'They bought, sold, moved. You learned young that everything has a price and half the work is knowing what it is.',
+          reward: 'Charismatic  ·  Silver Tongue  ·  +10g',
+          trait: 'Charismatic', attrId: 'silver_tongue', gold: 10,
+          story: 'Their parents traded — bought, sold, moved. {name} learned young that everything has a price, and half the work is knowing what it is.' },
+        { value: 'nobility',   icon: '👑', name: 'Nobility',
+          desc: 'Of good name. Whether that name was earned or inherited is the kind of question one learns not to ask.',
+          reward: 'Honorable  ·  Noble Education  ·  +15g',
+          trait: 'Honorable', attrId: 'noble_education', gold: 15,
+          story: 'Their parents were of good name. Whether that name was earned or inherited is the kind of question one learns not to ask in certain company.' },
+        { value: 'healers',    icon: '🌿', name: 'Healers or Herbalists',
+          desc: 'Remedies, poultices, the old ways. You grew up around pain handled gently — something that left its mark.',
+          reward: 'Patient  ·  Quick Learner',
+          trait: 'Patient', attrId: 'quick_learner', gold: 0,
+          story: 'Their parents were healers, or kept to the herbs and the old remedies. {name} grew up around pain handled gently — something that left its mark.' },
+        { value: 'outlaws',    icon: '🗡', name: 'Outlaws or Criminals',
+          desc: 'They lived outside the law, or near enough to its edge that the distinction stopped mattering.',
+          reward: 'Cunning  ·  Street Savvy',
+          trait: 'Cunning', attrId: 'street_savvy', gold: 0,
+          story: 'Their parents lived outside the law, or near enough to its edge that the distinction stopped mattering. {name} learned young what survival costs.' },
+      ]
+    },
+    /* Step 7 — Past Life: 1 attribute */
+    pastLife: {
+      options: [
+        { value: 'fields',   icon: '🌾', name: 'The Fields',
+          desc: 'You worked land that wasn\'t yours, under skies that didn\'t care. The seasons were your only calendar.',
+          reward: 'Survivor\'s Grit',
+          attrId: 'survivors_grit',
+          story: 'Before the road, {name} knew the land — field and furrow, season by season, under skies that gave nothing freely.' },
+        { value: 'workshop', icon: '⚒', name: 'The Workshop',
+          desc: 'Hammer, lathe, needle — years in service to a craft. The work made you someone precise.',
+          reward: 'Steady Hands',
+          attrId: 'steady_hands',
+          story: 'Before the road, {name} belonged to a workshop — forge, bench, or loom — shaped by years of careful, thankless craft.' },
+        { value: 'garrison', icon: '🛡', name: 'A Garrison',
+          desc: 'Under someone\'s colours — a lord\'s banner, a city guard, a hired company. You knew how to follow orders.',
+          reward: 'Battle-Hardened',
+          attrId: 'battle_hardened',
+          story: 'Before the road, {name} had served — under a banner, in a garrison, or for coin. The discipline left marks that still show.' },
+        { value: 'sea',      icon: '⚓', name: 'The Sea',
+          desc: 'Tides and trade, and the strange democracy of people thrown together by water. You learned to read more than waves.',
+          reward: 'Salt Blood',
+          attrId: 'salt_blood',
+          story: 'Before the road, {name} had followed the sea — tides and trade and the strange democracy of people thrown together by water.' },
+        { value: 'temple',   icon: '🕯', name: 'A Temple',
+          desc: 'Not out of faith, exactly — but the structure of it. Silence and ritual that asked nothing but presence.',
+          reward: 'Mana Font',
+          attrId: 'mana_font',
+          story: 'Before the road, {name} had served a temple — not out of faith exactly, but the structure of it, the quiet, the ritual that asked nothing but presence.' },
+        { value: 'road',     icon: '🗺', name: 'Always the Road',
+          desc: 'There was no single life before this one. You\'ve always been moving. The road is just more honest about it.',
+          reward: 'Wanderer\'s Blood',
+          attrId: 'wanderers_blood',
+          story: '{name} had always been on the road, or near enough. The life before this one was the same life, slightly younger.' },
+        { value: 'estate',   icon: '🏰', name: 'A Noble Estate',
+          desc: 'Attached to a noble household — learning what it means to exist around wealth without quite having it.',
+          reward: 'Noble Education',
+          attrId: 'noble_education',
+          story: 'Before the road, {name} had lived in comfort — attached to a noble estate, learning what it means to exist around money without quite having it.' },
+        { value: 'streets',  icon: '🌑', name: 'The Dark Streets',
+          desc: 'The city\'s underside. You learned what is owed to no one and how to find the next thing.',
+          reward: 'Killer\'s Calm',
+          attrId: 'killers_calm',
+          story: 'Before the road, {name} had lived in the dark streets of a city — learning what is owed to no one and how to find the next thing.' },
+        { value: 'minstrel', icon: '🎵', name: 'A Minstrel\'s Life',
+          desc: 'Taverns, roads, and the space between songs. You traded in stories and attention, and learned what people give away when they relax.',
+          reward: 'Lute Skill  ·  A Lute',
+          attrId: 'minstrel_life',
+          story: 'Before the road, {name} had lived by song and story — tavern floors and open skies, playing for coin and for company in equal measure.' },
+        { value: 'study',    icon: '📜', name: 'A Scholar\'s Study',
+          desc: 'Books, records, and the quiet discipline of a library or scriptorium. You learned to find truth in what others overlook.',
+          reward: "Scholar's Eye",
+          attrId: 'scholars_eye',
+          story: 'Before the road, {name} had spent years among books and records, learning to read between the lines of things others never thought to question.' },
+      ]
+    },
+    /* Step 8 — Departure: 1 attribute */
+    departure: {
+      options: [
+        { value: 'loss',       icon: '💔', name: 'A Great Loss',
+          desc: 'A person. A place. A future half-planned before it was taken. It won\'t let you stay still.',
+          reward: 'Burning Resolve',
+          attrId: 'burning_resolve',
+          story: 'What set {name} on the road was loss — the kind that sits in the chest and refuses to become something smaller.' },
+        { value: 'debt',       icon: '⚜', name: 'A Debt Owed',
+          desc: 'Someone helped you — or sacrificed for you. You haven\'t repaid it. That sits in you like a stone.',
+          reward: 'Iron Will',
+          attrId: 'iron_will',
+          story: 'What moved {name} was a debt — not coin, but the kind paid in action, in time, in things that cannot be measured.' },
+        { value: 'question',   icon: '❓', name: 'An Unanswered Question',
+          desc: 'Something gnaws at you — a truth denied, a door shut too fast. You need to know.',
+          reward: 'Blood Memory',
+          attrId: 'blood_memory',
+          story: 'What moved {name} was a question — unanswered, unresolved, always pulling forward with no sign of what it will cost.' },
+        { value: 'fury',       icon: '🔥', name: 'An Old Fury',
+          desc: 'Not rage — something steadier. A wrong done, a world that didn\'t make good. It burns slow.',
+          reward: 'Deathwalker',
+          attrId: 'deathwalker',
+          story: 'What moved {name} was fury — old, specific, and not yet spent. The road is part of what it\'s for.' },
+        { value: 'exile',      icon: '🚪', name: 'Exile or Banishment',
+          desc: 'You did not leave by choice. Something — or someone — made the choice for you. The road was the only answer.',
+          reward: 'Hunted Instincts',
+          attrId: 'hunted_instincts',
+          story: '{name} did not leave by choice. Something — or someone — made the choice for them, and the road was the only answer.' },
+        { value: 'call',       icon: '📯', name: 'A Sacred Call',
+          desc: 'You heard a call, or something that felt like one. Whether it was duty or instinct or self-deception is still unclear.',
+          reward: 'Champion\'s Heart',
+          attrId: 'champions_heart',
+          story: '{name} heard a call, or something that felt like one. Whether it was duty or instinct or self-deception is still not entirely clear.' },
+        { value: 'wanderlust', icon: '🧭', name: 'Restless Wanderlust',
+          desc: 'You simply could not stay. No single reason. Just the certainty that remaining would be a kind of slow diminishment.',
+          reward: 'Wild Born',
+          attrId: 'wild_born',
+          story: '{name} simply could not stay. No single reason. Just the certainty that remaining would be a kind of slow diminishment.' },
+        { value: 'shame',      icon: '🌒', name: 'Running from Shame',
+          desc: 'You left before anyone could make you. That is all you are willing to say about it.',
+          reward: 'Shadow Born',
+          attrId: 'shadow_born',
+          story: '{name} left before anyone could make them. That is all they are willing to say about it.' },
+      ]
+    }
+  };
+
+  function buildQuizResults() {
+    var pa = (BACKSTORY_DATA.parents.options.find(function(o){   return o.value === sel.parents;   }) || null);
+    var pl = (BACKSTORY_DATA.pastLife.options.find(function(o){  return o.value === sel.pastLife;  }) || null);
+    var de = (BACKSTORY_DATA.departure.options.find(function(o){ return o.value === sel.departure; }) || null);
+
+    var traits = pa ? [pa.trait].filter(Boolean) : [];
+    var gold   = [pa, pl, de].filter(Boolean).reduce(function(a, o){ return a + (o.gold || 0); }, 0);
+    var attrs  = [pa, pl, de].filter(Boolean).map(function(o){
+      return BONUS_ATTR_DATA.find(function(a){ return a.id === o.attrId; });
+    }).filter(Boolean);
+
+    var nm = sel.name || 'The traveller';
+
+    // Gather story fragments: origin + motivation + parents + pastLife + departure
+    var storyParts = [];
+    var origOpt  = ORIGIN_DATA.find(function(o){ return o.value === sel.origin; });
+    var motivOpt = MOTIV_DATA.find(function(o){  return o.value === sel.motivation; });
+    if (origOpt  && origOpt.story)  storyParts.push(origOpt.story.replace(/\{name\}/g, nm));
+    if (motivOpt && motivOpt.story) storyParts.push(motivOpt.story.replace(/\{name\}/g, nm));
+    [pa, pl, de].filter(Boolean).forEach(function(o){
+      if (o.story) storyParts.push(o.story.replace(/\{name\}/g, nm));
+    });
+
+    return { traits: traits, gold: gold, attrs: attrs, backstory: storyParts.join(' ') };
+  }
+
+  function updateLeftPage(n) {
+    var headEl = document.getElementById('cc-left-heading');
+    var loreEl = document.getElementById('cc-left-lore');
+    var stepEl = document.getElementById('cc-left-step-num');
+    if (headEl) headEl.textContent = CC_HEADINGS[n] || '';
+    if (loreEl) loreEl.textContent = CC_LORE[n] || '';
+    if (stepEl) stepEl.textContent = 'Step ' + (n + 1) + ' of ' + STEPS.length;
+  }
+
+  /* ── Wizard state ────────────────────────────────────────── */
+  var step = 0;
+  var sel  = { name: '', culture: '', bodyType: '', pronouns: null, appearance: {}, uniqueFeatures: [], profession: '', origin: '', motivation: '', parents: '', pastLife: '', departure: '' };
+  var tutEnabled = true;
+
+  /* ── Effect text formatter ───────────────────────────────── */
+  function fmtEffect(fx) {
+    var parts = [];
+    if (fx.maxMana)    parts.push('+' + fx.maxMana + ' Mana');
+    if (fx.maxLife)    parts.push('+' + fx.maxLife + ' Life');
+    if (fx.maxStamina) parts.push('+' + fx.maxStamina + ' Stamina');
+    if (fx.skills)     fx.skills.forEach(function(sk){ parts.push('+1 ' + sk); });
+    if (fx.flag)       parts.push('Special');
+    return parts.join(' · ') || '—';
+  }
+
+  /* ── Card builders ───────────────────────────────────────── */
+
+  function makeBannerCard(opt) {
+    var wrap = document.createElement('div');
+    wrap.className = 'cc-card';
+    wrap.setAttribute('data-value', opt.value);
+
+    var inner = document.createElement('div');
+    inner.className = 'cc-card-inner';
+
+    var dia = document.createElement('div');
+    dia.className = 'cc-diamond';
+    var ico = document.createElement('div');
+    ico.className = 'cc-diamond-icon';
+    ico.textContent = opt.icon;
+    dia.appendChild(ico);
+
+    var name = document.createElement('div');
+    name.className = 'cc-card-name';
+    name.textContent = opt.name;
+
+    inner.appendChild(dia);
+    inner.appendChild(name);
+
+    if (opt.desc) {
+      var desc = document.createElement('div');
+      desc.className = 'cc-card-desc';
+      desc.textContent = opt.desc;
+      inner.appendChild(desc);
+    }
+
+    wrap.appendChild(inner);
+    return wrap;
+  }
+
+  function makeCultureCard(opt) {
+    var wrap = makeBannerCard(opt);
+    var sil = SILHOUETTES[opt.value];
+    if (sil && sil.combo) {
+      wrap.classList.add('cc-culture-has-silhouette');
+      wrap.style.setProperty('--cc-sil', 'url(' + sil.combo + ')');
+    }
+    return wrap;
+  }
+
+  function makeBodyTypeCard(opt) {
+    var wrap = document.createElement('div');
+    wrap.className = 'cc-body-card';
+    wrap.setAttribute('data-value', opt.value);
+
+    var inner = document.createElement('div');
+    inner.className = 'cc-body-card-inner';
+
+    var sil = SILHOUETTES[sel.culture] || {};
+    var imgSrc = sil[opt.imgKey];
+    if (imgSrc) {
+      inner.style.setProperty('--cc-body-sil', 'url(' + imgSrc + ')');
+      inner.classList.add('cc-body-has-sil');
+    }
+
+    var icon = document.createElement('div');
+    icon.className = 'cc-body-icon';
+    icon.textContent = opt.icon;
+
+    var label = document.createElement('div');
+    label.className = 'cc-body-label';
+    label.textContent = opt.name;
+
+    inner.appendChild(icon);
+    inner.appendChild(label);
+    wrap.appendChild(inner);
+    return wrap;
+  }
+
+  function buildBodyTypeStep() {
+    var row = document.getElementById('cc-body-type-row');
+    row.innerHTML = '';
+    BODY_TYPE_DATA.forEach(function (bt) {
+      var card = makeBodyTypeCard(bt);
+      if (sel.bodyType === bt.value) card.classList.add('cc-selected');
+      row.appendChild(card);
+    });
+
+    var pronounRow = document.getElementById('cc-pronoun-row');
+    pronounRow.innerHTML = '';
+    PRONOUN_OPTIONS.forEach(function (p) {
+      var btn = document.createElement('button');
+      btn.className = 'cc-pronoun-btn' + (sel.pronouns && sel.pronouns.value === p.value ? ' cc-pronoun-sel' : '');
+      btn.setAttribute('data-pronoun', p.value);
+      btn.textContent = p.label;
+      btn.addEventListener('click', function () {
+        sel.pronouns = p;
+        pronounRow.querySelectorAll('.cc-pronoun-btn').forEach(function (b) { b.classList.remove('cc-pronoun-sel'); });
+        btn.classList.add('cc-pronoun-sel');
+      });
+      pronounRow.appendChild(btn);
+    });
+  }
+
+  function buildAppearanceStep() {
+    var grid = document.getElementById('cc-appearance-grid');
+    grid.innerHTML = '';
+    APPEARANCE_TRAITS.filter(function (t) { return !t.masculine || sel.bodyType === 'Masculine'; }).forEach(function (trait) {
+      var group = document.createElement('div');
+      group.className = 'cc-app-group';
+
+      var label = document.createElement('div');
+      label.className = 'cc-app-label';
+      label.textContent = trait.label;
+      group.appendChild(label);
+
+      var pills = document.createElement('div');
+      pills.className = 'cc-app-pills';
+      trait.options.forEach(function (opt) {
+        var pill = document.createElement('button');
+        pill.className = 'cc-app-pill' + (sel.appearance[trait.key] === opt ? ' cc-app-sel' : '');
+        pill.textContent = opt;
+        pill.addEventListener('click', function () {
+          if (sel.appearance[trait.key] === opt) {
+            delete sel.appearance[trait.key];
+            pill.classList.remove('cc-app-sel');
+          } else {
+            sel.appearance[trait.key] = opt;
+            pills.querySelectorAll('.cc-app-pill').forEach(function (p) { p.classList.remove('cc-app-sel'); });
+            pill.classList.add('cc-app-sel');
+          }
+        });
+        pills.appendChild(pill);
+      });
+      group.appendChild(pills);
+      grid.appendChild(group);
+    });
+
+    // Unique features
+    var ufGroup = document.createElement('div');
+    ufGroup.className = 'cc-app-group';
+    var ufLabel = document.createElement('div');
+    ufLabel.className = 'cc-app-label';
+    ufLabel.textContent = 'Unique Features';
+    ufGroup.appendChild(ufLabel);
+    var ufPills = document.createElement('div');
+    ufPills.className = 'cc-app-pills';
+    UNIQUE_FEATURES.forEach(function (feat) {
+      var pill = document.createElement('button');
+      pill.className = 'cc-app-pill cc-app-pill-toggle' + (sel.uniqueFeatures.indexOf(feat) >= 0 ? ' cc-app-sel' : '');
+      pill.textContent = feat;
+      pill.addEventListener('click', function () {
+        var idx = sel.uniqueFeatures.indexOf(feat);
+        if (idx >= 0) {
+          sel.uniqueFeatures.splice(idx, 1);
+          pill.classList.remove('cc-app-sel');
+        } else {
+          sel.uniqueFeatures.push(feat);
+          pill.classList.add('cc-app-sel');
+        }
+      });
+      ufPills.appendChild(pill);
+    });
+    ufGroup.appendChild(ufPills);
+    grid.appendChild(ufGroup);
+  }
+
+  function getAppearanceDescription() {
+    var app = sel.appearance;
+    var parts = [];
+    var heightMap = { 'Very Short': 'quite short', 'Short': 'on the shorter side', 'Average': 'of average height', 'Tall': 'tall', 'Very Tall': 'noticeably tall' };
+    var buildMap = { 'Slight': 'slight build', 'Lean': 'lean build', 'Average': 'average build', 'Athletic': 'athletic build', 'Muscular': 'muscular build', 'Stocky': 'stocky build', 'Heavyset': 'heavyset build' };
+
+    if (app.height || app.build) {
+      var hStr = app.height ? heightMap[app.height] || app.height : '';
+      var bStr = app.build ? buildMap[app.build] || app.build : '';
+      if (hStr && bStr) parts.push(sel.name + ' is ' + hStr + ' with a ' + bStr + '.');
+      else if (hStr) parts.push(sel.name + ' is ' + hStr + '.');
+      else parts.push(sel.name + ' has a ' + bStr + '.');
+    }
+
+    if (app.complexion || app.eyeColor || app.hairLength || app.hairColor || (app.facialHair && app.facialHair !== 'Clean-Shaven')) {
+      var desc = [];
+      if (app.complexion) desc.push(app.complexion.toLowerCase() + ' complexion');
+      if (app.eyeColor) desc.push(app.eyeColor.toLowerCase() + ' eyes');
+      var hairParts = [];
+      if (app.hairLength && app.hairLength !== 'Shaved') {
+        if (app.hairColor) hairParts.push(app.hairColor.toLowerCase() + ', ' + app.hairLength.toLowerCase() + ' hair');
+        else hairParts.push(app.hairLength.toLowerCase() + ' hair');
+      } else if (app.hairLength === 'Shaved') {
+        hairParts.push('a shaved head');
+      } else if (app.hairColor) {
+        hairParts.push(app.hairColor.toLowerCase() + ' hair');
+      }
+      if (hairParts.length) desc.push(hairParts[0]);
+      if (app.facialHair && app.facialHair !== 'Clean-Shaven') desc.push(app.facialHair.toLowerCase());
+      if (desc.length) parts.push('They have ' + desc.join(', ') + '.');
+    }
+
+    if (sel.uniqueFeatures.length) {
+      parts.push('Notable features: ' + sel.uniqueFeatures.join(', ').toLowerCase() + '.');
+    }
+
+    return parts.join(' ') || '';
+  }
+
+  function makeProfCard(value, icon, name, desc) {
+    var wrap = document.createElement('div');
+    wrap.className = 'cc-prof-card';
+    wrap.setAttribute('data-value', value);
+
+    var inner = document.createElement('div');
+    inner.className = 'cc-prof-card-inner';
+
+    var dia = document.createElement('div');
+    dia.className = 'cc-prof-diamond';
+    var ico = document.createElement('div');
+    ico.className = 'cc-prof-diamond-icon';
+    ico.textContent = icon || '⚔';
+    dia.appendChild(ico);
+
+    var nameEl = document.createElement('div');
+    nameEl.className = 'cc-prof-name';
+    nameEl.textContent = name;
+
+    inner.appendChild(dia);
+    inner.appendChild(nameEl);
+
+    if (desc) {
+      var descEl = document.createElement('div');
+      descEl.className = 'cc-prof-desc';
+      descEl.textContent = desc;
+      inner.appendChild(descEl);
+    }
+
+    wrap.appendChild(inner);
+    return wrap;
+  }
+
+  /* ── Selection handler (shared for all card rows) ─────────── */
+
+  function attachCardRow(container, stateKey, selClass) {
+    container.addEventListener('click', function (e) {
+      var card = e.target.closest('[data-value]');
+      if (!card || !container.contains(card)) return;
+      var val = card.getAttribute('data-value');
+      sel[stateKey] = val;
+      container.querySelectorAll('.' + selClass).forEach(function (c) {
+        c.classList.remove('cc-selected');
+      });
+      card.classList.add('cc-selected');
+      updateFooter();
+    });
+  }
+
+  /* ── Validation ──────────────────────────────────────────── */
+
+  function stepValid() {
+    switch (step) {
+      case 0: return sel.name.trim().length > 0;
+      case 1: return !!sel.culture;
+      case 2: return !!sel.bodyType;
+      case 3: return true; // appearance is optional
+      case 4: return !!sel.profession;
+      case 5: return !!sel.origin;
+      case 6: return !!sel.motivation;
+      case 7: return !!sel.parents;
+      case 8: return !!sel.pastLife;
+      case 9: return !!sel.departure;
+      case 10: return true; // confirm sheet — always valid
+    }
+    return false;
+  }
+
+  function populateConfirmSheet() {
+    var sheet = document.getElementById('cc-confirm-sheet');
+    if (!sheet) return;
+    var pd         = (window.PROFESSION_DATA || {})[sel.profession] || {};
+    var originObj  = ORIGIN_DATA.find(function (o) { return o.value === sel.origin; })     || {};
+    var motivObj   = MOTIV_DATA.find(function (m)  { return m.value === sel.motivation; }) || {};
+    var socialClass = pd.socialClass || '—';
+    var trait       = pd.trait       || '—';
+    var skills      = pd.skills      || [];
+    var gold        = pd.gold        || 0;
+    var icon        = PROF_ICONS[sel.profession] || '⚔';
+    var itemList    = (pd.items || []).map(function (it) {
+      return it[1] > 1 ? it[0] + ' ×' + it[1] : it[0];
+    }).join(', ');
+
+    var html = '';
+
+    // Header
+    html += '<div class="cc-sheet-heading">' + icon + ' ' + (sel.name || '—') + '</div>';
+
+    // Identity grid
+    html += '<div class="profile-section-header">Identity</div>';
+    html += '<div class="profile-grid">';
+    html += '<div class="profile-field full"><span class="profile-label">Name</span><span class="profile-value">' + (sel.name || '—') + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Culture</span><span class="profile-value">' + (sel.culture || '—') + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Body Type</span><span class="profile-value">' + (sel.bodyType || '—') + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Pronouns</span><span class="profile-value">' + (sel.pronouns ? sel.pronouns.label : '—') + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Profession</span><span class="profile-value">' + (sel.profession || '—') + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Social Class</span><span class="profile-value">' + socialClass + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Origin</span><span class="profile-value">' + (originObj.name || '—') + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Motivation</span><span class="profile-value">' + (motivObj.name || '—') + '</span></div>';
+    html += '<div class="profile-field full"><span class="profile-label">Starting Trait</span><span class="profile-value">' + trait + '</span></div>';
+    html += '</div>';
+
+    // Starting skills
+    html += '<div class="profile-section-header">Starting Skills</div>';
+    skills.forEach(function (s) {
+      html += '<div class="profile-skill-row"><span>' + s + '</span><span class="profile-skill-lv">Lv 1</span></div>';
+    });
+
+    // Culture bonuses
+    var cd = (window.CULTURE_DATA || {})[sel.culture] || {};
+    html += '<div class="profile-section-header">Culture Bonuses</div>';
+    html += '<div class="profile-grid">';
+    html += '<div class="profile-field"><span class="profile-label">Life</span><span class="profile-value">' + (cd.maxLife || 100) + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Stamina</span><span class="profile-value">' + (cd.maxStamina || 50) + '</span></div>';
+    html += '<div class="profile-field"><span class="profile-label">Mana</span><span class="profile-value">' + (cd.maxMana != null ? cd.maxMana : 0) + '</span></div>';
+    if (cd.bonusSkill)  html += '<div class="profile-field"><span class="profile-label">Bonus Skill</span><span class="profile-value">' + cd.bonusSkill + '</span></div>';
+    if (cd.bonusItem)   html += '<div class="profile-field"><span class="profile-label">Bonus Item</span><span class="profile-value">' + cd.bonusItem + '</span></div>';
+    if (cd.bonusGold)   html += '<div class="profile-field"><span class="profile-label">Bonus Gold</span><span class="profile-value">+' + cd.bonusGold + ' gp</span></div>';
+    html += '</div>';
+
+    // Origin & Motivation bonuses
+    html += '<div class="profile-section-header">Origin Bonus</div>';
+    html += '<p class="cc-sheet-note">' + (originObj.desc || '—') + '</p>';
+    html += '<div class="profile-section-header">Motivation Bonus</div>';
+    html += '<p class="cc-sheet-note">' + (motivObj.desc || '—') + '</p>';
+
+    // Starting equipment
+    html += '<div class="profile-section-header">Starting Equipment</div>';
+    html += '<p class="cc-sheet-note">' + (itemList || '—') + '</p>';
+
+    // Gold
+    html += '<div class="profile-section-header">Gold</div>';
+    html += '<div class="profile-grid"><div class="profile-field"><span class="profile-label">Starting Gold</span><span class="profile-value">' + gold + ' gp</span></div></div>';
+
+    // Morality + Hope from motivation
+    var _motivOpt = MOTIV_DATA.find(function(o){ return o.value === sel.motivation; });
+    if (_motivOpt) {
+      html += '<div class="profile-section-header">Disposition</div>';
+      var _morSign = _motivOpt.morality >= 0 ? '+' : '';
+      var _hopSign = _motivOpt.hope >= 0 ? '+' : '';
+      html += '<div class="profile-grid">';
+      html += '<div class="profile-field"><span class="profile-label">Morality</span><span class="profile-value">' + _morSign + _motivOpt.morality + '</span></div>';
+      html += '<div class="profile-field"><span class="profile-label">Hope</span><span class="profile-value">' + _hopSign + _motivOpt.hope + '</span></div>';
+      html += '</div>';
+    }
+
+    // Backstory + innate attributes from quiz
+    // Appearance description
+    var _appDesc = getAppearanceDescription();
+    if (_appDesc) {
+      html += '<div class="profile-section-header">Appearance</div>';
+      html += '<p class="cc-sheet-note" style="font-style:italic;">' + _appDesc + '</p>';
+    }
+
+    var _qr = buildQuizResults();
+    html += '<div class="profile-section-header">Backstory</div>';
+    html += '<p class="cc-sheet-note" style="font-style:italic;">' + (_qr.backstory || '—') + '</p>';
+    html += '<div class="profile-section-header">Innate Attributes</div>';
+    if (_qr.attrs.length) {
+      _qr.attrs.forEach(function (attr) {
+        html += '<div class="profile-skill-row"><span>' + attr.icon + ' ' + attr.name + '</span>';
+        html += '<span class="profile-skill-lv">' + fmtEffect(attr.effect) + '</span></div>';
+      });
+    } else {
+      html += '<p class="cc-sheet-note">—</p>';
+    }
+    if (_qr.traits.length) {
+      html += '<div class="profile-section-header">Bloodline Trait</div>';
+      html += '<p class="cc-sheet-note">' + _qr.traits.join(', ') + '</p>';
+    }
+    if (_qr.gold > 0) {
+      html += '<div class="profile-section-header">Inheritance</div>';
+      html += '<div class="profile-grid"><div class="profile-field"><span class="profile-label">Bonus Gold</span><span class="profile-value">+' + _qr.gold + ' gp</span></div></div>';
+    }
+
+    // Tutorial option
+    html += '<div class="profile-section-header">Options</div>';
+    html += '<label class="cc-tut-label"><input type="checkbox" id="cc-enable-tutorial"> Enable Tutorial</label>';
+    html += '<p class="cc-sheet-note">Step-by-step guidance for your first adventure. Uncheck to explore on your own.</p>';
+
+    sheet.innerHTML = html;
+
+    // Wire tutorial checkbox (innerHTML wipes event listeners)
+    var tCb = document.getElementById('cc-enable-tutorial');
+    if (tCb) {
+      tCb.checked = tutEnabled;
+      tCb.addEventListener('change', function () { tutEnabled = tCb.checked; });
+    }
+  }
+
+
+  /* ── UI updates ──────────────────────────────────────────── */
+
+  function updateFooter() {
+    document.getElementById('cc-next').disabled = !stepValid();
+  }
+
+  function updateDots() {
+    document.querySelectorAll('.cc-dot').forEach(function (d, i) {
+      d.classList.remove('cc-dot-cur', 'cc-dot-done');
+      if      (i === step) d.classList.add('cc-dot-cur');
+      else if (i  <  step) d.classList.add('cc-dot-done');
+    });
+  }
+
+  function goToStep(n) {
+    document.getElementById(STEPS[step].slide).classList.remove('cc-slide-active');
+    step = n;
+    document.getElementById(STEPS[step].slide).classList.add('cc-slide-active');
+    document.getElementById('cc-question').textContent = STEPS[step].q;
+    document.getElementById('cc-back').disabled = (step === 0);
+    document.getElementById('cc-next').textContent =
+      step === STEPS.length - 1 ? 'Begin Your Journey →' :
+      step === STEPS.length - 2 ? 'Review →' : 'Next →';
+    updateFooter();
+    updateDots();
+    updateLeftPage(step);
+    if (step === 2) { buildBodyTypeStep(); }
+    if (step === 3) { buildAppearanceStep(); }
+    if (step === STEPS.length - 1) { populateConfirmSheet(); }
+    // Focus the name field when on step 0
+    if (step === 0) {
+      setTimeout(function () {
+        var f = document.getElementById('cc-name-field');
+        if (f) f.focus();
+      }, 50);
+    }
+  }
+
+  /* ── Form sync (runs once, just before character creation) ── */
+
+  function syncToForms() {
+    // Name
+    document.getElementById('char-name').value = sel.name.trim();
+
+    // Culture
+    var raceEl = document.getElementById('char-culture-select');
+    raceEl.value = sel.culture;
+    raceEl.dispatchEvent(new Event('change'));
+
+    // Body type — click the matching hidden toggle button
+    document.querySelectorAll('#char-gender-group .char-tog').forEach(function (btn) {
+      if (btn.getAttribute('data-val') === sel.bodyType) btn.click();
+    });
+
+    // Pronouns and appearance — expose to script.js
+    window.__pronouns = sel.pronouns
+      ? { subject: sel.pronouns.subject, object: sel.pronouns.object, possAdj: sel.pronouns.possAdj, possPro: sel.pronouns.possPro, reflexive: sel.pronouns.reflexive, label: sel.pronouns.label }
+      : { subject: 'they', object: 'them', possAdj: 'their', possPro: 'theirs', reflexive: 'themselves', label: 'They / Them' };
+    window.__appearance = { traits: Object.assign({}, sel.appearance), uniqueFeatures: sel.uniqueFeatures.slice(), description: getAppearanceDescription() };
+
+    // Profession
+    var profEl = document.getElementById('char-profession');
+    profEl.value = sel.profession;
+    profEl.dispatchEvent(new Event('change'));
+
+    // Origin
+    var originEl = document.getElementById('char-origin');
+    originEl.value = sel.origin;
+    originEl.dispatchEvent(new Event('change'));
+
+    // Motivation
+    var motivEl = document.getElementById('char-motivation');
+    motivEl.value = sel.motivation;
+    motivEl.dispatchEvent(new Event('change'));
+
+    // Tutorial flag — read by script.js on new game start
+    window.__enableTutorial = tutEnabled;
+
+    // Origin rewards — skill, trait, item, gold applied in script.js createBtn
+    var _origOpt = ORIGIN_DATA.find(function(o){ return o.value === sel.origin; });
+    window.__originResults = _origOpt
+      ? { skill: _origOpt.skill, trait: _origOpt.trait, item: _origOpt.item, gold: _origOpt.gold || 0, story: _origOpt.story || '' }
+      : {};
+
+    // Motivation — morality + hope applied in script.js createBtn
+    var _motivOpt = MOTIV_DATA.find(function(o){ return o.value === sel.motivation; });
+    window.__motivResults = _motivOpt
+      ? { morality: _motivOpt.morality || 0, hope: _motivOpt.hope || 0, story: _motivOpt.story || '' }
+      : { morality: 0, hope: 0 };
+
+    // Backstory quiz results — read by script.js in createBtn.onclick
+    var _qr = buildQuizResults();
+    window.__quizResults = _qr;
+    window.__selectedBonusAttributes = _qr.attrs;
+  }
+
+  /* ── Show profession list for a category ────────────────── */
+
+  function showProfView(catName) {
+    document.getElementById('cc-cat-view').classList.remove('cc-phase-active');
+    document.getElementById('cc-prof-view').classList.add('cc-phase-active');
+    document.getElementById('cc-prof-cat-label').textContent = catName;
+
+    var grid = document.getElementById('cc-prof-grid');
+    grid.innerHTML = '';
+    var profData   = window.PROFESSION_DATA   || {};
+    var cultProfs  = window.CULTURE_PROFESSIONS || {};
+    var profs      = (cultProfs[sel.culture] || {})[catName] || [];
+    if (!profs.length) {
+      grid.innerHTML = '<p style="opacity:0.6">No professions available for this culture and category.</p>';
+      return;
+    }
+    profs.forEach(function (profName) {
+      var p = profData[profName];
+      if (!p) return;
+      var card = makeProfCard(profName, PROF_ICONS[profName] || '⚔', profName, p.desc);
+      if (sel.profession === profName) card.classList.add('cc-selected');
+      grid.appendChild(card);
+    });
+  }
+
+  /* ── Advance / finish ────────────────────────────────────── */
+
+  function advance() {
+    if (!stepValid()) return;
+    if (step < STEPS.length - 1) {
+      goToStep(step + 1);
+    } else {
+      syncToForms();
+      setTimeout(function () {
+        document.getElementById('create-character-button').click();
+      }, 60);
+    }
+  }
+
+  /* ── Reset (called each time the modal opens) ────────────── */
+
+  function resetWizard() {
+    sel = { name: '', culture: '', bodyType: '', pronouns: null, appearance: {}, uniqueFeatures: [], profession: '', origin: '', motivation: '', parents: '', pastLife: '', departure: '' };
+    tutEnabled = true;
+
+    // Remove selections from all cards
+    document.querySelectorAll('.cc-card.cc-selected, .cc-prof-card.cc-selected').forEach(function (c) {
+      c.classList.remove('cc-selected');
+    });
+
+    // Reset profession slide to category view
+    document.getElementById('cc-prof-view').classList.remove('cc-phase-active');
+    document.getElementById('cc-cat-view').classList.add('cc-phase-active');
+
+    // Clear name field
+    var nf = document.getElementById('cc-name-field');
+    if (nf) nf.value = '';
+
+    // Go back to step 0 without animating
+    if (step !== 0) {
+      document.getElementById(STEPS[step].slide).classList.remove('cc-slide-active');
+      step = 0;
+      document.getElementById(STEPS[0].slide).classList.add('cc-slide-active');
+      document.getElementById('cc-question').textContent = STEPS[0].q;
+      document.getElementById('cc-back').disabled = true;
+      document.getElementById('cc-next').textContent = 'Next →';
+    }
+    updateFooter();
+    updateDots();
+    updateLeftPage(0);
+    setTimeout(function () {
+      var nf = document.getElementById('cc-name-field');
+      if (nf) nf.focus();
+    }, 120);
+  }
+
+  window.ccResetWizard = resetWizard;
+
+  /* ── Initialise after DOM + script.js have both loaded ───── */
+
+  document.addEventListener('DOMContentLoaded', function () {
+
+    /* Dots */
+    var dotsWrap = document.getElementById('cc-dots');
+    STEPS.forEach(function (_, i) {
+      var d = document.createElement('div');
+      d.className = 'cc-dot' + (i === 0 ? ' cc-dot-cur' : '');
+      dotsWrap.appendChild(d);
+    });
+
+    /* Culture cards */
+    var raceRow = document.getElementById('cc-race-row');
+    CULTURE_DATA.forEach(function (c) { raceRow.appendChild(makeCultureCard(c)); });
+    raceRow.addEventListener('click', function (e) {
+      var card = e.target.closest('.cc-card[data-value]');
+      if (!card || !raceRow.contains(card)) return;
+      var val = card.getAttribute('data-value');
+      if (sel.culture !== val) {
+        sel.culture    = val;
+        sel.profession = ''; // reset profession when culture changes
+        raceRow.querySelectorAll('.cc-card').forEach(function (c) { c.classList.remove('cc-selected'); });
+        card.classList.add('cc-selected');
+        updateFooter();
+      }
+    });
+
+    /* Body type and pronoun step — built dynamically in goToStep(2) */
+    document.getElementById('cc-body-type-row').addEventListener('click', function (e) {
+      var card = e.target.closest('.cc-body-card[data-value]');
+      if (!card) return;
+      var val = card.getAttribute('data-value');
+      sel.bodyType = val;
+      document.getElementById('cc-body-type-row').querySelectorAll('.cc-body-card').forEach(function (c) { c.classList.remove('cc-selected'); });
+      card.classList.add('cc-selected');
+      // Auto-default pronouns when body type is first chosen
+      if (!sel.pronouns) {
+        var defaultPron = val === 'Feminine' ? 'she' : 'he';
+        sel.pronouns = PRONOUN_OPTIONS.find(function (p) { return p.value === defaultPron; }) || null;
+        var pronRow = document.getElementById('cc-pronoun-row');
+        if (pronRow && sel.pronouns) {
+          pronRow.querySelectorAll('.cc-pronoun-btn').forEach(function (b) {
+            b.classList.toggle('cc-pronoun-sel', b.getAttribute('data-pronoun') === sel.pronouns.value);
+          });
+        }
+      }
+      updateFooter();
+    });
+
+    /* Category cards for profession slide */
+    var catRow = document.getElementById('cc-cat-row');
+    PROF_CATEGORIES.forEach(function (cat) {
+      catRow.appendChild(makeBannerCard({ value: cat.name, name: cat.name, icon: cat.icon, desc: cat.desc }));
+    });
+    catRow.addEventListener('click', function (e) {
+      var card = e.target.closest('.cc-card[data-value]');
+      if (!card || !catRow.contains(card)) return;
+      var catName = card.getAttribute('data-value');
+      if (!PROF_CATEGORIES.find(function (c) { return c.name === catName; })) return;
+      catRow.querySelectorAll('.cc-card').forEach(function (c) { c.classList.remove('cc-selected'); });
+      card.classList.add('cc-selected');
+      showProfView(catName);
+    });
+
+    /* Profession grid — persistent delegated listener, cards rebuilt per category */
+    var profGrid = document.getElementById('cc-prof-grid');
+    profGrid.addEventListener('click', function (e) {
+      var card = e.target.closest('.cc-prof-card[data-value]');
+      if (!card) return;
+      var val = card.getAttribute('data-value');
+      sel.profession = val;
+      profGrid.querySelectorAll('.cc-prof-card').forEach(function (c) { c.classList.remove('cc-selected'); });
+      card.classList.add('cc-selected');
+      updateFooter();
+    });
+
+    document.getElementById('cc-prof-back-btn').addEventListener('click', function () {
+      document.getElementById('cc-prof-view').classList.remove('cc-phase-active');
+      document.getElementById('cc-cat-view').classList.add('cc-phase-active');
+    });
+
+    /* Origin cards */
+    var originRow = document.getElementById('cc-origin-row');
+    ORIGIN_DATA.forEach(function (o) { originRow.appendChild(makeBannerCard(o)); });
+    attachCardRow(originRow, 'origin', 'cc-card');
+
+    /* Motivation cards */
+    var motivRow = document.getElementById('cc-motiv-row');
+    MOTIV_DATA.forEach(function (m) { motivRow.appendChild(makeBannerCard(m)); });
+    attachCardRow(motivRow, 'motivation', 'cc-card');
+
+    /* Step 6 — Parents */
+    var parentsRow = document.getElementById('cc-parents-row');
+    BACKSTORY_DATA.parents.options.forEach(function (o) { parentsRow.appendChild(makeBannerCard(o)); });
+    attachCardRow(parentsRow, 'parents', 'cc-card');
+
+    /* Step 7 — Past Life */
+    var pastlifeRow = document.getElementById('cc-pastlife-row');
+    BACKSTORY_DATA.pastLife.options.forEach(function (o) { pastlifeRow.appendChild(makeBannerCard(o)); });
+    attachCardRow(pastlifeRow, 'pastLife', 'cc-card');
+
+    /* Step 8 — Departure */
+    var departureRow = document.getElementById('cc-departure-row');
+    BACKSTORY_DATA.departure.options.forEach(function (o) { departureRow.appendChild(makeBannerCard(o)); });
+    attachCardRow(departureRow, 'departure', 'cc-card');
+
+    /* Name field */
+    var nameField = document.getElementById('cc-name-field');
+    nameField.addEventListener('input', function () {
+      sel.name = nameField.value;
+      updateFooter();
+    });
+    nameField.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') advance();
+    });
+
+    /* Nav buttons */
+    document.getElementById('cc-back').addEventListener('click', function () {
+      if (step > 0) goToStep(step - 1);
+    });
+    document.getElementById('cc-next').addEventListener('click', function () {
+      advance();
+    });
+
+  });
+
+}());
+</script>
+
+</body>
+</html>

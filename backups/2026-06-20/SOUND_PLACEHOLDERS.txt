@@ -1,0 +1,47 @@
+SOUND PLACEHOLDERS
+==================
+These sound files are registered in sound.js and already wired in the game.
+Drop the audio files into the folders listed below and they will play automatically.
+All files should be MP3.
+
+
+── AMBIENCE ────────────────────────────────────────────────────────────────────
+Folder: sounds/ambience/
+
+  ambience_coastal.mp3
+    Plays in Coastal and Ocean biomes (day or night).
+    Suggest: ocean waves, distant seagulls, wind off water.
+
+  ambience_mountain.mp3
+    Plays in Mountain / Mountains biomes during the day.
+    At night falls back to ambience_common_night.
+    Suggest: high-altitude wind, distant eagle cry, sparse birdsong.
+
+  ambience_river.mp3
+    Plays in River and Lake biomes (day or night).
+    Suggest: flowing water, frogs, light insect hum.
+
+  ambience_town_night.mp3
+    Plays in City / CapitalCity / Village zones at night.
+    Currently falls back to ambience_common_night.
+    Suggest: distant tavern chatter, night watchman bell, occasional dog bark.
+
+
+── SOUND EFFECTS ───────────────────────────────────────────────────────────────
+Folder: sounds/effects/
+
+  item_pickup.mp3
+    Plays when an item is received from a random exploration event.
+    Suggest: short cloth rustle or soft jingle (lighter than receive_coin).
+
+  quest_update.mp3
+    Plays when a quest objective is ticked off (✅ message).
+    Suggest: short ascending chime or parchment-rustle.
+
+  quest_complete.mp3
+    Plays when a full quest is completed (🏆 message).
+    Suggest: triumphant fanfare sting, 1–2 seconds.
+
+  equip.mp3
+    Plays when equipping or unequipping any item.
+    Suggest: metal scrape / leather buckle click.

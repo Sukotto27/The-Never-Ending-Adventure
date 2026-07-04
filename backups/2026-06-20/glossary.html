@@ -319,17 +319,6 @@
 
     .kingdom-block:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 
-    .kingdom-banner {
-      display: block;
-      width: 100%;
-      max-width: 380px;
-      height: auto;
-      margin: 0 auto 0.8rem;
-      border-radius: 3px;
-      border: 1px solid rgba(212,168,48,0.28);
-      box-shadow: 0 4px 18px rgba(0,0,0,0.55);
-    }
-
     .kingdom-name {
       font-family: 'CelticHand', serif;
       font-size: 1.25rem;
@@ -345,15 +334,6 @@
       font-style: italic;
     }
 
-    .kingdom-epigraph {
-      font-family: 'CelticHand', serif;
-      font-size: 0.98rem;
-      color: rgba(213,192,154,0.65);
-      font-style: italic;
-      margin-bottom: 0.6rem;
-      letter-spacing: 0.02em;
-    }
-
     .kingdom-body {
       font-size: 0.88rem;
       color: #b09878;
@@ -364,137 +344,6 @@
       color: #c09025;
       font-weight: normal;
       font-family: 'CelticHand', serif;
-    }
-
-    .kingdom-body p {
-      margin-bottom: 0.75rem;
-    }
-
-    /* Provinces */
-    .province-block {
-      margin: 0.7rem 0;
-      padding: 0.7rem 0.85rem;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(212,168,48,0.14);
-      border-radius: 3px;
-    }
-
-    .province-head {
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-    }
-
-    .province-icon {
-      width: 30px;
-      height: 34px;
-      object-fit: contain;
-      flex-shrink: 0;
-    }
-
-    .province-title {
-      font-family: 'CelticHand', serif;
-      font-size: 1rem;
-      color: #d4a830;
-    }
-
-    .province-form {
-      font-size: 0.74rem;
-      color: rgba(212,168,48,0.55);
-      font-style: italic;
-      margin-left: 0.4em;
-    }
-
-    .province-seat {
-      font-size: 0.74rem;
-      color: rgba(213,192,154,0.55);
-    }
-
-    .province-blurb {
-      font-size: 0.85rem;
-      color: #b09878;
-      line-height: 1.5;
-      margin: 0.45rem 0 0.55rem;
-    }
-
-    .settlement-group {
-      margin-top: 0.35rem;
-      font-size: 0.83rem;
-    }
-
-    .settlement-label {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: rgba(212,168,48,0.55);
-    }
-
-    .settlement-list {
-      list-style: none;
-      margin-top: 0.25rem;
-    }
-
-    .settlement-list li {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.4rem;
-      font-size: 0.85rem;
-      color: #b09878;
-      padding: 0.15rem 0;
-      line-height: 1.4;
-    }
-
-    .settlement-icon {
-      width: 16px;
-      height: 18px;
-      object-fit: contain;
-      flex-shrink: 0;
-      margin-top: 0.15rem;
-    }
-
-    .settlement-list li strong {
-      color: #c8a860;
-      font-weight: normal;
-    }
-
-    .village-list {
-      font-size: 0.85rem;
-      color: #96805f;
-    }
-
-    /* The Twelve Great Houses (Naradreth) */
-    .house-list {
-      list-style: none;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 0.3rem 1.2rem;
-      margin-top: 0.5rem;
-    }
-
-    .house-list li {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.45rem;
-      font-size: 0.85rem;
-      color: #b09878;
-      padding: 0.2rem 0;
-      line-height: 1.4;
-    }
-
-    .house-icon {
-      width: 22px;
-      height: 25px;
-      object-fit: contain;
-      flex-shrink: 0;
-      margin-top: 0.1rem;
-    }
-
-    .house-list li strong {
-      display: block;
-      font-family: 'CelticHand', serif;
-      font-size: 0.9rem;
-      color: #d4a830;
-      font-weight: normal;
     }
 
     /* Not-yet-implemented section */
@@ -545,7 +394,6 @@
         <li>Fairies</li>
         <li>Nymphs</li>
         <li>Sirens</li>
-        <li>The Quin <em>(all but extinct — their existence is unknown to most)</em></li>
       </ul>
 
       <div class="cat-header">Monsters &amp; Creatures</div>
@@ -594,646 +442,123 @@
       <p class="section-intro">The continent of Estranta is home to ten distinct kingdoms with unique cultures, climates, and mysteries.</p>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/ardrenhold.png" alt="Banner of the Kingdom of Ardrenhold" loading="lazy">
         <div class="kingdom-name">Kingdom of Ardrenhold</div>
         <div class="kingdom-meta">Human ruled · Western coast · Lush, green, forest-rich</div>
         <div class="kingdom-body">
-          <p>Ardrenhold is the kingdom the bards sing of even when they are not its own — a land of rolling green hedgerows, wheat gone gold in the Goldenfields, and taverns where the welcome is as warm as the ale is cheap. Knighthood here is not merely a rank but a story people still want to belong to; once a year Ealdenford turns itself into an archery fairground for the Festival of the Golden Arrow. The kingdom is greenest along its western coast, where farmland gives way without warning to the older, darker trees of Ardrenwood.</p>
           <strong>Known for:</strong> Brave and valiant knights, welcoming taverns.<br>
+          <strong>Capital:</strong> Ardrenkeep — a fortified city housing the main keep and throne of the noble king.<br>
+          <strong>Cities:</strong> Ealdenford, Wulfhelm, Aethelstow, Grimscastel.<br>
+          <strong>Villages:</strong> Kinsburg, Hearthmere, Wyrmwood, Brigstow, Eorlingstead, Alderwood.<br>
           <strong>Notable Locations:</strong> Raven's Perch Lookout (wyvern nesting grounds nearby), The Shadow Cavern (legendary Raven Knight armor — solve his riddle to claim it), Ardrenwood (goblin tribe), The Goldenfields (annual Harvest Festival), The Ashbound Altar &amp; The Oaken Barrow (ancient artifact fragments).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/ardrenhold_province1.png" alt="Province of Ardren" loading="lazy">
-          <div>
-            <span class="province-title">Province of Ardren</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Ardrenkeep</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's own duchy, encircling the capital and the Goldenfields.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/ardrenhold_capital.png" alt="" loading="lazy"><span><strong>Ardrenkeep</strong> <em>(capital)</em> — Fortified capital housing the main keep and throne of the noble king.</span></li>
-        <li><img class="settlement-icon" src="images/banners/ardrenhold_city.png" alt="" loading="lazy"><span><strong>Grimstone</strong> — A rough-hewn mining town on the western road, its forges ringing day and night.</span></li>
-        <li><img class="settlement-icon" src="images/banners/ardrenhold_city.png" alt="" loading="lazy"><span><strong>Aethelstow</strong> — 'Noble Place' — known for royal heritage and regal architecture.</span></li>
-        <li><img class="settlement-icon" src="images/banners/ardrenhold_city.png" alt="" loading="lazy"><span><strong>Wulfhelm</strong> — 'Wolf's Helm' — a fortified city known for strength and resilience.</span></li>
-        <li><img class="settlement-icon" src="images/banners/ardrenhold_city.png" alt="" loading="lazy"><span><strong>Grimscastel</strong> — 'Grim's Castle' — marked by a legendary imposing castle.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Hearthmere, Eorlingstead</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/ardrenhold_province2.png" alt="Province of Auldhelm" loading="lazy">
-          <div>
-            <span class="province-title">Province of Auldhelm</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Auldhelm</div>
-          </div>
-        </div>
-        <p class="province-blurb">A crossroads county whose twice-weekly market draws traders from three kingdoms.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/ardrenhold_city.png" alt="" loading="lazy"><span><strong>Auldhelm</strong> — A bustling crossroads market city drawing traders from three kingdoms.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Brigstow, Kinsburg</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/ardrenhold_province3.png" alt="Province of Ealdenford" loading="lazy">
-          <div>
-            <span class="province-title">Province of Ealdenford</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Ealdenford</div>
-          </div>
-        </div>
-        <p class="province-blurb">River-county built around the old ford, its quay market busy with barge trade.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/ardrenhold_city.png" alt="" loading="lazy"><span><strong>Ealdenford</strong> — 'Old River Crossing' — built around a historic ford.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Wyrmwood, Alderwood</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/Dwynbroch.png" alt="Banner of the Kingdom of Dwynbroch" loading="lazy">
         <div class="kingdom-name">Kingdom of Dwynbroch</div>
         <div class="kingdom-meta">Human ruled (with Dwarves) · Northwestern region · Mountainous, pine forests, bogs</div>
         <div class="kingdom-body">
-          <p>Dwynbroch is a land of green highlands and old songs, its people bound together by mead, music, and a shared fascination with the wyrms said to still slumber in the northern peaks. The Misty Moors are said to shelter mystical creatures and older spirits still, while the Thornwood Forest — dense, thorned, and widely believed to be enchanted — shifts its paths for those who wander too far from the road. Aberwyn, the capital, sits where a river meets the sea, its beauty argued over by every rival city on the continent and conceded by none of them.</p>
           <strong>Known for:</strong> Lively music and art, fascination with dragons.<br>
+          <strong>Capital:</strong> Aberwyn — a picturesque city at a river mouth.<br>
+          <strong>Cities:</strong> Lochvale, Morvarth, Glencairn, Glenvarloch.<br>
+          <strong>Villages:</strong> Dalmore, Thornwood, Braefern, Dunleith, Glenmire.<br>
           <strong>Notable Locations:</strong> Lochvale Arena, The Thornwood Forest (enchanted, shifting paths; reclusive dragon and giant spiders within), The Misty Moors, The Dragon's Spine Ridge (dragon egg hidden here), The Weeping Waterfall (treasure cave behind the falls), The Cairn of Dunan (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/dwynbroch_province1.png" alt="Province of Morvarth" loading="lazy">
-          <div>
-            <span class="province-title">Province of Morvarth</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Morvarth</div>
-          </div>
-        </div>
-        <p class="province-blurb">A clifftop coastal county whose harbour market trades in salted fish and sea-charts.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/dwynbroch_city.png" alt="" loading="lazy"><span><strong>Morvarth</strong> — A coastal city with commanding sea views.</span></li>
-        <li><img class="settlement-icon" src="images/banners/dwynbroch_city.png" alt="" loading="lazy"><span><strong>Lochvale</strong> — Home of the Lochvale Arena.</span></li>
-          </ul>
-        </div>
-
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/dwynbroch_province2.png" alt="Province of Glenvale" loading="lazy">
-          <div>
-            <span class="province-title">Province of Glenvale</span><span class="province-form">Barony</span>
-            <div class="province-seat">seat: Glenvarloch</div>
-          </div>
-        </div>
-        <p class="province-blurb">A highland barony beside a mysterious deep lake.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/dwynbroch_city.png" alt="" loading="lazy"><span><strong>Glenvarloch</strong> — A city beside a mysterious deep lake.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Thornwood, Dalmore, Dunleith, Braefern</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/dwynbroch_province3.png" alt="Province of Aberwyn" loading="lazy">
-          <div>
-            <span class="province-title">Province of Aberwyn</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Aberwyn</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated in the capital at the river mouth.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/dwynbroch_capital.png" alt="" loading="lazy"><span><strong>Aberwyn</strong> <em>(capital)</em> — A picturesque city at a river mouth.</span></li>
-        <li><img class="settlement-icon" src="images/banners/dwynbroch_city.png" alt="" loading="lazy"><span><strong>Glencairn</strong> — Famous for a valley filled with historical cairns.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Glenmire</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/Brythwen.png" alt="Banner of the Kingdom of Brythwen" loading="lazy">
         <div class="kingdom-name">Kingdom of Brythwen</div>
         <div class="kingdom-meta">Human ruled · Southern coast · Coastal</div>
         <div class="kingdom-body">
-          <p>Brythwen does not rule by heritage or culture — it rules by commerce. Set along the southern coast, it is the undisputed trading capital of the continent, home to the largest marketplace in Estranta and a harbor that never truly sleeps. Sapphire Harbor is Brythwen's bright face; not far from it, hidden from plain sight, the Shadow Market does its business with gangs, pirates, and thieves who ask no questions and expect none in return.</p>
           <strong>Known for:</strong> Continental hub for traders and merchants; largest marketplace on the continent.<br>
+          <strong>Capital:</strong> Brythford.<br>
+          <strong>Cities:</strong> Eldenbrook, Valdara, Greystone, Windhall.<br>
+          <strong>Villages:</strong> Thornwick, Brambleton, Oakshire, Riverwell, Meadowford, Drunmar (quarantined — mysterious illness).<br>
           <strong>Notable Locations:</strong> Sapphire Harbor, The Shadow Market (illegal goods; gangs and pirates), Glimwood Castle (abandoned; dark secret), Stormwatch Tower, The Wyvern's Windspire, The Ruins of Windwhisper (wind chime points to hidden treasure), The Shattered Citadel of Caldris (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/brythwen_province1.png" alt="Province of Rivershore" loading="lazy">
-          <div>
-            <span class="province-title">Province of Rivershore</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Brambleton</div>
-          </div>
-        </div>
-        <p class="province-blurb">A farming county along the river flats, its thornbush tavern a landmark for travelers.</p>
-
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Thornwick, Brambleton, Riverwell, Drunmar (quarantined)</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/brythwen_province2.png" alt="Province of Greyshire" loading="lazy">
-          <div>
-            <span class="province-title">Province of Greyshire</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Greystone</div>
-          </div>
-        </div>
-        <p class="province-blurb">Known for its limestone quarries and enduring grey-stone architecture.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/brythwen_city.png" alt="" loading="lazy"><span><strong>Valdara</strong> — A city in a majestic valley steeped in legend.</span></li>
-        <li><img class="settlement-icon" src="images/banners/brythwen_city.png" alt="" loading="lazy"><span><strong>Greystone</strong> — Known for renowned architecture and enduring strength.</span></li>
-          </ul>
-        </div>
-
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/brythwen_province3.png" alt="Province of Brythmark" loading="lazy">
-          <div>
-            <span class="province-title">Province of Brythmark</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Brythford</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated in the capital and its grand bazaar.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/brythwen_capital.png" alt="" loading="lazy"><span><strong>Brythford</strong> <em>(capital)</em> — Brythwen's capital city.</span></li>
-        <li><img class="settlement-icon" src="images/banners/brythwen_city.png" alt="" loading="lazy"><span><strong>Eldenbrook</strong> — Known for ancient roots and a winding brook.</span></li>
-        <li><img class="settlement-icon" src="images/banners/brythwen_city.png" alt="" loading="lazy"><span><strong>Windhall</strong> — Known for its strategic coastal location and resilient people.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Oakshire, Meadowford</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/Nithrond.png" alt="Banner of the Kingdom of Nithrond" loading="lazy">
         <div class="kingdom-name">Kingdom of Nithrond</div>
         <div class="kingdom-meta">Elf ruled · Southeastern region · Forested, autumnal</div>
         <div class="kingdom-body">
-          <p>Nithrond is a kingdom of archers and archivists, a people who prize precision in all things — in war, in scholarship, in tradition. Tucked into forests that seem to hold an eternal autumn, it feels like a place always caught in the hush just before winter. At its heart lies the Grand Archives, the largest library on the continent, its doors sealed to all but the members of the Elven Loremasters Society.</p>
           <strong>Known for:</strong> Elven prowess in archery; the Grand Archives — largest library in Estranta (access requires Elven Loremasters Society membership).<br>
+          <strong>Capital:</strong> Thalorion — buildings carved from shimmering white stone, grown from enchanted roots.<br>
+          <strong>Cities:</strong> Sylvaen, Virelysar, Caeleth, Namorelith.<br>
+          <strong>Villages:</strong> Elmyralen, Firaelis, Tirwynn Hollow, Liraen's Cross, Thandelmere.<br>
           <strong>Notable Locations:</strong> The Grand Archives, Rendrid's Moonlit Bazaar (open only under the full moon), The Moonlit Glade (ethereal tree reveals underground chamber on full moon), The Starfall Burrow (rare Starfall Gem), The Veil of Vines (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/nithrond_province1.png" alt="Province of Moonveil" loading="lazy">
-          <div>
-            <span class="province-title">Province of Moonveil</span><span class="province-form">Barony</span>
-            <div class="province-seat">seat: Thrandelmere</div>
-          </div>
-        </div>
-        <p class="province-blurb">A quiet marshland barony where villagers leave offerings at the lakeside Spiritwell Shrine.</p>
-
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Thandelmere</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/nithrond_province2.png" alt="Province of Thalorion Vale" loading="lazy">
-          <div>
-            <span class="province-title">Province of Thalorion Vale</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Thalorion</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated in the crescent valley capital.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/nithrond_capital.png" alt="" loading="lazy"><span><strong>Thalorion</strong> <em>(capital)</em> — Buildings carved from shimmering white stone, grown from enchanted roots.</span></li>
-        <li><img class="settlement-icon" src="images/banners/nithrond_city.png" alt="" loading="lazy"><span><strong>Virelysar</strong> — A city of scholars and spellweavers where moonlight reflects off mirrored lakes.</span></li>
-        <li><img class="settlement-icon" src="images/banners/nithrond_city.png" alt="" loading="lazy"><span><strong>Namorelith</strong> — Perched on cliffs above the ocean, known for wind harps.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Elmyralen, Tirwynn Hollow, Liraen's Cross</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/nithrond_province3.png" alt="Province of Sylvaen Reach" loading="lazy">
-          <div>
-            <span class="province-title">Province of Sylvaen Reach</span><span class="province-form">Earldom</span>
-            <div class="province-seat">seat: Sylvaen</div>
-          </div>
-        </div>
-        <p class="province-blurb">A forest earldom built into towering silver-bark trees.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/nithrond_city.png" alt="" loading="lazy"><span><strong>Sylvaen</strong> — Built into towering silver-bark trees, known for elevated walkways.</span></li>
-        <li><img class="settlement-icon" src="images/banners/nithrond_city.png" alt="" loading="lazy"><span><strong>Caeleth</strong> — Surrounded by autumnal forests, famed for amber-leafed gardens.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Firaelis</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/Sivanrift.png" alt="Banner of the Kingdom of Sivanrift" loading="lazy">
         <div class="kingdom-name">Kingdom of Sivanrift</div>
         <div class="kingdom-meta">Elf ruled (with Humans) · Southwestern region · Gardens, canyon networks, forest</div>
         <div class="kingdom-body">
-          <p>Sivanrift likes to present itself as proof that elves and humans can share a crown. Its capital, Myrthill, is built around the Grand Gardens as a living monument to that idea. Travel to the border, though, and the harmony frays a little at the edges — the Cursed Forest, sealed off by a curse centuries old, is a place locals warn travelers away from and rarely explain why.</p>
           <strong>Known for:</strong> Rare plants grown nowhere else in the world; the Grand Gardens in the capital.<br>
+          <strong>Capital:</strong> Myrthill — silverwood towers and marble courtyards; a symbol of inter-racial harmony.<br>
+          <strong>Cities:</strong> Aurelwyn, Talandras, Velendar, Iriandel.<br>
+          <strong>Villages:</strong> Willowfen, Duskwatch, Elowen's Field, Halorin Cross, Rivensong.<br>
           <strong>Notable Locations:</strong> The Grand Gardens of Sivanrift, The Cursed Forest (Ithalia's curse; begins quest "The Sword of Ithalia"), The Echoing Canyons, The Twilight Vineyards, The Thornward Pillars (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/sivanrift_province1.png" alt="Province of Aurelshore" loading="lazy">
-          <div>
-            <span class="province-title">Province of Aurelshore</span><span class="province-form">Earldom</span>
-            <div class="province-seat">seat: Iriandel</div>
-          </div>
-        </div>
-        <p class="province-blurb">A cliffside earldom above the Echoing Canyons, its architecture tuned to the wind.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/sivanrift_city.png" alt="" loading="lazy"><span><strong>Aurelwyn</strong> — A port city thriving on trade in exotic wines and enchanted textiles.</span></li>
-        <li><img class="settlement-icon" src="images/banners/sivanrift_city.png" alt="" loading="lazy"><span><strong>Talandras</strong> — A city straddling rivers and waterfalls, known for translucent bridges.</span></li>
-        <li><img class="settlement-icon" src="images/banners/sivanrift_city.png" alt="" loading="lazy"><span><strong>Iriandel</strong> — Built along the cliffside above the Echoing Canyons.</span></li>
-          </ul>
-        </div>
-
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/sivanrift_province2.png" alt="Province of Myrthal" loading="lazy">
-          <div>
-            <span class="province-title">Province of Myrthal</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Myrthill</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated in the capital's Grand Gardens.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/sivanrift_capital.png" alt="" loading="lazy"><span><strong>Myrthill</strong> <em>(capital)</em> — Silverwood towers and marble courtyards; a symbol of inter-racial harmony.</span></li>
-        <li><img class="settlement-icon" src="images/banners/sivanrift_city.png" alt="" loading="lazy"><span><strong>Velendar</strong> — A cultural hub for musicians, poets, and lorekeepers.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Duskwatch, Elowen's Field, Halorin Cross</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/sivanrift_province3.png" alt="Province of the Southern Reach" loading="lazy">
-          <div>
-            <span class="province-title">Province of the Southern Reach</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Rivensong</div>
-          </div>
-        </div>
-        <p class="province-blurb">Canyon country to the south, where the wind composes music through the stone.</p>
-
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Willowfen, Rivensong</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/Naradreth.png" alt="Banner of the Kingdom of Naradreth" loading="lazy">
         <div class="kingdom-name">Kingdom of Naradreth</div>
         <div class="kingdom-meta">Elf ruled · Eastern coast · Coastal</div>
         <div class="kingdom-body">
-          <p>Naradreth is a kingdom balanced on the edge of tearing itself apart. From the outside, its capital looks like a single unified city; step past the outer wall, and it reveals itself as twelve fiercely independent districts, each with its own architecture, its own magic, and its own ambitions. In the shadowed harbor city of Ilryndor, black-sailed ships slip in and out under the watch of an elite order of guards, while in Draes'ythil — the 'Sister of Silence' — no one speaks aloud, communicating instead through glyphs traced in thought alone.</p>
           <strong>Known for:</strong> Hostile to strangers, especially non-elves; on the brink of civil war between the Twelve Great Houses.<br>
+          <strong>Capital:</strong> Velra'syl — divided into twelve noble districts; outsiders are rarely welcome.<br>
+          <strong>Cities:</strong> Ilryndor (naval academy; Silent Guard), Draes'ythil (all communication via telepathic glyphs — no one speaks aloud).<br>
+          <strong>Villages:</strong> Tiryll's Hollow, Mythren's Gate, Vaerlyn Reach.<br>
           <strong>Notable Locations:</strong> Sunspire Tower, The Singing Springs, Twilight Mirror Lake (submerged elven shrine), Eclipse Grove, The Sunken Shrine of Vaeryn (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Cities &amp; Villages</div>
-        <div class="province-block">
-          <div class="settlement-group">
-            <span class="settlement-label">Cities</span>
-            <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/naradreth_city.png" alt="" loading="lazy"><span><strong>Draes'ythil</strong> — The 'Sister of Silence' — all communication here is via telepathic glyphs.</span></li>
-        <li><img class="settlement-icon" src="images/banners/naradreth_capital.png" alt="" loading="lazy"><span><strong>Velra'syl</strong> <em>(capital)</em> — Divided into twelve noble districts; outsiders are rarely welcome.</span></li>
-        <li><img class="settlement-icon" src="images/banners/naradreth_city.png" alt="" loading="lazy"><span><strong>Ilryndor</strong> — A shadowed harbor city with black sails, home to an elite naval academy.</span></li>
-            </ul>
-          </div>
-          <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Tiryll's Hollow, Mythren's Gate, Vaerlyn Reach</span></div>
-        </div>
-        <div class="cat-header" style="margin-top:1.2rem">Provinces — The Twelve Great Houses</div>
-        <p class="section-intro" style="margin-bottom:0.5rem;">Naradreth has no provinces in the ordinary sense — behind the capital's single outer wall, the Twelve Great Houses each rule one district of Velra'syl, and that division of power is the kingdom's true territorial structure.</p>
-        <ul class="house-list">
-            <li><img class="house-icon" src="images/banners/naradreth_province1.png" alt="House Velsundar" loading="lazy"><span><strong>House Velsundar</strong>The ruling house, seated at the Circle of Spires.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province2.png" alt="House Draezel" loading="lazy"><span><strong>House Draezel</strong>Wardens of the Silent Guard and the glyph-tongue.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province3.png" alt="House Ilrynthar" loading="lazy"><span><strong>House Ilrynthar</strong>Masters of the black-sailed fleets.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province4.png" alt="House Corvethis" loading="lazy"><span><strong>House Corvethis</strong>Star-watchers of Sunspire Tower.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province5.png" alt="House Amareth" loading="lazy"><span><strong>House Amareth</strong>Old blood, older grudges.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province6.png" alt="House Nym'oril" loading="lazy"><span><strong>House Nym'oril</strong>Spies and whisper-keepers.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province7.png" alt="House Sethrune" loading="lazy"><span><strong>House Sethrune</strong>Commanders of the standing spears.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province8.png" alt="House Myrrathis" loading="lazy"><span><strong>House Myrrathis</strong>Merchants of the eastern coast trade.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province9.png" alt="House Fenrallis" loading="lazy"><span><strong>House Fenrallis</strong>Wardens of the cliffs and lighthouses.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province10.png" alt="House Thalvenor" loading="lazy"><span><strong>House Thalvenor</strong>Keepers of the rites at the Singing Springs.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province11.png" alt="House Kaelmoor" loading="lazy"><span><strong>House Kaelmoor</strong>Watchers of the eclipse at Eclipse Grove.</span></li>
-            <li><img class="house-icon" src="images/banners/naradreth_province12.png" alt="House Vaelisar" loading="lazy"><span><strong>House Vaelisar</strong>Arbiters who hold the deciding vote among the Twelve.</span></li>
-        </ul>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/Feldarun.png" alt="Banner of the Kingdom of Feldarún" loading="lazy">
         <div class="kingdom-name">Kingdom of Feldarún</div>
         <div class="kingdom-meta">Dwarf ruled · Central mountains · Hidden in mountainous terrain</div>
         <div class="kingdom-body">
-          <p>Feldarún does not want to be found, and mostly, it isn't. Hidden deep in the mountains of the continent's heart, this dwarven kingdom guards its hammer-and-anvil banner and its forges with a wariness that borders on hostility toward anyone who is not dwarven born. What little outsiders know of it comes from its craftsmanship — blades and artifacts from the Ironbell Forge are prized across Estranta, whether or not their makers ever intended them to travel so far.</p>
           <strong>Known for:</strong> Mining heritage, master craftsmanship; hostile to strangers and non-dwarves.<br>
+          <strong>Capital:</strong> Khúralgron — a grand forge-city carved into a volcanic caldera.<br>
+          <strong>Cities:</strong> Darakthul, Brondrak Kazel, Vurndrim, Tharnhold.<br>
+          <strong>Villages:</strong> Stonebraith, Molgrin's Deep, Emberstead, Grummveir, Kaerbryn Hollow.<br>
           <strong>Notable Locations:</strong> The Murkridge Hollows (goblins, cave trolls; great riches within), The Ironbell Forge, The Ironback Mountains (trolls and giants), The Emberheart Tavern, The Irondeep Catacombs (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/feldarun_province1.png" alt="Province of Darakhold" loading="lazy">
-          <div>
-            <span class="province-title">Province of Darakhold</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Darakthul</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated in the obsidian-walled capital.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/feldarun_capital.png" alt="" loading="lazy"><span><strong>Darakthul</strong> <em>(capital)</em> — The 'Iron Crown of the East' — built atop a jagged peak, ringed with obsidian battlements.</span></li>
-        <li><img class="settlement-icon" src="images/banners/feldarun_city.png" alt="" loading="lazy"><span><strong>Tharnhold</strong> — Half fortress, half temple — guards the oldest relics of dwarfkind.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Grummveir, Kaerbryn Hollow</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/feldarun_province2.png" alt="Province of Khúralvein" loading="lazy">
-          <div>
-            <span class="province-title">Province of Khúralvein</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Khúralgron</div>
-          </div>
-        </div>
-        <p class="province-blurb">The forge-county, its molten rivers fuelling legendary smithies day and night.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/feldarun_city.png" alt="" loading="lazy"><span><strong>Khúralgron</strong> — A grand forge-city carved into a volcanic caldera.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Stonebraith</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/feldarun_province3.png" alt="Province of Brondrak March" loading="lazy">
-          <div>
-            <span class="province-title">Province of Brondrak March</span><span class="province-form">March</span>
-            <div class="province-seat">seat: Grothmar</div>
-          </div>
-        </div>
-        <p class="province-blurb">A windswept coastal march, its cliffside harbour built to weather any storm.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/feldarun_city.png" alt="" loading="lazy"><span><strong>Vurndrim</strong> — Famed for echoing halls and deep-drum festivals.</span></li>
-        <li><img class="settlement-icon" src="images/banners/feldarun_city.png" alt="" loading="lazy"><span><strong>Grothmar</strong> — A coastal forge-harbour hewn into the bluffs for Feldarún's maritime trade.</span></li>
-        <li><img class="settlement-icon" src="images/banners/feldarun_city.png" alt="" loading="lazy"><span><strong>Brondrak Kazel</strong> — 'Hammer's Heart' — where the Great Anvil of the Mountain King rests.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Molgrin's Deep, Emberstead</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/Wistravael.png" alt="Banner of the Kingdom of Wistravael" loading="lazy">
         <div class="kingdom-name">Kingdom of Wistravael</div>
         <div class="kingdom-meta">Dwarf ruled · Northern region · Mountainous, forested</div>
         <div class="kingdom-body">
-          <p>Wistravael's character is rooted equally in stone and sky. Its dwarves have turned mountain-building into something close to astronomy, tracking the heavens from observatories carved into the highest peaks even as they mine the depths below for star-metal and older secrets. Durkendal, the capital, is built beneath the Mountain of Stars, its underground council halls resting below a vast observatory that never stops watching the sky.</p>
           <strong>Known for:</strong> Dwarven architecture, connection to earth and heavens.<br>
+          <strong>Capital:</strong> Durkendal — built beneath the Mountain of Stars; vast underground observatory and council halls.<br>
+          <strong>Cities:</strong> Tharnvyr, Vordrun Keep, Stonewake, Kragmire Hold.<br>
+          <strong>Villages:</strong> Flinthollow, Silverdeep, Bramgar's Rest, Hearthglen, Wyrshade.<br>
           <strong>Notable Locations:</strong> The Dwarven King's Keep, The Vordynmire Caverns, The Gilded Anvil, The Drakeling Pass (young but fierce dragons), The Dreaming Cavern (dream crystal grants visions of future events), The Celestial Observatory (star metal location revealed), The Starfall Cradle (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/wistravael_province1.png" alt="Province of the Northern Heights" loading="lazy">
-          <div>
-            <span class="province-title">Province of the Northern Heights</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Stonewake</div>
-          </div>
-        </div>
-        <p class="province-blurb">A county of scholars and miners, its walls engraved with glowing rune-maps of the stars.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/wistravael_city.png" alt="" loading="lazy"><span><strong>Stonewake</strong> — A city of scholars and miners, walls engraved with rune maps.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Silverdeep, Bramgar's Rest</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/wistravael_province2.png" alt="Province of Durkendal Vale" loading="lazy">
-          <div>
-            <span class="province-title">Province of Durkendal Vale</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Durkendal</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated beneath the Mountain of Stars.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/wistravael_capital.png" alt="" loading="lazy"><span><strong>Durkendal</strong> <em>(capital)</em> — Built beneath the Mountain of Stars; vast underground observatory.</span></li>
-        <li><img class="settlement-icon" src="images/banners/wistravael_city.png" alt="" loading="lazy"><span><strong>Tharnvyr</strong> — A forge-city glowing with red fissures, crafting star-metal armaments.</span></li>
-        <li><img class="settlement-icon" src="images/banners/wistravael_city.png" alt="" loading="lazy"><span><strong>Kragmire Hold</strong> — Built above a natural magma river; enchanted jewelry and obsidian tools.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Flinthollow, Hearthglen</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/wistravael_province3.png" alt="Province of Vordrun March" loading="lazy">
-          <div>
-            <span class="province-title">Province of Vordrun March</span><span class="province-form">March</span>
-            <div class="province-seat">seat: Vordrun Keep</div>
-          </div>
-        </div>
-        <p class="province-blurb">A fortified march carved into a sheer cliff, guarding the pass into the inner kingdom.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/wistravael_city.png" alt="" loading="lazy"><span><strong>Vordrun Keep</strong> — A fortified city carved into a sheer cliff, guarding the mountain pass.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Wyrshade</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/orindroth.png" alt="Banner of the Kingdom of Orindroth" loading="lazy">
         <div class="kingdom-name">Kingdom of Orindroth</div>
         <div class="kingdom-meta">Elf ruled · Central region · Ancient, dense forest — the entire kingdom lies within the trees</div>
         <div class="kingdom-body">
-          <p>Orindroth is not a kingdom set within a forest — it is a kingdom made of one. There is no meaningful line between the elven realm and the ancient woodland it occupies; roads bend, paths vanish, and travelers who don't know better can wander in circles for days without realizing it. Elarien, the spiritual heart of the kingdom, sits within a ring of towering, ancient trees — a haven for the sages and druids who tend to Orindroth's deeper mysteries.</p>
           <strong>Known for:</strong> Sacred trees with mystical properties; forest shrouded in mystery, easy to become lost in.<br>
+          <strong>Capital:</strong> Elarien — built within a ring of ancient towering trees; haven for druids and forest sages.<br>
+          <strong>Cities:</strong> Valorin (canopy city woven into treetops), Ilietha, Tirelyn Reach, Norowynn's Veil (veiled grove; meeting place of the Circle of Eldertrees).<br>
+          <strong>Villages:</strong> Larethwyn, Feyran's Nest, Thiriel Glen, Mireth's Bloom, Wendralis Shade.<br>
           <strong>Notable Locations:</strong> The Wandering Wyvern Inn, The Eldertree Circle, The Moonstone Hollow (elven cloak of camouflage), The Eldertree Threshold (ancient artifact fragment).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/orindroth_province1.png" alt="Province of Tirelyn" loading="lazy">
-          <div>
-            <span class="province-title">Province of Tirelyn</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Tirelyn Reach</div>
-          </div>
-        </div>
-        <p class="province-blurb">A cliffside county overlooking the forest canopy, where moonlight rituals are performed.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/orindroth_city.png" alt="" loading="lazy"><span><strong>Tirelyn Reach</strong> — A cliffside outpost overlooking the forest canopy.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Mireth's Bloom</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/orindroth_province2.png" alt="Province of Vaerwood" loading="lazy">
-          <div>
-            <span class="province-title">Province of Vaerwood</span><span class="province-form">Barony</span>
-            <div class="province-seat">seat: Vaerwynn</div>
-          </div>
-        </div>
-        <p class="province-blurb">A hidden coastal barony whose harbour is concealed beneath the forest's root-system.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/orindroth_city.png" alt="" loading="lazy"><span><strong>Vaerwynn</strong> — A secretive coastal city with hidden docks woven into the forest's roots.</span></li>
-        <li><img class="settlement-icon" src="images/banners/orindroth_city.png" alt="" loading="lazy"><span><strong>Norowynn's Veil</strong> — A veiled grove; meeting place of the Circle of Eldertrees.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Wendralis Shade</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/orindroth_province3.png" alt="Province of Elarien Vale" loading="lazy">
-          <div>
-            <span class="province-title">Province of Elarien Vale</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Elarien</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated in the spiritual heart of the kingdom.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/orindroth_capital.png" alt="" loading="lazy"><span><strong>Elarien</strong> <em>(capital)</em> — The spiritual heart of Orindroth, a haven for druids and forest sages.</span></li>
-        <li><img class="settlement-icon" src="images/banners/orindroth_city.png" alt="" loading="lazy"><span><strong>Valorin</strong> — A canopy city woven into the treetops, connected by rope bridges.</span></li>
-        <li><img class="settlement-icon" src="images/banners/orindroth_city.png" alt="" loading="lazy"><span><strong>Ilietha</strong> — Hidden beneath a massive hollowed tree; a place of meditation.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Larethwyn, Feyran's Nest, Thiriel Glen</span></div>
-
-      </div>
       </div>
 
       <div class="kingdom-block">
-        <img class="kingdom-banner" src="images/banners/rendarost.png" alt="Banner of the Kingdom of Rendarost" loading="lazy">
         <div class="kingdom-name">Kingdom of Rendarost</div>
         <div class="kingdom-meta">Dwarf ruled · Far northern region · Harsh, snowy, arctic</div>
         <div class="kingdom-body">
-          <p>Rendarost occupies the far northern edge of Estranta, a dwarven kingdom shaped entirely by its climate. This is the hardest kingdom to live in, and by most accounts, the hardiest people to do it; Rendarost's dwarves have made a kind of peace with the cold, building whole cities into glaciers and frozen cliffs, even coaxing warmth from the ice itself in the form of rare, healing hot springs. Varkol's Crown, built near the summit of the Skyteeth Range, rises above every other city in the kingdom, its watchtowers piercing the clouds.</p>
           <strong>Known for:</strong> Hardiness and resilience; The Dwarven Archives (open to the public); frost ale brewed by a secret method.<br>
+          <strong>Capital:</strong> Kragmoor — tunneled into a frozen cliff face; frost-forged weapons sold only to kin.<br>
+          <strong>Cities:</strong> Dravundar, Iskroldir, Thuldrenheim, Varkol's Crown.<br>
+          <strong>Villages:</strong> (far northern outposts).<br>
           <strong>Notable Locations:</strong> The Dwarven Archives of Rendarost, Healing Hot Springs, The Frost Troll Ridge (frost giants, frost trolls), The Frostflower Fields (ice wyrms beneath), The Frostfire Chasm (frozen flame artifact), The Frostbound Sanctum &amp; The Duskstone Vault (ancient artifact fragments).
         </div>
-        <div class="cat-header" style="margin-top:1rem">Provinces</div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/rendarost_province1.png" alt="Province of Iskroldir" loading="lazy">
-          <div>
-            <span class="province-title">Province of Iskroldir</span><span class="province-form">County</span>
-            <div class="province-seat">seat: Iskroldir</div>
-          </div>
-        </div>
-        <p class="province-blurb">A glacial-shelf county warmed by geothermal vents, its halls steaming with heat and frost alike.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/rendarost_city.png" alt="" loading="lazy"><span><strong>Iskroldir</strong> — Built into a glacial shelf, using geothermal vents for warmth.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Frostmere Hold</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/rendarost_province2.png" alt="Province of Kragmoor" loading="lazy">
-          <div>
-            <span class="province-title">Province of Kragmoor</span><span class="province-form">Duchy</span>
-            <div class="province-seat">seat: Kragmoor</div>
-          </div>
-        </div>
-        <p class="province-blurb">The crown's duchy, seated in the frozen-cliff capital.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/rendarost_capital.png" alt="" loading="lazy"><span><strong>Kragmoor</strong> <em>(capital)</em> — Tunneled into a frozen cliff face; frost-forged weapons sold only to kin.</span></li>
-        <li><img class="settlement-icon" src="images/banners/rendarost_city.png" alt="" loading="lazy"><span><strong>Dravundar</strong> — An underground city of glowing ice crystals and heated forges.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Brynfrost, Icevein Hollow</span></div>
-
-      </div>
-      <div class="province-block">
-        <div class="province-head">
-          <img class="province-icon" src="images/banners/rendarost_province3.png" alt="Province of Tarnreach" loading="lazy">
-          <div>
-            <span class="province-title">Province of Tarnreach</span><span class="province-form">March</span>
-            <div class="province-seat">seat: Thuldrenheim</div>
-          </div>
-        </div>
-        <p class="province-blurb">A frontier march dedicated to the mountain spirits, its runesingers warding off avalanches.</p>
-        <div class="settlement-group">
-          <span class="settlement-label">Cities</span>
-          <ul class="settlement-list">
-        <li><img class="settlement-icon" src="images/banners/rendarost_city.png" alt="" loading="lazy"><span><strong>Thuldrenheim</strong> — A city-temple dedicated to mountain spirits.</span></li>
-        <li><img class="settlement-icon" src="images/banners/rendarost_city.png" alt="" loading="lazy"><span><strong>Varkol's Crown</strong> — Highest of Rendarost's cities; watchtowers pierce the clouds.</span></li>
-          </ul>
-        </div>
-        <div class="settlement-group"><span class="settlement-label">Villages</span> <span class="village-list">Tarnshield, Hearthvault</span></div>
-
-      </div>
       </div>
     </div>
   </div>

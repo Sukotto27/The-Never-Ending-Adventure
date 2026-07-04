@@ -86,11 +86,6 @@ function initWorldEconomy() {
 // When _buildWheel fires and this is true, a divider is inserted to separate scene-groups.
 let _storyDirtySinceWheel = false;
 
-// Gold tracking for coin sounds — null means not yet initialised
-let _prevGoldForSound = null;
-// Throttle timestamp for log_entry sound (ms)
-let _logEntrySoundTime = 0;
-
 // 1.3e · Book State (open-book UI)
 const bookState = {
   activeSection:   'story',
@@ -289,9 +284,6 @@ const player = {
 					}
 				},
 				traits: [],
-				backstory: '',
-				morality: 0,
-				hope: 0,
 				inventory: {},
 				equipped: {},
 				journal: {
@@ -348,7 +340,6 @@ const player = {
 			learnedLore: [],            // [{ id, source, learnedAt }]
 			pouchContents:  { herb: {}, ingredient: {} }, // items stored inside pouches
 			activePouches:  { herb: null, ingredient: null, coin: null }, // null | item name string
-			relations:      {},   // { [npcName]: { score, unlockedTopics, knownFields, conversationLog, romanceTrack, npcMemory, sessionTopicsFired } }
 			};
 
 // 2.2 · Known Locations
@@ -466,7 +457,6 @@ function outcomeLabel(tier) { return _OUTCOME_LABELS[tier] ?? _OUTCOME_LABELS[3]
 function classifyRoll(roll) {
   if (window.d20ShowNumber) window.d20ShowNumber(roll);
   const tier = roll <= 5 ? 1 : roll <= 10 ? 2 : roll <= 14 ? 3 : roll <= 18 ? 4 : 5;
-  if (tier === 1) SoundManager?.play('error');
   const ol = outcomeLabel(tier);
   addStory(`🎲 Rolled ${roll} — <span class="outcome-tag ${ol.css}">${ol.text}</span>`);
   return tier;
@@ -670,28 +660,23 @@ overlay.addEventListener('click', () => {
 });
 
 async function rollDice(sides) {
-  const result = Math.floor(Math.random() * sides) + 1;
-
-  // Skip animation entirely during tutorial hints or when auto-roll is on
-  if (autoRoll || _tutActive) {
-    if (!_tutActive) addStory(`Rolled: ${result}`);
-    return result;
-  }
-
-  // 1) show "Rolling…" and wait one tick so _queueStory flushes it into the DOM
+  // 1) show "Rolling..."
   addStory('Rolling…');
-  await new Promise(r => setTimeout(r, 0));
   const story = document.getElementById('story');
   const lastP = story.lastElementChild;
-
-  // 2) play the matching animation full-screen
+  
+  // 2) determine the roll
+  const result = Math.floor(Math.random() * sides) + 1;
+  
+  // 3) play the matching animation full-screen (skipped when auto-roll is on)
   const src = diceAnimations[result];
-  if (src) {
+  if (src && !autoRoll) {
     video.src = src;
     video.muted = false;
     video.volume = 1.0;
     overlay.classList.add('active');
 
+    // wait for the clip to end (or user to click away)
     await new Promise(resolve => {
       function cleanup() {
         overlay.classList.remove('active');
@@ -707,27 +692,9 @@ async function rollDice(sides) {
     });
   }
 
-  // 3) update the "Rolling…" paragraph with the result
-  if (lastP) lastP.textContent = `Rolled: ${result}`;
+  // 4) finally show the result
+  lastP.textContent = `Rolled: ${result}`;
   return result;
-}
-
-// Manual-roll resolver — set when performSkillCheck is waiting for a player D20 click
-let _manualRollResolver = null;
-
-// _rollBase20: used by performSkillCheck when autoRoll is OFF.
-// Plays the full dice animation (no story text) and returns the result.
-// If autoRoll is ON or a tutorial hint is active, resolves immediately.
-async function _rollBase20() {
-  const result = Math.floor(Math.random() * 20) + 1;
-  if (autoRoll || _tutActive) {
-    if (window.d20ShowNumber) window.d20ShowNumber(result);
-    return result;
-  }
-  // Manual mode: pulse the D20 and wait for the player to click it
-  pulseD20?.(3);
-  addStory('🎲 <em>Click the dice to roll!</em>');
-  return new Promise(resolve => { _manualRollResolver = resolve; });
 }
 
 // 4.6 · Fire Catalog Normalization & Helpers
@@ -780,8 +747,6 @@ function startFireWithWood(selectedWoodType) {
   }
 
   player.hasFire = true;
-  if (starting) SoundManager?.play('fire_start');
-  SoundManager?.updateAmbience();
   updateComfortProtection?.();
 
   fireTimer.style.display = 'block';
@@ -792,13 +757,11 @@ function startFireWithWood(selectedWoodType) {
 
   clearInterval(fireTimerInterval);
   fireTimerInterval = setInterval(() => {
-    if (_tutActive) return; // pause fire timer while a tutorial hint is showing
     if (fireTimeRemaining <= 0) {
       clearInterval(fireTimerInterval);
       addStory('🔥 Your fire has died out.');
       if (fireTimer) fireTimer.style.display = 'none';
       player.hasFire = false;
-      SoundManager?.updateAmbience();
       updateComfortProtection?.();
       if (buildFireButton) buildFireButton.disabled = false;
       if (cookButton)      cookButton.disabled      = true;
@@ -970,45 +933,22 @@ function renderWaypointBar() {
 
   document.getElementById('waypoint-go-btn').onclick = () => {
     if (!fromMatch || !toMatch) return;
-    const weightRatio = calculateTotalWeight() / Math.max(1, player.maxCarryWeight);
+    if (staminaCost > player.maxStamina) {
+      addStory('⛔ That distance is too far to travel in a single journey.');
+      return;
+    }
+    if (player.stamina < staminaCost) {
+      addStory('⚠️ You are too exhausted for that journey. Rest and recover first.');
+      return;
+    }
     const destKnown = !!(player.knownLocations?.[player.waypoint]?.nameKnown);
     const destLabel = destKnown ? (destCell.cityVillage || 'this location') : 'this location';
-    const fromX = +fromMatch[1] + GRID_SIZE / 2, fromY = +fromMatch[2] + GRID_SIZE / 2;
-
-    // Partial travel — go as far as stamina allows instead of blocking
-    let travelGrids = gridSquares, travelCost = staminaCost;
-    let travelKey = player.waypoint, travelToX = toX, travelToY = toY;
-    let partialWarning = '';
-    if (player.stamina < staminaCost) {
-      let g = 0;
-      while (g < gridSquares) {
-        const c = (g + 1) * 3 + Math.round(weightRatio * (g + 1));
-        if (c > player.stamina) break;
-        g++;
-      }
-      if (g === 0) {
-        addStory('⚠️ You are too exhausted to travel. Rest and recover first.');
-        return;
-      }
-      travelGrids = g;
-      travelCost  = travelGrids * 3 + Math.round(weightRatio * travelGrids);
-      const dx = toX - fromX, dy = toY - fromY;
-      const ratio = (travelGrids * GRID_SIZE) / Math.hypot(dx, dy);
-      const midCX = fromX + dx * ratio, midCY = fromY + dy * ratio;
-      const midKeyX = Math.round((midCX - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      const midKeyY = Math.round((midCY - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      travelKey  = `x${midKeyX}_y${midKeyY}`;
-      travelToX  = midKeyX + GRID_SIZE / 2;
-      travelToY  = midKeyY + GRID_SIZE / 2;
-      partialWarning = `\n⚠️ Stamina will run out before reaching ${destLabel}. You will stop when exhausted.`;
-    }
-
-    confirmText.textContent = `Travel to ${destLabel}? (~${travelGrids}h · ${travelCost} stamina)${partialWarning}`;
+    confirmText.textContent = `Travel to ${destLabel}? (~${gridSquares}h · ${staminaCost} stamina)`;
     confirmModal.style.display = 'block';
     confirmYesBtn.onclick = async () => {
       confirmModal.style.display = 'none';
       window.__contentPanel.open('pane-story');
-      await executeTravelTo(travelKey, travelToX, travelToY, travelGrids, travelCost);
+      await executeTravelTo(player.waypoint, toX, toY, gridSquares, staminaCost);
     };
     confirmNoBtn.onclick = () => { confirmModal.style.display = 'none'; };
   };
@@ -1058,11 +998,6 @@ function updateTopStats() {
   const _goldCap = player.inventory?.['Coin Pouch (Large)'] ? Infinity : 200;
   if (player.gold > _goldCap) player.gold = _goldCap;
   document.getElementById('player-gold').textContent = player.gold;
-  if (typeof SoundManager !== 'undefined' && typeof _prevGoldForSound === 'number' && player.gold !== _prevGoldForSound) {
-    if (player.gold > _prevGoldForSound) SoundManager.play('receive_coin');
-    else SoundManager.play('spend_coin');
-  }
-  _prevGoldForSound = player.gold;
   document.getElementById('player-name').textContent = player.name;
   document.getElementById('player-level').textContent = `Level: ${player.level}`;
   const _lvlPip = document.getElementById('player-level-num');
@@ -1114,7 +1049,7 @@ function updateTopStats() {
   // Night vignette on body background
   const _tod = player.timeOfDay || '';
   const _isFullNight = /Night|Late Night/i.test(_tod);
-  const _isEvening   = /Evening/i.test(_tod);
+  const _isEvening   = /Evening|Mid-Evening/i.test(_tod);
   const _isDusk      = /Dusk|Late Afternoon/i.test(_tod);
   document.body.classList.toggle('night-mode',   _isFullNight);
   document.body.classList.toggle('evening-mode', !_isFullNight && _isEvening);
@@ -1133,10 +1068,11 @@ function updateXpRing() {
 function updateTimeDial() {
   const dot = document.getElementById('time-indicator-dot');
   if (!dot) return;
-  // 12 periods: 6 day (left arc) then 6 night (right arc) — Early Morning at 210°, +30° each
+  // 12 periods: 6 day (left arc, clockwise upward) then 6 night (right arc, clockwise downward)
+  // Early Morning anchored at 210° (7 o'clock), each period +30° clockwise
   const _periods = [
-    '🌅 Early Morning','☀️ Morning','🌞 Midday','🌤️ Afternoon','⛅ Mid-Afternoon','🌇 Late Afternoon',
-    '🌆 Evening','🌃 Mid-Evening','🌌 Late Evening','🌙 Dusk','🌑 Night','⭐ Late Night',
+    '🌅 Early Morning','🌄 Mid-Morning','☀️ Morning','🌞 Midday','🌤️ Afternoon','⛅ Mid-Afternoon',
+    '🌇 Late Afternoon','🌆 Evening','🌃 Mid-Evening','🌙 Dusk','🌑 Night','⭐ Late Night',
   ];
   const idx = _periods.indexOf(player.timeOfDay);
   const angleDeg = ((idx < 0 ? 0 : idx) * 30 + 210) % 360;
@@ -1570,7 +1506,6 @@ function gainSkillXp(skillName, tier) {
     const prevLevel = sk.level || 1;
     sk.level = prevLevel + 1;
     if (sk.level === 99) queueMasterGuildEncounters(skillName);
-    SoundManager?.play('notice');
     addStory(`<strong>⭐ ${skillName} reached Level ${sk.level}!</strong>`);
     addWorldEvent(`${skillName} increased to Level ${sk.level}.`, 'player');
     if (!player.traitCounters) player.traitCounters = {};
@@ -1650,10 +1585,9 @@ function degradeItemWear(itemName, amount) {
   }
 }
 
-async function performSkillCheck(skillName, situationalMod = 0, reason = null) {
-  SoundManager?.play('dice_roll');
-  const base = !player.flags?.tutorialComplete ? 19 : await _rollBase20();
-  // d20ShowNumber is called inside _rollBase20 (auto path) and wheelD20 handler (manual path)
+function performSkillCheck(skillName, situationalMod = 0) {
+  const base       = !player.flags?.tutorialComplete ? 19 : Math.floor(Math.random() * 20) + 1;
+  if (window.d20ShowNumber) window.d20ShowNumber(base);
   const skillMod   = getSkillBonus(skillName);
   const condMod    = getConditionModifier(skillName);
   const titleMod   = getTitleBonus(skillName);
@@ -1666,22 +1600,20 @@ async function performSkillCheck(skillName, situationalMod = 0, reason = null) {
   const traitMod   = getTraitRollBonus(skillName);
   const adjusted   = Math.min(20, Math.max(1, base + skillMod + condMod + titleMod + campMod + equipMod + situationalMod + hopeMod + pendantMod + traitMod));
   const lvl        = player.skills[skillName]?.level;
-  const skillLabel = lvl ? `${skillName} Lv${lvl}` : skillName;
   const parts      = [];
-  if (skillMod   !== 0) parts.push(`${skillMod   > 0 ? '+' : ''}${skillMod} (${skillLabel})`);
-  if (condMod    !== 0) parts.push(`${condMod    > 0 ? '+' : ''}${condMod} (effects)`);
-  if (titleMod   !== 0) parts.push(`${titleMod   > 0 ? '+' : ''}${titleMod} (title)`);
-  if (campMod    !== 0) parts.push(`+${campMod} (camp)`);
-  if (equipMod   !== 0) parts.push(`${equipMod   > 0 ? '+' : ''}${equipMod} (gear)`);
+  const skillLabel = lvl ? `${skillName} Lv${lvl}` : skillName;
+  parts.push(skillMod !== 0 ? `${skillMod > 0 ? '+' : ''}${skillMod} (${skillLabel})` : `(${skillLabel})`);
+  if (condMod        !== 0) parts.push(`${condMod        > 0 ? '+' : ''}${condMod} (effects)`);
+  if (titleMod       !== 0) parts.push(`${titleMod       > 0 ? '+' : ''}${titleMod} (title)`);
+  if (campMod        !== 0) parts.push(`+${campMod} (camp)`);
+  if (equipMod       !== 0) parts.push(`${equipMod       > 0 ? '+' : ''}${equipMod} (gear)`);
   if (situationalMod !== 0) parts.push(`${situationalMod > 0 ? '+' : ''}${situationalMod} (weather)`);
-  if (hopeMod    !== 0) parts.push(`${hopeMod    > 0 ? '+' : ''}${hopeMod} (spirit)`);
-  if (traitMod   !== 0) parts.push(`${traitMod   > 0 ? '+' : ''}${traitMod} (traits)`);
+  if (hopeMod        !== 0) parts.push(`${hopeMod        > 0 ? '+' : ''}${hopeMod} (spirit)`);
+  if (traitMod       !== 0) parts.push(`${traitMod       > 0 ? '+' : ''}${traitMod} (traits)`);
   const tier = adjusted <= 5 ? 1 : adjusted <= 10 ? 2 : adjusted <= 14 ? 3 : adjusted <= 18 ? 4 : 5;
-  if (tier === 1) SoundManager?.play('error');
-  const ol      = outcomeLabel(tier);
-  const suffix  = parts.length ? ` ${parts.join(' ')} = ${adjusted}` : '';
-  const heading = reason ? `${skillLabel} (${reason})` : skillLabel;
-  addStory(`🎲 ${heading} — Rolled ${base}${suffix} — <span class="outcome-tag ${ol.css}">${ol.text}</span>`);
+  const ol   = outcomeLabel(tier);
+  const suffix = parts.length ? ` ${parts.join(' ')} = ${adjusted}` : '';
+  addStory(`🎲 Rolled ${base}${suffix} — <span class="outcome-tag ${ol.css}">${ol.text}</span>`);
   gainSkillXp(skillName, tier);
   const _hopeShift = tier === 1 ? -2 : tier === 2 ? -1 : tier === 4 ? 1 : tier === 5 ? 2 : 0;
   if (_hopeShift !== 0) changeHope(_hopeShift);
@@ -2153,44 +2085,14 @@ async function _doNpcDialog(npc, tone) {
     _reg.playerTraitsKnown = npc.playerTraitsKnown || [];
   }
 
-  // Show dialog outcome — try AI first, fall back to DIALOG_OUTCOMES pool
-  const _tierLabel   = ['critical failure', 'failure', 'neutral', 'success', 'critical success'][tier - 1];
-  const _aiDialogCtx = buildActionContext({
-    npc: {
-      name:        npc.name,
-      race:        npc.race,
-      profession:  npc.profession,
-      morality:    npc.morality,
-      disposition: npc.disposition,
-      traits:      npc.revealedTraits || [],
-      backstory:   npc.backstory,
-      description: npc.description,
-    },
-    dialog: {
-      tone,
-      tier,
-      tierLabel:  _tierLabel,
-      roll:       adjusted,
-    },
-  });
-  const _aiDialogSystem = `You write a single line of NPC dialogue for a medieval fantasy RPG.
-The player approached the NPC with a ${tone} tone and the interaction was a ${_tierLabel} (roll ${adjusted}/20).
-Write exactly one line of spoken dialogue from the NPC's perspective that fits this outcome naturally.
-The line should reflect the NPC's personality (morality: ${npc.morality || 'neutral'}, profession: ${npc.profession || 'unknown'}).
-Current setting: ${_aiDialogCtx.location.name}, ${_aiDialogCtx.location.timeOfDay}, ${_aiDialogCtx.location.weather}.
-Return ONLY the spoken line — no name prefix, no quotes, no explanation.`;
-  const _aiLine = await callGameAI(_aiDialogSystem, _aiDialogCtx, {
-    mode:     'narrative',
-    fallback: _dialogOutcome(tone, tier),
-    maxTokens: 80,
-  });
-  addStory(`<em>"${_aiLine}"</em>`);
+  // Show dialog outcome
+  addStory(`<em>"${_dialogOutcome(tone, tier)}"</em>`);
 
   // Disposition feedback
   const dispLabel = _dispositionLabel(npc);
   addStory(`${npc.name} now seems <strong>${dispLabel}</strong> toward you.`);
 
-  // World event comment — NPCs mention local situation on successful talks
+  // World event comment — NPCs in affected kingdoms mention local situation on successful talks
   if (tier >= 3) {
     const npcKingdom = player.currentKingdom;
     const localEvs = (worldEconomy?.activeEvents || []).filter(e => !e.kingdom || e.kingdom === npcKingdom);
@@ -2417,7 +2319,7 @@ async function _doMastersTrial() {
   await waitForEnter();
   addStory('The Grand Trial of ' + skillName + ' begins. You must demonstrate the pinnacle of your craft before these peers.');
   await runInlineProgress('Competing in the Grand Trial…', 5000);
-  const tier = await performSkillCheck(skillName);
+  const tier = performSkillCheck(skillName);
 
   if (tier >= 4) {
     addStory('🎉 The hall erupts! Your performance is extraordinary — a display of mastery that silences even the most seasoned critics.');
@@ -2478,15 +2380,6 @@ function inferSkillFromInput(text) {
     if (re.test(text)) return skill;
   }
   return 'Survival';
-}
-
-function pluralize(name, qty) {
-  if (qty === 1) return name;
-  const parenMatch = name.match(/^(.+?)(\s*\([^)]+\))$/);
-  if (parenMatch) return pluralize(parenMatch[1].trimEnd(), qty) + parenMatch[2];
-  if (/[^aeiou]y$/i.test(name)) return name.slice(0, -1) + 'ies';
-  if (/(s|sh|ch|x|z)$/i.test(name)) return name + 'es';
-  return name + 's';
 }
 
 // Dialog tone → tier-indexed outcomes
@@ -2609,7 +2502,6 @@ function applyCondition(id, durationOverride) {
   } else {
     player.conditions.push({ id, duration: dur });
     addStory(`${def.icon} You are now ${def.name}.`);
-    SoundManager?.play('notice');
   }
   renderConditions();
   updateTopStats();
@@ -2890,8 +2782,8 @@ function consumeFood(itemName) {
 				if (!el) return;
 				if (!player.name) { el.innerHTML = '<p><em>No character yet.</em></p>'; return; }
 
-				const originLabels    = Object.fromEntries(Object.entries(ORIGIN_DATA).map(([k,v]) => [k, v.label || k]));
-				const motivLabels     = Object.fromEntries(Object.entries(MOTIVATION_DATA).map(([k,v]) => [k, v.label || k]));
+				const originLabels    = { noble: 'Noble house', village: 'Common village', wilderness: 'The wilderness', port: 'Port town' };
+				const motivLabels     = { vengeance: 'Seeking vengeance', knowledge: 'Pursuing knowledge', law: 'Running from the law', honor: 'Answering a call to arms', fortune: 'Chasing fortune' };
 				const originLabel     = originLabels[player.origin]     || player.origin     || '—';
 				const motivLabel      = motivLabels[player.motivation]  || player.motivation || '—';
 				const traitArr        = Array.isArray(player.traits) ? player.traits : [];
@@ -2902,8 +2794,7 @@ function consumeFood(itemName) {
 					<div class="profile-grid">
 						<div class="profile-field"><span class="profile-label">Name</span><span class="profile-value">${player.name}</span></div>
 						<div class="profile-field"><span class="profile-label">Culture</span><span class="profile-value">${player.culture || '—'}</span></div>
-						<div class="profile-field"><span class="profile-label">Body Type</span><span class="profile-value">${player.gender || '—'}</span></div>
-						<div class="profile-field"><span class="profile-label">Pronouns</span><span class="profile-value">${(player.pronouns && player.pronouns.label) || '—'}</span></div>
+						<div class="profile-field"><span class="profile-label">Gender</span><span class="profile-value">${player.gender || '—'}</span></div>
 						<div class="profile-field"><span class="profile-label">Profession</span><span class="profile-value">${player.profession || '—'}</span></div>
 						<div class="profile-field"><span class="profile-label">Social Class</span><span class="profile-value">${player.socialClass || '—'}</span></div>
 						<div class="profile-field"><span class="profile-label">Origin</span><span class="profile-value">${originLabel}</span></div>
@@ -3039,7 +2930,6 @@ function consumeFood(itemName) {
 				'Navigation':      '🧭',
 				'Artistry':        '🎨',
 				'Mysticism':       '🔮',
-				'Lute':            '🎸',
 			};
 
 			function updateSkillsGrid() {
@@ -3136,11 +3026,6 @@ function findItemInDatabase(name) {
     if (category[name]) return category[name];
   }
   return null;
-}
-
-function _isRaceRestricted(itemName) {
-  const ex = (findItemInDatabase(itemName) || {}).excludeRaces || [];
-  return ex.length > 0 && ex.includes(player.race);
 }
 
 function formatEffect(effect) {
@@ -3277,11 +3162,8 @@ function formatEffect(effect) {
 					const eqd = Object.values(player.equipped).includes(it) ? 'equipped' : '';
 					const iconSrc = _getItemIcon(it);
 					const qty = player.inventory[it].quantity;
-					const _rr  = _isRaceRestricted(it);
-					const _rrClass = _rr ? ' race-restricted' : '';
-					const _rrTitle = _rr ? ` title="Cannot be worn by ${player.race}s"` : '';
-					return `<div class="inventory-item ${selectedItem===it?'selected':''} ${eqd}${_rrClass}"
-                   data-item="${it}" data-index="${i}" draggable="true"${_rrTitle}>
+					return `<div class="inventory-item ${selectedItem===it?'selected':''} ${eqd}"
+                   data-item="${it}" data-index="${i}" draggable="true">
                 <img src="${iconSrc}" alt="${it}" class="inv-item-icon" onerror="this.style.display='none'">
                 ${qty > 1 ? `<span class="inv-qty-badge">${qty}</span>` : ''}
               </div>`;
@@ -3340,7 +3222,7 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
     const type   = d.type || dbItem.type || '';
     const wearable = d.wearable || dbItem.wearable || (type === 'weapon' || type === 'armor');
     const isEquipped = Object.values(player.equipped || {}).includes(it);
-    const isConsumable = type === 'food' || type === 'potion' || type === 'recipe_scroll' || (type === 'material' && !!(d.consumable || dbItem.consumable)) || /waterskin.*full/i.test(it);
+    const isConsumable = type === 'food' || type === 'potion' || type === 'recipe_scroll' || (type === 'material' && !!(d.consumable || dbItem.consumable));
 
     const addOpt = (label, fn) => {
       const div = document.createElement('div');
@@ -3362,7 +3244,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
         addOpt('↩ Unequip', () => {
           Object.keys(player.equipped).filter(s => player.equipped[s] === it).forEach(s => { player.equipped[s] = null; });
           addStory(`Unequipped ${it}.`);
-          SoundManager?.play('equip');
           updateInventory();
         });
       } else {
@@ -3371,7 +3252,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
           Object.keys(player.equipped).filter(s => player.equipped[s] === it).forEach(s => { player.equipped[s] = null; });
           player.equipped[slot] = it;
           addStory(`Equipped ${it}.`);
-          SoundManager?.play('equip');
           updateInventory();
         });
       }
@@ -3387,10 +3267,7 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
 
     // Use / Eat / Drink
     if (isConsumable) {
-      const useLabel = type === 'food' ? '🍽️ Eat'
-                     : type === 'recipe_scroll' ? '📜 Read'
-                     : /waterskin.*full/i.test(it) ? '💧 Drink'
-                     : '🧪 Drink';
+      const useLabel = type === 'food' ? '🍽️ Eat' : type === 'recipe_scroll' ? '📜 Read' : '🧪 Drink';
       addOpt(useLabel, () => {
         if (type === 'recipe_scroll') {
           const recipeName = d.recipeName || it.replace(/^Recipe:\s*/i, '');
@@ -3419,7 +3296,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
 
     // Drop
     addOpt('🗑 Drop', () => {
-      SoundManager?.play('drop_item');
       Object.keys(player.equipped).filter(s => player.equipped[s] === it).forEach(s => { player.equipped[s] = null; });
       removeItem(it, 1);
       updateInventory();
@@ -3478,7 +3354,7 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
         <div class="equipped-item-slot" id="footwear"    data-slot="footwear">Footwear</div>
         <div class="equipped-item-slot" id="rightHand"   data-slot="rightHand">Right Hand</div>
       </div>
-      <div class="equip-character"><img id="inv-char-silhouette" src="images/character.png" alt=""></div>
+      <div class="equip-character"><img src="images/character.png" alt=""></div>
       <div class="equip-col equip-col-right">
         <div class="equipped-item-slot" id="shoulderwear" data-slot="shoulderwear">Shoulderwear</div>
         <div class="equipped-item-slot" id="cape"         data-slot="cape">Cape</div>
@@ -3490,27 +3366,6 @@ document.querySelectorAll('#inventory-list .inventory-item').forEach(el => {
       <div class="equip-pendant-row">
         <div class="equipped-item-slot" id="pendant" data-slot="pendant">Pendant</div>
       </div>`;
-
-				// Show Lute tab only when the player owns one
-				const _hasLuteItem = Object.keys(player.inventory || {}).some(k => /lute/i.test(k));
-				const _luteTab = document.querySelector('.bk-stab[data-bksec="lute"]');
-				if (_luteTab) {
-					_luteTab.style.display = _hasLuteItem ? '' : 'none';
-					if (!_hasLuteItem && bookState?.activeSection === 'lute') bookSwitchSection('story');
-				}
-
-				// Update silhouette to match culture + body type after rebuilding the equipped section
-				const _silEl = document.getElementById('inv-char-silhouette');
-				if (_silEl) {
-					const _silMap = { Human: 'human', Elf: 'elf', 'Half-Elf': 'elf', Dwarf: 'dwarf', 'Half-Orc': 'human', 'Half-Goblin': 'human' };
-					const _race = _silMap[player.culture];
-					const _isFem = /feminine/i.test(player.gender);
-					if (_race) {
-						const _suffix = _isFem ? '_f' : '_m';
-						_silEl.src = 'images/characters/' + _race + _suffix + '.png';
-						_silEl.onerror = function () { _silEl.src = 'images/character.png'; _silEl.onerror = null; };
-					}
-				}
 
 				const _SLOT_LABELS = {
 					headwear: 'Head', torsoLayer1: 'Torso 1', torsoLayer2: 'Torso 2', torsoLayer3: 'Torso 3',
@@ -3580,17 +3435,13 @@ renderMapsPanel();
 				const wearable   = d.wearable ?? dbItem.wearable ?? (type === 'weapon' || type === 'armor');
 
 				const btns = [];
-				if (type === 'food')                       btns.push(`<button class="inv-action-btn" data-action="use">🍽️ Eat</button>`);
-				if (type === 'potion')                     btns.push(`<button class="inv-action-btn" data-action="use">🧪 Drink</button>`);
-				if (type === 'recipe_scroll')              btns.push(`<button class="inv-action-btn" data-action="use">📜 Read</button>`);
-				if (/waterskin.*full/i.test(name))         btns.push(`<button class="inv-action-btn" data-action="use">💧 Drink</button>`);
+				if (type === 'food')          btns.push(`<button class="inv-action-btn" data-action="use">🍽️ Eat</button>`);
+				if (type === 'potion')        btns.push(`<button class="inv-action-btn" data-action="use">🧪 Drink</button>`);
+				if (type === 'recipe_scroll') btns.push(`<button class="inv-action-btn" data-action="use">📜 Read</button>`);
 				if (type === 'map')           btns.push(`<button class="inv-action-btn" data-action="study">🗺️ Study</button>`);
 				if (wearable) {
-					const _exRaces     = dbItem.excludeRaces || [];
-					const _raceBlocked = _exRaces.length && _exRaces.includes(player.race);
-					if (isEquipped)        btns.push(`<button class="inv-action-btn" data-action="unequip">↩ Unequip</button>`);
-					else if (_raceBlocked) btns.push(`<button class="inv-action-btn" disabled title="Cannot be worn by ${player.race}s">⚔ Equip</button>`);
-					else                   btns.push(`<button class="inv-action-btn" data-action="equip">⚔ Equip</button>`);
+					if (isEquipped) btns.push(`<button class="inv-action-btn" data-action="unequip">↩ Unequip</button>`);
+					else            btns.push(`<button class="inv-action-btn" data-action="equip">⚔ Equip</button>`);
 				}
 				btns.push(`<button class="inv-action-btn inv-action-drop" data-action="drop">🗑 Drop</button>`);
 
@@ -3687,18 +3538,12 @@ renderMapsPanel();
 							selectedItem = selectedItemIndex = null;
 							details.innerHTML = '';
 						} else if (action === 'equip') {
-							const _eqDbItem  = findItemInDatabase(name) || {};
-							const _eqExRaces = _eqDbItem.excludeRaces || [];
-							if (_eqExRaces.includes(player.race)) {
-								addStory(`⛔ ${name} cannot be worn by ${player.race}s.`);
-							} else {
-								const slot = _getEquipSlot(name, type);
-								Object.keys(player.equipped).filter(s => player.equipped[s] === name).forEach(s => { player.equipped[s] = null; });
-								player.equipped[slot] = name;
-								addStory(`Equipped ${name}.`);
-								selectedItem = selectedItemIndex = null;
-								updateInventory();
-							}
+							const slot = _getEquipSlot(name, type);
+							Object.keys(player.equipped).filter(s => player.equipped[s] === name).forEach(s => { player.equipped[s] = null; });
+							player.equipped[slot] = name;
+							addStory(`Equipped ${name}.`);
+							selectedItem = selectedItemIndex = null;
+							updateInventory();
 						} else if (action === 'unequip') {
 							Object.keys(player.equipped).filter(s => player.equipped[s] === name).forEach(s => { player.equipped[s] = null; });
 							addStory(`Unequipped ${name}.`);
@@ -3719,7 +3564,7 @@ function renderMapsPanel() {
   if (!listEl) return;
   const maps = Object.entries(player.inventory).filter(([, v]) => v.type === 'map');
   if (!maps.length) {
-    listEl.innerHTML = '<span class="maps-empty">No maps acquired.<br><small>Maps can be purchased from traders and merchants in cities, discovered while exploring ruins, or looted from enemies. Travel to a settlement and look for vendors.</small></span>';
+    listEl.innerHTML = '<span class="maps-empty">No maps acquired.</span>';
     return;
   }
   listEl.innerHTML = maps.map(([name]) => {
@@ -3801,11 +3646,7 @@ function addStory(txt) {
   const s = document.getElementById('story');
   if (!player.storyLog) player.storyLog = [];
   player.storyLog.push(txt);
-  if (!bookState.silentMode) {
-    _storyDirtySinceWheel = true;
-    const _now = Date.now();
-    if (_now - _logEntrySoundTime > 180) { SoundManager?.play('log_entry'); _logEntrySoundTime = _now; }
-  }
+  if (!bookState.silentMode) _storyDirtySinceWheel = true;
   _queueStory(s, `<p>&gt; ${txt}</p>`);
 }
 
@@ -3831,46 +3672,31 @@ function addNarration(txt) {
 				userInput.value = '';
 			}
 
-async function handleUserInput(input) {
+function handleUserInput(input) {
   const [cmd, ...rest] = input.toLowerCase().split(' ');
   const arg = rest.join(' ');
-
-  // additem: is always intercepted so it never falls through to a skill check
-  if (input.trim().toLowerCase().startsWith('additem:')) {
-    if (!developerMode) {
-      addStory(`⚠️ <em>additem:</em> is a dev command. Enable Developer Mode first (Dev button in the menu).`);
-      return;
-    }
-    const devParts = input.trim().split(/\s+/).slice(1); // drop "additem:"
-    // quantity is optional — last token is qty if it parses as a number
-    const lastToken = devParts[devParts.length - 1];
-    const parsedQty = parseInt(lastToken, 10);
-    let qty, rawName;
-    if (!isNaN(parsedQty) && devParts.length >= 2) {
-      qty     = parsedQty || 1;
-      rawName = devParts.slice(0, -1).join(' ');
-    } else {
-      qty     = 1;
-      rawName = devParts.join(' ');
-    }
-    if (!rawName) { addStory(`⚠️ Usage: additem: &lt;name&gt; [qty]`); return; }
-
-    // Find item in Items database regardless of case
-    const matchedName = Object.entries(Items)
-      .flatMap(([category, items]) => Object.keys(items))
-      .find(dbName => dbName.toLowerCase() === rawName.toLowerCase());
-
-    if (!matchedName) {
-      addStory(`⚠️ Item "${rawName}" not found in database. Check spelling or capitalization.`);
-    } else {
-      addItem(matchedName, qty);
-    }
-    return;
-  }
 
   if (developerMode) {
     const devParts = input.trim().split(/\s+/);
     const devCmd = devParts.shift().toLowerCase();
+
+    if (devCmd === 'additem:' && devParts.length >= 2) {
+      const qty = parseInt(devParts.pop(), 10) || 1;
+      const rawName = devParts.join(' ');
+
+      // Find item in Items database regardless of case
+      const matchedName = Object.entries(Items)
+        .flatMap(([category, items]) => Object.keys(items))
+        .find(dbName => dbName.toLowerCase() === rawName.toLowerCase());
+
+      if (!matchedName) {
+        addStory(`⚠️ Item "${rawName}" not found in database. Check spelling or capitalization.`);
+      } else {
+        addItem(matchedName, qty);
+      }
+
+      return;
+    }
 
     if (devCmd === 'economy') {
       _devShowEconomy();
@@ -3897,7 +3723,7 @@ changeStamina(player.maxStamina - player.stamina);
   }
 
   const skillName = inferSkillFromInput(input);
-  const tier = await performSkillCheck(skillName);
+  const tier = performSkillCheck(skillName);
   const tierDesc = ['a disaster', 'poorly', 'adequately', 'well', 'masterfully'][tier - 1];
   addStory(`[${skillName}] You attempt to ${input} — and fare ${tierDesc}.`);
 
@@ -3925,7 +3751,7 @@ function refreshEncampmentBuiltStates() {
 
 // 7.2 · Supplies Found at Camp Setup
 async function grantSetupFinds() {
-  const tier = await performSkillCheck('Survival', 0, 'scavenging supplies');
+  const tier = performSkillCheck('Survival');
 
   const found = [];
   const give = (name, qty) => {
@@ -3982,9 +3808,7 @@ async function handleGatherAttempt(opt) {
 
   const gatherSkill = opt.label.includes('Forage')   ? 'Foraging'    :
                       opt.label.includes('Kindling')  ? 'Fire-making' : 'Survival';
-  const gatherReason = opt.label.includes('Forage') ? 'foraging for food' :
-                       opt.label.includes('Kindling') ? 'gathering kindling' : 'gathering materials';
-  const tier = await performSkillCheck(gatherSkill, 0, gatherReason);
+  const tier = performSkillCheck(gatherSkill);
   const fail = (tier === 1);
   const qty  = fail ? 0 : (tier >= 4 ? 3 : 1 + Math.floor(tier / 2));
   let itemName = null;
@@ -4012,7 +3836,7 @@ async function handleGatherAttempt(opt) {
 
   if (!fail && itemName) {
     addCampSupply(itemName, qty);
-    addStory(`🔹 Gathered ${qty} ${pluralize(itemName, qty)}.`);
+    addStory(`🔹 Gathered ${qty} ${itemName}(s).`);
     awardProfessionXp('gather');
   } else {
     addStory('❌ Came back empty-handed.');
@@ -4051,7 +3875,7 @@ async function performSleep() {
   }, sleepDuration - fadeDuration);
   await sleepPromise;
 
-  const tierS = await performSkillCheck('Survival', 0, 'resting through the night');
+  const tierS = performSkillCheck('Survival');
   let gain = 0;
   if (tierS === 1) {
     addStory('😱 Nightmares haunt you. No rest gained.');
@@ -4433,7 +4257,7 @@ case 'rest': {
           await runProgressBar(barEl ? barEl.id : 'rest-progress', 10000);
           if (barEl) barEl.style.display = 'none';
 
-          const tierR = await performSkillCheck('Survival', 0, 'resting');
+          const tierR = performSkillCheck('Survival');
           const _restCell2 = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
           const _inTown2 = ['City','CapitalCity','Village'].includes(_restCell2.zone || '');
           if (tierR === 1) {
@@ -4583,7 +4407,7 @@ if (!hasPit) {
             bar.style.display = 'none';
           }
 
-          const tierR = await performSkillCheck('Survival', 0, 'resting');
+          const tierR = performSkillCheck('Survival');
           const _restCell3 = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
           const _inTown3 = ['City','CapitalCity','Village'].includes(_restCell3.zone || '');
 
@@ -4873,7 +4697,7 @@ case 'campfire': {
   }
 
   // Outcome roll
-  const tier = await performSkillCheck('Fire-making', 0, 'lighting the fire');
+  const tier = performSkillCheck('Fire-making');
 
   // Failure → report + clear mini
   if (tier <= 2) {
@@ -4958,7 +4782,6 @@ case 'campfire': {
       } else {
         player.hasFire = false;
         player.fireTimer = 0;
-        SoundManager?.updateAmbience();
       }
       if (mini) mini.textContent = '';
       restLog.textContent = 'You extinguish the fire.';
@@ -5281,31 +5104,9 @@ if (wheelD20 && typeof THREE !== 'undefined') {
 }
 
 // Clicking the D20 in the wheel center triggers a manual dice roll.
-// If a skill check is pending (autoRoll=false), this click resolves it.
 if (wheelD20) {
   wheelD20.addEventListener('click', async () => {
-    if (_manualRollResolver) {
-      // A performSkillCheck is waiting for this click — roll and hand the result over
-      const result = Math.floor(Math.random() * 20) + 1;
-      if (window.d20ShowNumber) window.d20ShowNumber(result);
-      const src = (typeof diceAnimations !== 'undefined') ? diceAnimations[result] : null;
-      if (src) {
-        video.src = src; video.muted = false; video.volume = 1.0;
-        overlay.classList.add('active');
-        await new Promise(resolve => {
-          const cleanup = () => { overlay.classList.remove('active'); resolve(); };
-          video.addEventListener('ended', cleanup, { once: true });
-          overlay.addEventListener('click', () => { video.pause(); cleanup(); }, { once: true });
-          video.play();
-        });
-      }
-      const resolver = _manualRollResolver;
-      _manualRollResolver = null;
-      resolver(result);
-    } else {
-      // No pending skill check — standalone roll for the player
-      await rollDice(20);
-    }
+    await rollDice(20);
   });
 }
 
@@ -5391,8 +5192,7 @@ function pulseD20(times = 3) {
 					spoke.style.left      = leftPct + '%';
 					spoke.style.textAlign = side === 'right' ? 'right' : 'left';
 					spoke.style.transform = side === 'right' ? 'translate(-100%,-50%)' : 'translate(0,-50%)';
-					spoke.addEventListener('mouseenter', () => SoundManager?.play('option_hover'));
-					spoke.addEventListener('click', () => { SoundManager?.play('button_press'); opt.action(); });
+					spoke.addEventListener('click', opt.action);
 					wheel.appendChild(spoke);
 				});
 			}
@@ -5433,7 +5233,6 @@ function pulseD20(times = 3) {
 				})();
 				const _sbOpts     = (typeof _getSlowBecomingWheelOptions === 'function') ? _getSlowBecomingWheelOptions() : [];
 				const _romanceOpts = (typeof _getRomanceWheelOptions === 'function')    ? _getRomanceWheelOptions()    : [];
-				const _hasLute    = Object.keys(player.inventory || {}).some(k => /lute/i.test(k));
 				_buildWheel([
 					{ label: 'Survival',    icon: 'images/icons/poneti/tools/tool_axe.png',     action: () => { _wheelStack.push(_showActionsWheel); _showSurvivalWheel(); },   disabled: _townEngaged },
 					{ label: 'Exploration', icon: 'images/icons/map_icon.png',                action: () => { _wheelStack.push(_showActionsWheel); _showExplorationWheel(); }, disabled: _townEngaged },
@@ -5443,7 +5242,6 @@ function pulseD20(times = 3) {
 					{ label: '🏛️ Guild Trial', action: _doMastersTrial, disabled: !trialQuest },
 					{ label: `⚔️ Party${hasParty ? ` (${player.party.length})` : ''}`, action: () => { _wheelStack.push(_showActionsWheel); _showManagePartyWheel(); }, disabled: !hasParty },
 					{ label: _profTierLabel,   action: () => { _wheelStack.push(_showActionsWheel); _showProfessionWheel(); } },
-					...(_hasLute ? [{ label: '🎸 Lute', action: () => { bookSwitchSection('lute'); } }] : []),
 					..._sbOpts,
 					..._romanceOpts,
 				], 'Actions');
@@ -5498,7 +5296,7 @@ function pulseD20(times = 3) {
 				_buildWheel([{ label: '🏕️ Scouting…', action: () => {} }]);
 				await runInlineProgress('Scouting for a camp spot…', 4000);
 				changeStamina(-COST);
-				const tier = await performSkillCheck('Survival');
+				const tier = performSkillCheck('Survival');
 				if (tier <= 2) {
 					addStory('🏕️ The ground here is too exposed or uneven. Try a different area.');
 					_goBack(); return;
@@ -5555,35 +5353,16 @@ function pulseD20(times = 3) {
 				const weightRatio = (typeof calculateTotalWeight === 'function' ? calculateTotalWeight() : 0) / Math.max(1, player.maxCarryWeight || 50);
 				const carryExtra  = Math.round(weightRatio * gridSquares);
 				const staminaCost = gridSquares * 3 + carryExtra;
-
-				// Partial travel — go as far as stamina allows instead of blocking
-				let travelGrids = gridSquares, travelCost = staminaCost;
-				let travelKey = destKey, travelToX = toX, travelToY = toY;
+				if (staminaCost > player.maxStamina) {
+					addStory('⛔ That distance is too far to travel in a single journey.');
+					_goBack(); return;
+				}
 				if (player.stamina < staminaCost) {
-					let g = 0;
-					while (g < gridSquares) {
-						const c = (g + 1) * 3 + Math.round(weightRatio * (g + 1));
-						if (c > player.stamina) break;
-						g++;
-					}
-					if (g === 0) {
-						addStory('⚠️ You are too exhausted to travel. Rest first.');
-						_goBack(); return;
-					}
-					travelGrids = g;
-					travelCost  = travelGrids * 3 + Math.round(weightRatio * travelGrids);
-					const dx = toX - fromX, dy = toY - fromY;
-					const ratio = (travelGrids * GRID_SIZE) / Math.hypot(dx, dy);
-					const midCX = fromX + dx * ratio, midCY = fromY + dy * ratio;
-					const midKeyX = Math.round((midCX - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-					const midKeyY = Math.round((midCY - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-					travelKey  = `x${midKeyX}_y${midKeyY}`;
-					travelToX  = midKeyX + GRID_SIZE / 2;
-					travelToY  = midKeyY + GRID_SIZE / 2;
-					addStory(`⚠️ Not enough stamina to reach your destination. You push on as far as you can…`);
+					addStory('⚠️ You are too exhausted for that journey. Rest first.');
+					_goBack(); return;
 				}
 				window.__contentPanel.open('pane-story');
-				await executeTravelTo(travelKey, travelToX, travelToY, travelGrids, travelCost);
+				await executeTravelTo(destKey, toX, toY, gridSquares, staminaCost);
 			}
 
 			// ── Biome Forage Profiles ──────────────────────────────────────────────
@@ -5619,7 +5398,7 @@ function pulseD20(times = 3) {
 						roots:   { label: '🌱 Search for Roots',    skill: 'Foraging',  items: [['Gnarled Root',3],['Ginseng Root',2]] },
 					}
 				},
-				Mountains: {
+				Mountain: {
 					summary: 'ore seams, stone deposits, alpine herbs, and cave roots',
 					categories: {
 						stones:   { label: '🪨 Search for Stone',     skill: 'Survival',  items: [['Stone Fragments',4],['Loose Stones',3],['Pebbles',2]] },
@@ -5677,11 +5456,12 @@ function pulseD20(times = 3) {
 					}
 				},
 			};
+			BIOME_FORAGE['Mountains'] = BIOME_FORAGE['Mountain'];
 
 			async function _wheelSearchArea() {
 				_buildWheel([{ label: '🔍 Searching…', action: () => {} }]);
 				await runInlineProgress('Searching the area…', 4000);
-				const tier = await performSkillCheck('Tracking');
+				const tier = performSkillCheck('Tracking');
 				checkQuestObjectives?.('surroundings_checked');
 
 				const cell   = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
@@ -5776,7 +5556,7 @@ function pulseD20(times = 3) {
 				_buildWheel([{ label: '⏳ Searching…', action: () => {} }]);
 				await runInlineProgress(`${cat.label.replace(/^[^ ]+ /, '')}…`, 3000);
 				changeStamina(-2);
-				const tier = await performSkillCheck(cat.skill);
+				const tier = performSkillCheck(cat.skill);
 
 				if (tier <= 1) {
 					addStory('🔍 You search carefully but find nothing of the sort here.');
@@ -5796,8 +5576,6 @@ function pulseD20(times = 3) {
 					const bonus = tier === 5 ? randomInt(1, 2) : 0;
 					for (const [name, qty] of found) addItem(name, qty + bonus);
 					gainSkillXp(cat.skill, tier);
-					const _woodCat = /wood|log|branch|stick/i.test(cat.label);
-					SoundManager?.play(_woodCat ? 'chop_wood' : 'gather');
 				}
 				_goBack();
 			}
@@ -5809,7 +5587,7 @@ function pulseD20(times = 3) {
 				addStory(`🏛️ You approach <strong>${ruin.name}</strong>.`);
 				if (ruin.description) addStory(ruin.description);
 				await runInlineProgress('Searching the ruins…', 4000);
-				const tier = await performSkillCheck('Decrypting', 0, 'interpreting ancient inscriptions');
+				const tier = performSkillCheck('Lore');
 				addWorldEvent(`Explored ruins: ${ruin.name}.`, 'exploration');
 				if (tier >= 2) {
 					player.flags[`ruin_explored_${coordKey}`] = ruin.name;
@@ -5818,13 +5596,7 @@ function pulseD20(times = 3) {
 						: { type: 'misc', consumable: false, wearable: false, burnTime: 0, condition: 'None', rarity: 'Rare', weight: 0.2, value: 0, description: 'A fragment of an ancient device covered in runic inscriptions unlike any known script. One of twelve.' };
 					addItem('Ancient Artifact Fragment', 1, fragDef);
 					const fragCount = player.inventory?.['Ancient Artifact Fragment']?.quantity || 0;
-					const _ruinCtx = buildActionContext({ ruin: { name: ruin.name, biome: (mapData[player.currentLocation] || {}).biome } });
-					const _ruinNarr = await callGameAI(
-						`One evocative sentence describing a traveller uncovering an ancient artifact fragment in ${ruin.name} (${_ruinCtx.location.biome}). The fragment is covered in runic inscriptions. ${_ruinCtx.location.timeOfDay}. Max 25 words, sense of mystery.`,
-						_ruinCtx,
-						{ mode: 'narrative', fallback: 'Among the debris you uncover a strange carved fragment covered in runic inscriptions unlike any you\'ve seen before.', maxTokens: 60 }
-					);
-					addStory(`🏺 ${_ruinNarr}`);
+					addStory(`🏺 Among the debris you uncover a strange carved fragment covered in runic inscriptions unlike any you've seen before.`);
 					addStory(`📦 <em>Ancient Artifact Fragment — ${fragCount} of 12 found.</em>`);
 					if (fragCount === 1) {
 						if (!player.journal.quests) player.journal.quests = [];
@@ -5836,6 +5608,7 @@ function pulseD20(times = 3) {
 					}
 					learnRandomLore('site', { source: 'site' });
 					gainExperience(35);
+					gainSkillXp('Lore', tier);
 					// Ruins often contain old texts — 30% chance of a recipe scroll
 					if (Math.random() < 0.30) awardRecipeScroll();
 					if (fragCount >= 12) {
@@ -5853,13 +5626,7 @@ function pulseD20(times = 3) {
 					updateJournal();
 					updateTopStats();
 				} else {
-					const _ruinFailCtx = buildActionContext({ ruin: { name: ruin.name } });
-					const _ruinFailNarr = await callGameAI(
-						`One sentence describing a traveller finding ${ruin.name} too damaged and overgrown to yield anything useful. ${_ruinFailCtx.location.biome}, ${_ruinFailCtx.location.weather}. Max 20 words, resigned or frustrated tone.`,
-						_ruinFailCtx,
-						{ mode: 'narrative', fallback: 'The ruins are too badly damaged and overgrown. You find nothing you can retrieve.', maxTokens: 50 }
-					);
-					addStory(`🏛️ ${_ruinFailNarr}`);
+					addStory(`🏛️ The ruins are too badly damaged and overgrown. You find nothing you can retrieve.`);
 				}
 				_goBack();
 			}
@@ -5989,10 +5756,11 @@ function pulseD20(times = 3) {
 					const ids = _loreIds || [_loreId];
 					let learned = 0;
 					ids.forEach(id => { if (typeof learnLore === 'function' && learnLore(id, 'library')) learned++; });
+					gainSkillXp('Lore', 2);
 					if (learned > 0) {
-						addStory(`📖 You read <em>${bookName}</em> and learn something new about the world.`);
+						addStory(`📖 You read <em>${bookName}</em> and learn something new about the world. (Lore XP gained)`);
 					} else {
-						addStory(`📖 You read <em>${bookName}</em>. Nothing in it surprises you.`);
+						addStory(`📖 You read <em>${bookName}</em>. Nothing in it surprises you. (Lore XP gained)`);
 					}
 					updatePlayerStats(); return;
 				}
@@ -6032,20 +5800,6 @@ function pulseD20(times = 3) {
 			function eatItem(itemName) {
 				const item = player.inventory[itemName];
 				if (!item || (item.quantity ?? 0) < 1) { addStory(`⛔ No ${itemName} to eat.`); return; }
-				SoundManager?.play(/waterskin.*full/i.test(itemName) || item?.type === 'potion' ? 'drink' : 'eat');
-
-				// Waterskin (Full) — drink, restore empty skin, remove thirst
-				if (/waterskin.*full/i.test(itemName)) {
-					removeItem(itemName, 1);
-					addItem('Waterskin', 1, { type: 'tool', weight: 0.5, rarity: 'Common', consumable: false, description: 'An empty leather waterskin.' });
-					const _wsStam = item.baseEffect?.stamina ?? 5;
-					changeStamina(_wsStam);
-					removeCondition('thirsty');
-					updateTopStats?.();
-					addStory(`💧 You drink deeply from your waterskin. (+${_wsStam} stamina)`);
-					checkQuestObjectives?.('water_refilled');
-					return;
-				}
 
 				if (item.type === 'potion') {
 					removeItem(itemName, 1);
@@ -6119,7 +5873,7 @@ function pulseD20(times = 3) {
 				const _restInTown = ['City','CapitalCity','Village'].includes(_restCell.zone || '');
 				_buildWheel([{ label: '⏳ Resting…', action: () => {} }]);
 				await runInlineProgress('Resting…', 10000);
-				const tier = await performSkillCheck('Survival');
+				const tier = performSkillCheck('Survival');
 				let gain = 0;
 				if (tier === 1) {
 					addStory(_restInTown ? '🔔 A commotion outside jolts you awake. No rest gained.' : '⚔️ Ambushed! Rest interrupted.');
@@ -6142,7 +5896,7 @@ function pulseD20(times = 3) {
 				// Snare check
 				if (player.snarePlaced) {
 					player.snarePlaced = false;
-					const snareTier = await performSkillCheck('Tracking');
+					const snareTier = performSkillCheck('Tracking');
 					if (snareTier === 5) applyCondition?.('focused', 3);
 					if (snareTier >= 3) {
 						const qty = snareTier >= 5 ? 2 : 1;
@@ -6153,8 +5907,6 @@ function pulseD20(times = 3) {
 						addStory('🪤 Your snare was empty — either missed or sprung without catching anything.');
 					}
 				}
-				// Rest satisfies the tutorial sleep objective (short rest counts)
-				checkQuestObjectives?.('slept');
 				// Random event during rest (20% camp, 10% town)
 				const _restEventChance = _restInTown ? 0.10 : 0.20;
 				if (Math.random() < _restEventChance) {
@@ -6210,7 +5962,6 @@ function pulseD20(times = 3) {
 				setBuiltIcon?.('shelter-button',  false);
 				setBuiltIcon?.('defenses-button', false);
 				updateComfortProtection?.();
-				SoundManager?.updateAmbience();
 				updateCampSuppliesGrid?.();
 				addStory('🎒 Camp broken. Campsite removed from map.');
 				renderMapsPanel?.();
@@ -6273,7 +6024,6 @@ function pulseD20(times = 3) {
 				addStory(nearWater
 					? '💧 You find a clear stream and drink your fill.'
 					: '💧 You locate a small hidden spring and refill your water.');
-				SoundManager?.play('fill_water');
 				const _gatherEmptyKey = Object.keys(player.inventory || {}).find(k => /waterskin/i.test(k) && !/full/i.test(k));
 				if (_gatherEmptyKey) removeItem(_gatherEmptyKey, 1);
 				addItem('Waterskin (Full)', 1, { type: 'misc', weight: 1, rarity: 'Common', consumable: true, description: 'A waterskin filled with fresh water.' });
@@ -6300,7 +6050,7 @@ function pulseD20(times = 3) {
 					Wetlands: 8, Swamp: 9,
 					Forest: 10,
 					Hills: 12, Plains: 12, Grassland: 12,
-					Mountains: 14, Cave: 13,
+					Mountain: 14, Cave: 13,
 					Tundra: 16, Desert: 19,
 				};
 				const dc    = DC_MAP[biome] ?? 12;
@@ -6314,7 +6064,7 @@ function pulseD20(times = 3) {
 					const failLines = {
 						Desert:  'The cracked earth offers nothing. No water anywhere.',
 						Tundra:  'Everything is frozen. You can\'t extract usable water.',
-						Mountains:'The rock faces yield no springs here.',
+						Mountain:'The rock faces yield no springs here.',
 						Swamp:   'There\'s moisture everywhere but none you\'d dare drink.',
 					};
 					addStory(`💧 ${failLines[biome] || 'You search the area but find no water source.'}`);
@@ -6329,13 +6079,13 @@ function pulseD20(times = 3) {
 					Wetlands: 'A clear spring bubbles up among the reeds.',
 					Swamp:    'After careful searching you find a surprisingly clean spring.',
 					Forest:   'A hidden stream winds through the roots. You fill your skin.',
-					Mountains: 'Snowmelt trickles down a rockface into a clean pool.',
+					Mountain: 'Snowmelt trickles down a rockface into a clean pool.',
 					Cave:     'A dripping stalactite fills your waterskin drop by drop.',
 					Tundra:   'You melt enough clean ice to fill your waterskin.',
 					Desert:   'Against all odds you spot a desert spring. You fill up quickly.',
 				};
 				addStory(`💧 ${successLines[biome] || 'You locate a small spring and fill your waterskin.'}`);
-				SoundManager?.play('fill_water');
+
 				removeItem(emptyKey, 1);
 				addItem('Waterskin (Full)', 1, { type: 'misc', weight: 1, rarity: 'Common', consumable: true, description: 'A waterskin filled with fresh water.' });
 				checkQuestObjectives?.('water_refilled');
@@ -6360,7 +6110,6 @@ function pulseD20(times = 3) {
 			function _doDrinkWaterskin() {
 				const fullKey = Object.keys(player.inventory || {}).find(k => /waterskin/i.test(k) && /full/i.test(k));
 				if (!fullKey) { addStory('⛔ You have no filled waterskin.'); _goBack(); return; }
-				SoundManager?.play('drink');
 				removeItem(fullKey, 1);
 				addItem('Waterskin', 1, { type: 'misc', weight: 0.5, rarity: 'Common', consumable: false, description: 'An empty waterskin.' });
 				applyCondition('hydrated', 5);
@@ -6387,7 +6136,6 @@ function pulseD20(times = 3) {
 						Wetlands: 'A clear spring among the reeds offers clean water.',
 						Ocean:    'You find a trickle of fresh water running down to the sea.',
 					};
-					SoundManager?.play('drink');
 					applyCondition('hydrated', 5);
 					addStory(`💧 ${sourceLines[cell.biome] || 'You drink from the source.'}`);
 				}
@@ -6405,7 +6153,7 @@ function pulseD20(times = 3) {
 				changeStamina(-STAMINA_COST);
 				await runInlineProgress('Searching the area for anything useful…', 5000);
 
-				const tier = await performSkillCheck('Foraging', 0, 'searching the area for food and herbs');
+				const tier = performSkillCheck('Foraging');
 				checkQuestObjectives?.('surroundings_checked');
 
 				if (tier === 1) {
@@ -6493,11 +6241,9 @@ function pulseD20(times = 3) {
 				player.hasCampfire = true;
 				setBuiltIcon?.('campfire-button', true);
 				updateComfortProtection?.();
-				SoundManager?.play('craft_with_hammer');
 				addStory('🔥 Campfire built. (−8 Stones)');
 				gainSkillXp('Fire-making', 3);
 				_goBack();
-				if (typeof _tutAfterBuildCampfire === 'function') _tutAfterBuildCampfire();
 			}
 
 			async function _doLightFire() {
@@ -6519,13 +6265,13 @@ function pulseD20(times = 3) {
 				// Apply weather penalty to fire-making roll (max -3 in severe weather, sheltered halves penalty)
 				const _firePenalty = _fireSev >= 4 ? (player.hasShelter ? -1 : -3)
 				                   : _fireSev >= 2 ? (player.hasShelter ? 0 : -2) : 0;
-				const tier = await performSkillCheck('Fire-making', _firePenalty, 'lighting the campfire');
+				const tier = performSkillCheck('Fire-making', _firePenalty);
 				if (tier <= 2) { addStory('⚠️ The tinder smolders and dies. Kindling spent.'); _goBack(); return; }
 				// startFireWithWood handles the success message and fire timer itself
 				startFireWithWood('Stick Bundle');
 				checkQuestObjectives?.('fire_started');
 				updateComfortProtection?.();
-				_wheelCampfire(); // stay in campfire menu so Cook is immediately accessible
+				_goBack();
 			}
 
 			async function _doExtinguishFire() {
@@ -6533,7 +6279,6 @@ function pulseD20(times = 3) {
 				await runInlineProgress('Extinguishing fire…', 1000);
 				if (typeof extinguishFire === 'function') await extinguishFire();
 				else { player.hasFire = false; player.fireTimer = 0; clearInterval(fireTimerInterval); fireTimeRemaining = 0; }
-				SoundManager?.updateAmbience();
 				updateComfortProtection?.();
 				addStory('💨 Fire extinguished.');
 				_goBack();
@@ -6565,7 +6310,6 @@ function pulseD20(times = 3) {
 			}
 
 							function _wheelCook() {
-					if (!(player?.hasFire && fireTimeRemaining > 0)) { addStory('⛔ The fire has gone out. Light it again to cook.'); _goBack(); return; }
 					const cookables = Object.entries(player.inventory || {})
 						.filter(([, v]) => v?.type === 'food' && (v.quantity ?? 0) > 0);
 					if (!cookables.length) { addStory('⛔ No cookable food in inventory.'); _goBack(); return; }
@@ -6632,7 +6376,7 @@ function _wheelShelter() {
 				const stick = player.campSupplies.find(i => i.name === 'Stick Bundle');
 				stick.quantity -= needed;
 				updateCampSuppliesGrid?.();
-				const tier = await performSkillCheck('Crafting');
+				const tier = performSkillCheck('Crafting');
 				const restored = tier >= 4 ? 40 : tier >= 3 ? 25 : tier >= 2 ? 15 : 8;
 				player.shelterDurability = Math.min(100, (player.shelterDurability ?? 0) + restored);
 				gainSkillXp('Crafting', tier);
@@ -6678,7 +6422,7 @@ function _wheelShelter() {
 				_buildWheel([{ label: '🔍 Scouting…', action: () => {} }]);
 				await bar.wait(6000);
 
-				const scoutTier = await performSkillCheck('Hunting', _huntMod, 'scouting for game');
+				const scoutTier = performSkillCheck('Hunting', _huntMod);
 				if (scoutTier === 1) {
 					bar.finish();
 					addStory('🏹 No signs of animals in this area.');
@@ -6688,7 +6432,6 @@ function _wheelShelter() {
 				const animal = (typeof randomAnimal === 'function') ? randomAnimal() : 'Deer';
 				currentHunt = { tier: 3, animal, wounded: false, arrowsUsed: 0 };
 				addStory(`🏹 You spot signs of a ${animal}!`);
-				if (animal === 'Wolf') SoundManager?.play('wolf');
 
 				// Pause bar while player chooses
 				bar.pause();
@@ -6709,7 +6452,7 @@ function _wheelShelter() {
 				_buildWheel([{ label: '🐾 Tracking…', action: () => {} }]);
 				await bar.wait(5000);
 
-				const trackTier = await performSkillCheck('Tracking', _huntMod, 'following tracks');
+				const trackTier = performSkillCheck('Tracking', _huntMod);
 				if (trackTier <= 2) {
 					bar.finish();
 					player.consecutiveHuntFailures = (player.consecutiveHuntFailures || 0) + 1;
@@ -6749,10 +6492,9 @@ function _wheelShelter() {
 				if ((player.inventory['Arrow']?.quantity || 0) <= 0) {
 					addStory('⛔ Out of arrows!'); huntActive = false; _goBack(); return;
 				}
-				SoundManager?.play('fire_arrow');
 				removeItem('Arrow', 1);
 
-				const shotTier = await performSkillCheck('Archery', _huntMod, 'taking the shot');
+				const shotTier = performSkillCheck('Archery', _huntMod);
 				if (shotTier <= 2) {
 					addStory(`🏹 You miss! The ${animal} flees.`);
 					huntActive = false; _goBack(); return;
@@ -6764,7 +6506,7 @@ function _wheelShelter() {
 					addStory(`🩸 You wound the ${animal}! Following blood trail…`);
 					_buildWheel([{ label: '🩸 Tracking…', action: () => {} }]);
 					await bloodBar.wait(3000);
-					const bloodTier = await performSkillCheck('Tracking', _huntMod, 'following the blood trail');
+					const bloodTier = performSkillCheck('Tracking', _huntMod);
 					if (bloodTier <= 2) {
 						player.consecutiveHuntFailures = (player.consecutiveHuntFailures || 0) + 1;
 						addStory(`🏹 You lose the trail. The ${animal} escapes.`);
@@ -6858,7 +6600,7 @@ function _wheelShelter() {
 				addStory(`🎣 You find a quiet spot along the ${biome.toLowerCase()} and cast your line.`);
 
 				// Fishing skill check determines quality before the bite delay so skill matters
-				const tier = await performSkillCheck('Fishing', 0, 'reading the water');
+				const tier = performSkillCheck('Fishing');
 
 				if (tier === 1) {
 					await runInlineProgress('Waiting for a bite…', 5000);
@@ -7016,7 +6758,7 @@ function _wheelShelter() {
 				}
 
 				const skillName = recipe.skill || 'Crafting';
-				const tier = await performSkillCheck(skillName);
+				const tier = performSkillCheck(skillName);
 
 				// Look up base item data from the database if available
 				const dbData = (typeof findItemInDatabase === 'function' && findItemInDatabase(recipe.produces.item)) || {};
@@ -7055,8 +6797,6 @@ function _wheelShelter() {
 					awardProfessionXp('craft');
 					checkQuestObjectives?.('crafted', { item: recipe.produces.item });
 					if (_craftCat === 'Cooking') checkQuestObjectives?.('food_cooked');
-					const _craftSound = (_craftCat === 'Carpentry') ? 'craft_with_saw' : 'craft_with_hammer';
-					SoundManager?.play(_craftSound);
 				}
 				updateInventory();
 				saveGame(true);
@@ -7152,7 +6892,7 @@ if (!huntActive) {
   return;
 }
 
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier === 1) {
     document.getElementById('hunt-phase-status').textContent = "Hunt Failed.";
     restLog.textContent = "You find no signs of animals.";
@@ -7192,7 +6932,7 @@ if (!huntActive) {
   return;
 }
 
-    const trackRoll = await performSkillCheck('Tracking');
+    const trackRoll = performSkillCheck('Tracking');
     if (trackRoll <= 2) {
       document.getElementById('hunt-phase-status').textContent = "Hunt Failed.";
       restLog.textContent = "You lose the tracks. The prey escapes.";
@@ -7402,7 +7142,7 @@ function awardHuntLoot() {
     addItem(`${animal} Hide`, 1, { type: 'material', weight: 3, rarity: 'Uncommon' });
   }
 
-  addStory(`🥩 You obtain ${quantity} ${pluralize(meatItem, quantity)}.`);
+  addStory(`🥩 You obtain ${quantity} ${meatItem}(s).`);
   if (currentHunt.tier >= 4) changeHope(1, 'successful hunt');
   checkQuestObjectives?.('food_hunted');
   // Chance to find a recipe scroll near the kill — poacher's cache, hunter's notes, etc.
@@ -7832,7 +7572,7 @@ function consumeSupply(name, qty = 1) {
   }
 
   updateCampSuppliesGrid?.();
-  addStory?.(`-${qty} ${pluralize(name, qty)} consumed from camp supplies.`);
+  addStory?.(`-${qty} ${name}(s) consumed from camp supplies.`);
   return true;
 }
 
@@ -8017,7 +7757,6 @@ function _enemyCounterattack() {
     combatState.defending = false;
     return;
   }
-  SoundManager?.play('armor_impact');
   changeLife(-dmg);
   // Armor degrades slightly when hit
   for (const [slot, name] of Object.entries(player.equipped || {})) {
@@ -8032,7 +7771,7 @@ async function _doCombatAttack() {
   await runInlineProgress('Attacking…', 1500);
   const e       = combatState.enemy;
   const skill   = _getBestCombatSkill();
-  let tier = await performSkillCheck(skill);
+  let tier = performSkillCheck(skill);
   if (combatState.eagleEye && skill === 'Archery') tier = Math.max(3, tier);
   if (skill === 'Archery' && player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
   const wepBonus    = _getEquippedWeaponDamage();
@@ -8044,16 +7783,7 @@ async function _doCombatAttack() {
   const wepNote    = wepBonus > 0 ? ` (weapon: +${Math.floor(wepBonus * 0.4)})` : '';
   const markedNote = markedBonus ? ' 🎯+3' : '';
   const bhdNote    = broadheadBonus ? ' 🏹+4' : '';
-  const _atkStatLine = `⚔️ ${dmg} damage${wepNote}${markedNote}${bhdNote} — ${e.name} ${e.life}/${e.maxLife} HP`;
-  const _atkCtx = buildActionContext({
-    combat: { enemy: e.name, enemyLife: `${e.life}/${e.maxLife}`, weapon: player.equipped?.rightHand || player.equipped?.leftHand || 'bare hands', skill, tier, round: combatState.round, dmg },
-  });
-  const _atkNarr = await callGameAI(
-    `One vivid sentence describing the player's ${skill} attack hitting the ${e.name} for ${dmg} damage (tier ${tier}/5). Weapon used: ${player.equipped?.rightHand || player.equipped?.leftHand || 'bare hands'}. Enemy has ${e.life}/${e.maxLife} HP left. No damage numbers in the narrative — those appear separately. Max 20 words.`,
-    _atkCtx,
-    { mode: 'narrative', fallback: '', maxTokens: 60 }
-  );
-  addStory(`⚔️ ${_atkNarr ? _atkNarr + ` <em>(${_atkStatLine})</em>` : _atkStatLine}`);
+  addStory(`⚔️ You hit the ${e.name} for ${dmg} damage${wepNote}${markedNote}${bhdNote}. (${e.life}/${e.maxLife} HP)`);
   // Weapon degrades slightly each attack
   const wep = player.equipped?.rightHand || player.equipped?.leftHand;
   if (wep && player.inventory?.[wep]) degradeItemWear(wep, randomInt(2, 4));
@@ -8083,28 +7813,14 @@ async function _doCombatDefend() {
 async function _doCombatFlee() {
   _buildWheel([{ label: '🏃 Fleeing…', action: () => {} }]);
   await runInlineProgress('Fleeing…', 1500);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier >= 3) {
-    const _fleeName = combatState.enemy.name;
-    const _fleeCtx  = buildActionContext({ combat: { enemy: _fleeName, biome: (mapData[player.currentLocation] || {}).biome } });
-    const _fleeNarr = await callGameAI(
-      `One sentence (max 20 words) describing the player successfully escaping from a ${_fleeName}. Biome: ${_fleeCtx.location.biome}. Breathless and vivid.`,
-      _fleeCtx,
-      { mode: 'narrative', fallback: 'You break away and escape!', maxTokens: 50 }
-    );
-    addStory(`🏃 ${_fleeNarr}`);
+    addStory('🏃 You break away and escape into the wilderness!');
     changeStamina(-15);
     combatState = null;
     _showDefaultWheel();
   } else {
-    const _cutoffName = combatState.enemy.name;
-    const _cutoffCtx  = buildActionContext({ combat: { enemy: _cutoffName } });
-    const _cutoffNarr = await callGameAI(
-      `One sentence (max 20 words) describing the player's escape being cut off by a ${_cutoffName}. Tense, urgent.`,
-      _cutoffCtx,
-      { mode: 'narrative', fallback: 'They cut off your escape!', maxTokens: 50 }
-    );
-    addStory(`🏃 ${_cutoffNarr}`);
+    addStory('🏃 They cut off your escape!');
     _enemyCounterattack();
     if (player.life <= 0) { _resolveCombatDefeat(); return; }
     _showCombatWheel();
@@ -8146,7 +7862,7 @@ async function _castSpell(id) {
   }
   await runInlineProgress(`${sp.label}…`, 1500);
   changeMana(-sp.cost);
-  const tier = await performSkillCheck(sp.skill);
+  const tier = performSkillCheck(sp.skill);
 
   // Healing spell — no attack roll, just restore life then take a counter
   if (id === 'mend') {
@@ -8232,7 +7948,7 @@ function _showOutOfCombatMagicWheel() {
 async function _doMeditateSpell() {
   _buildWheel([{ label: '🧘 Meditating…', action: () => {} }]);
   await runInlineProgress('Meditating…', 4000);
-  const tier    = await performSkillCheck('Mysticism');
+  const tier    = performSkillCheck('Mysticism');
   const effMax  = getEffMaxMana();
   const restore = Math.min(tier * 10 + randomInt(0, 5), effMax - (player.mana || 0));
   if (restore > 0) changeMana(restore);
@@ -8268,7 +7984,7 @@ async function _doBloodMagicRitual() {
   updateTopStats();
   addStory(`🩸 You cut your palm and let blood fall onto the bone dust. The candle flame turns deep crimson. (−${_sacrifice} life)`);
 
-  const tier = await performSkillCheck('Blood Magic');
+  const tier = performSkillCheck('Blood Magic');
   gainSkillXp('Blood Magic', tier);
 
   const _gains   = [0, 0, 20, 35, 50];
@@ -8316,7 +8032,7 @@ async function _doMendSelfSpell() {
   _buildWheel([{ label: '💫 Mending…', action: () => {} }]);
   await runInlineProgress('Channelling…', 2000);
   changeMana(-12);
-  const tier   = await performSkillCheck('Light Magic');
+  const tier   = performSkillCheck('Light Magic');
   const healAmt = Math.max(1, tier * 10 + randomInt(0, 8));
   changeLife(healAmt);
   if (tier >= 3) removeCondition('injured');
@@ -8329,7 +8045,7 @@ async function _doWardSpell() {
   _buildWheel([{ label: '✨ Warding…', action: () => {} }]);
   await runInlineProgress('Weaving a ward…', 2000);
   changeMana(-8);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   if (tier >= 3) {
     player.ritualWard = true;
     addStory('✨ A ward coils around you. The next enemy you face begins weakened (−20 HP).');
@@ -8343,7 +8059,7 @@ async function _doDarkSightSpell() {
   _buildWheel([{ label: '🔍 Sensing…', action: () => {} }]);
   await runInlineProgress('Reaching into shadow…', 2000);
   changeMana(-5);
-  const tier = await performSkillCheck('Black Magic');
+  const tier = performSkillCheck('Black Magic');
   if (tier <= 1) { addStory('🔍 The shadow sight fails. Nothing revealed.'); _goBack(); return; }
   // Reveal a random nearby undiscovered cell
   const key   = player.currentLocation;
@@ -8419,17 +8135,9 @@ function _partyAssistCombat() {
   }
 }
 
-async function _resolveCombatVictory() {
+function _resolveCombatVictory() {
   const e = combatState.enemy;
-  const _victoryCtx = buildActionContext({
-    combat: { enemy: e.name, enemyWeapon: e.weapon, rounds: combatState.round, playerWeapon: player.equipped?.rightHand || player.equipped?.leftHand || 'bare hands' },
-  });
-  const _victoryNarr = await callGameAI(
-    `One vivid sentence (max 25 words) describing the player's victory over a ${e.name} after ${combatState.round} round(s) of combat. Location: ${_victoryCtx.location.name}. Tone should feel earned and grounded — no melodrama.`,
-    _victoryCtx,
-    { mode: 'narrative', fallback: `You defeated the ${e.name}!`, maxTokens: 60 }
-  );
-  addStory(`🏆 ${_victoryNarr}`);
+  addStory(`🏆 You defeated the ${e.name}!`);
   awardProfessionXp('combat_victory');
   gainExperience(e.xp);
   const _forPay  = player.forPayActive;
@@ -8459,17 +8167,9 @@ async function _resolveCombatVictory() {
   _showDefaultWheel();
 }
 
-async function _resolveCombatDefeat() {
+function _resolveCombatDefeat() {
   const e = combatState?.enemy;
-  const _defeatCtx = buildActionContext({
-    combat: { enemy: e?.name || 'unknown', rounds: combatState?.round || 0 },
-  });
-  const _defeatNarr = await callGameAI(
-    `One grim sentence (max 25 words) describing the player being defeated and losing consciousness after being overcome by a ${e?.name || 'foe'}. Location: ${_defeatCtx.location.name}. Grounded, not melodramatic.`,
-    _defeatCtx,
-    { mode: 'narrative', fallback: `You are defeated by the ${e?.name || 'enemy'}. You fall unconscious…`, maxTokens: 60 }
-  );
-  addStory(`💀 ${_defeatNarr}`);
+  addStory(`💀 You are defeated by the ${e?.name || 'enemy'}. You fall unconscious…`);
   player.life    = Math.max(1, Math.floor(player.maxLife * 0.1));
   player.stamina = 0;
   const goldLost = Math.min(player.gold || 0, Math.max(1, Math.floor((player.gold || 0) * 0.3)));
@@ -8740,7 +8440,7 @@ function showRadialMenu(iconEl, items) {
 				addStory(`${npc.name} eyes you appraisingly.`);
 				_buildWheel([{ label: '💬 Haggling…', action: () => {} }]);
 				await runInlineProgress('Negotiating…', 1500);
-				const negTier = await performSkillCheck('Negotiating');
+				const negTier = performSkillCheck('Negotiating');
 				const discount = negTier >= 5 ? 0.30 : negTier >= 4 ? 0.20 : negTier >= 3 ? 0.10 : 0;
 				if (discount > 0) addStory(`🤝 You talk them down — ${Math.round(discount * 100)}% off.`);
 
@@ -8854,37 +8554,17 @@ function showRadialMenu(iconEl, items) {
 					},
 					{
 						label: 'The Kingdom',
-						action: async () => {
-							const _templateOpinion = getNpcKingdomOpinion(npc, kingdom);
-							const _kStats = getKingdomStats(kingdom);
-							const _kCond  = getKingdomCondition(kingdom);
-							const _kCtx   = buildActionContext({
-								npc: { name: npc.name, profession: npc.profession, morality: npc.morality, affiliation: npc.affiliation },
-								kingdom: { name: kingdom, condition: _kCond.label, prosperity: _kStats.prosperity, stability: _kStats.stability, happiness: _kStats.happiness, crime: _kStats.crime, military: _kStats.military, trade: _kStats.trade },
-							});
-							const _kOpinion = await callGameAI(
-								`You are voicing ${npc.name}, a ${npc.profession || 'local'} in a medieval fantasy RPG, sharing their opinion of ${kingdom} (currently ${_kCond.label}). Write 1–2 sentences of spoken dialogue using the NPC's perspective and profession (e.g. merchants care about trade, guards about security). Stay in character. No name prefix. Stats context: prosperity ${_kStats.prosperity}, stability ${_kStats.stability}, crime ${_kStats.crime}. Use this as seed: ${_templateOpinion}`,
-								_kCtx,
-								{ mode: 'narrative', fallback: _templateOpinion, maxTokens: 100 }
-							);
-							addStory(`<strong>${npc.name}</strong>: <em>"${_kOpinion.replace(/^["']|["']$/g, '')}"</em>`);
+						action: () => {
+							const _opinion = getNpcKingdomOpinion(npc, kingdom);
+							addStory(`<strong>${npc.name}</strong>: ${_opinion}`);
 							gainSkillXp('Persuasion', 2);
 							_goBack();
 						}
 					},
 					{
 						label: 'Ask for Rumors',
-						action: async () => {
-							const _rumorSeed = RUMORS[Math.floor(Math.random() * RUMORS.length)];
-							const _rumorCtx  = buildActionContext({
-								npc: { name: npc.name, profession: npc.profession, morality: npc.morality, socialClass: npc.socialClass },
-							});
-							const _rumorLine = await callGameAI(
-								`You are voicing ${npc.name}, a ${npc.profession || 'local'} in ${_rumorCtx.location.name} (${_rumorCtx.location.kingdom}), sharing a rumor they've heard. Write exactly one sentence of rumor in the NPC's voice — in character, specific, grounded in medieval fantasy. It should feel local and believable. Use this as a seed topic but you may vary it: ${_rumorSeed}`,
-								_rumorCtx,
-								{ mode: 'narrative', fallback: _rumorSeed, maxTokens: 80 }
-							);
-							addStory(`${npc.name}: <em>"${_rumorLine.replace(/^["']|["']$/g, '')}"</em>`);
+						action: () => {
+							addStory(`${npc.name}: "${RUMORS[Math.floor(Math.random() * RUMORS.length)]}"`);
 							// 40% chance NPC tips you off about a nearby establishment
 							const undiscovered = _getUndiscoveredEstabs();
 							if (undiscovered.length && Math.random() < 0.40) {
@@ -8910,9 +8590,7 @@ function showRadialMenu(iconEl, items) {
 					},
 					{
 						label:  '💬 Converse',
-						action: () => typeof openNpcConversation !== 'undefined'
-							? openNpcConversation(npc)
-							: _showNpcInteraction(npc),
+						action: () => _showNpcInteraction(npc),
 					},
 					..._deliverSpokes,
 					{ label: '← Back', action: _goBack, isBack: true }
@@ -8925,35 +8603,35 @@ function showRadialMenu(iconEl, items) {
 				{
 					id: 'pickpocket', weight: 4,
 					narrative: 'A small figure bumps into you in the crowd. You feel fingers at your coin purse.',
-					check: 'Tracking', checkReason: 'catching the pickpocket', difficulty: 10,
+					check: 'Tracking', difficulty: 10,
 					success: { story: 'You catch their wrist. They twist free and bolt, empty-handed.', effects: [] },
 					failure: { story: 'By the time you notice, your coin purse is lighter.', goldMod: -0.12 },
 				},
 				{
 					id: 'guard_stop', weight: 3,
 					narrative: '"I don\'t recognise you." A town guard plants himself in your path. "State your business."',
-					check: 'Persuasion', checkReason: 'talking your way past the guard', difficulty: 8,
+					check: 'Persuasion', difficulty: 8,
 					success: { story: 'You explain yourself smoothly. The guard nods and steps aside.', effects: [] },
 					failure: { story: 'He moves you on — you\'ve spent enough time in this area for now.', effects: [{ type: 'stamina', amount: -10 }] },
 				},
 				{
 					id: 'lost_child', weight: 3,
 					narrative: 'A child grabs your sleeve, eyes wide. "I can\'t find my mother. I\'m scared."',
-					check: 'Tracking', checkReason: 'finding the child\'s mother', difficulty: 9,
+					check: 'Tracking', difficulty: 9,
 					success: { story: 'You navigate the streets and reunite the child with their grateful mother. She presses a few coins into your hand.', effects: [{ type: 'gold', amount: 5 }, { type: 'experience', amount: 10 }] },
 					failure: { story: 'You search for a while before the child spots someone else and darts away.', effects: [{ type: 'stamina', amount: -3 }] },
 				},
 				{
 					id: 'street_deal', weight: 3,
 					narrative: 'A furtive trader pulls aside a canvas revealing a tray of goods. "Special price for you, friend."',
-					check: 'Persuasion', checkReason: 'haggling with the trader', difficulty: 7,
+					check: 'Persuasion', difficulty: 7,
 					success: { story: 'You haggle them to a fair price and walk away with something useful.', effects: [{ type: 'item', name: 'Healing Herb', qty: 2 }] },
 					failure: { story: 'The price sounds reasonable but the goods are junk. You move on.', effects: [] },
 				},
 				{
 					id: 'overheard_whispers', weight: 3,
 					narrative: 'Two cloaked figures exchange hushed words in a doorway. You catch fragments mentioning a nearby location.',
-					check: 'Stealth', checkReason: 'eavesdropping on the figures', difficulty: 10,
+					check: 'Stealth', difficulty: 10,
 					success: { story: 'You piece together enough to note down a location you hadn\'t noticed before.', effects: [{ type: 'experience', amount: 10 }], revealEstab: true },
 					failure: { story: 'One of them glances your way. They go silent and walk off quickly.', effects: [] },
 				},
@@ -8966,7 +8644,7 @@ function showRadialMenu(iconEl, items) {
 				{
 					id: 'street_brawl', weight: 2,
 					narrative: 'Two men spill out of a doorway trading blows. A crowd has stopped to watch.',
-					check: 'Brawling', checkReason: 'breaking up the fight', difficulty: 11,
+					check: 'Brawling', difficulty: 11,
 					success: { story: 'You step in and shove them apart with authority. Both back off, winded.', effects: [{ type: 'experience', amount: 15 }, { type: 'stamina', amount: -5 }] },
 					failure: { story: 'You catch a wild elbow to the jaw for your trouble. You decide to leave them to it.', effects: [{ type: 'life', amount: -6 }] },
 				},
@@ -8986,7 +8664,7 @@ function showRadialMenu(iconEl, items) {
 					return;
 				}
 
-				const tier    = await performSkillCheck(ev.check, 0, ev.checkReason || null);
+				const tier    = performSkillCheck(ev.check);
 				const success = tier >= 3;
 				const outcome = success ? ev.success : ev.failure;
 				if (outcome?.story) addStory(outcome.story);
@@ -9035,30 +8713,14 @@ function showRadialMenu(iconEl, items) {
 					const knownNames = disc.length ? `Known places: ${disc.join(', ')}.` : '';
 					addStory('🗺️ You\'ve explored everything this settlement has to offer.' + (knownNames ? ` ${knownNames}` : ''));
 				} else {
-					const _loreRoll = hiddenRoll();
-					const tier = _loreRoll <= 5 ? 1 : _loreRoll <= 10 ? 2 : _loreRoll <= 14 ? 3 : _loreRoll <= 18 ? 4 : 5;
+					const tier = performSkillCheck('Tracking');
 					if (tier >= 3) {
 						justFound = undiscovered[Math.floor(Math.random() * undiscovered.length)];
 						discoverEstablishment(coord, justFound.name);
-						if (justFound.description) {
-							addStory(justFound.description);
-						} else {
-							const _discCtx = buildActionContext();
-							const _discNarr = await callGameAI(
-								`One sentence describing a traveller discovering "${justFound.name}" (type: ${justFound.type || 'establishment'}) while exploring ${_discCtx.location.name}. Vivid, grounded, medieval fantasy. Max 25 words.`,
-								_discCtx,
-								{ mode: 'narrative', fallback: `📍 New discovery: ${justFound.name}.`, maxTokens: 60 }
-							);
-							addStory(`📍 ${_discNarr}`);
-						}
+						if (justFound.description) addStory(justFound.description);
+						else addStory(`📍 New discovery: <strong>${justFound.name}</strong>.`);
 					} else {
-						const _failCtx = buildActionContext();
-						const _failNarr = await callGameAI(
-							`One sentence describing a traveller wandering the streets of ${_failCtx.location.name} (${_failCtx.location.biome}) without finding anything notable. ${_failCtx.location.timeOfDay}, ${_failCtx.location.weather}. Max 20 words, melancholy or weary tone.`,
-							_failCtx,
-							{ mode: 'narrative', fallback: 'You wander the streets but find nothing new this time.', maxTokens: 50 }
-						);
-						addStory(`🔍 ${_failNarr}`);
+						addStory('🔍 You wander the streets but don\'t find anything new this time.');
 					}
 				}
 
@@ -9101,138 +8763,6 @@ function showRadialMenu(iconEl, items) {
 			}
 
 			// Town sub-wheel: shown when the player is in a City or Village.
-			function _shortNpcLabel(npc) {
-				const PROF_LOOKS = {
-					Farmer: 'weathered farmer',        Blacksmith: 'soot-stained smith',
-					Merchant: 'well-dressed trader',   Guard: 'armed guard',
-					Scholar: 'ink-stained scholar',    Priest: 'robed priest',
-					Bard: 'lute-carrying bard',        Hunter: 'cloaked hunter',
-					Herbalist: 'herb-scented healer',  Innkeeper: 'aproned innkeeper',
-					Beggar: 'ragged beggar',            Thief: 'hooded figure',
-					Soldier: 'scarred soldier',         Wanderer: 'dusty traveller',
-					Alchemist: 'cloaked alchemist',    Knight: 'armoured knight',
-					Ranger: 'weathered ranger',         Sailor: 'salt-stained sailor',
-					Carpenter: 'sawdust-dusted carpenter', Tailor: 'needle-pricked tailor',
-				};
-				const racePrefix = npc.race && npc.race !== 'Human' ? `${npc.race} ` : '';
-				const profLabel  = PROF_LOOKS[npc.profession] || (npc.profession || 'local').toLowerCase();
-				const full = `${racePrefix}${profLabel}`;
-				const capped = full.charAt(0).toUpperCase() + full.slice(1);
-				return capped.length > 22 ? capped.slice(0, 20) + '…' : capped;
-			}
-
-			function _showNpcInteractOptions(npc) {
-				meetNPC(npc);
-				if (npc._worldId) bumpImportance(npc._worldId, 'social interaction', 2);
-				awardProfessionXp('npc_talk');
-
-				// Delivery spokes for active quests targeting this NPC
-				const _deliverSpokes = [];
-				(player.journal?.quests || []).filter(q => q.status === 'Active').forEach(inst => {
-					const def = getQuestDef(inst.id);
-					if (!def) return;
-					const branch = _getActiveBranch(inst, def);
-					const obj = branch
-						? branch.objectives?.[inst.branchObjectiveIndex ?? 0]
-						: def.objectives?.[inst.objectiveIndex];
-					if (!obj || obj.completion?.type !== 'delivered') return;
-					const targetNpc = (obj.completion?.npc || obj.target?.npc || '').toLowerCase();
-					if (targetNpc !== (npc.name || '').toLowerCase()) return;
-					const reqItem = obj.target?.item || obj.completion?.item;
-					const hasIt   = !reqItem || getItemQty(reqItem) >= 1;
-					const lbl     = reqItem ? `Deliver ${reqItem}` : 'Deliver Item';
-					_deliverSpokes.push({
-						label:    lbl.length > 22 ? lbl.slice(0, 20) + '…' : lbl,
-						disabled: !hasIt,
-						action: () => {
-							if (reqItem) removeItem(reqItem, 1);
-							addStory(`📦 You hand ${reqItem ? `the ${reqItem}` : 'the item'} to ${npc.name}.`);
-							addStory(`${npc.name}: "Thank you. This is exactly what I needed."`);
-							setQuestFlag(inst.id, `delivered_${(npc.name || '').replace(/\s+/g,'_').toLowerCase()}`, true);
-							_goBack();
-						}
-					});
-				});
-
-				_buildWheel([
-					{
-						label: '💬 Talk',
-						action: () => typeof openNpcConversation !== 'undefined'
-							? openNpcConversation(npc)
-							: _showNpcInteraction(npc),
-					},
-					{
-						label: '🛒 Trade',
-						action: () => { _wheelStack.push(() => _showNpcInteractOptions(npc)); _doNpcTrade(npc); }
-					},
-					...(npc.flags?.canBePickpocketed ? [{
-						label: '🤏 Pickpocket',
-						action: () => { _wheelStack.push(() => _showNpcInteractOptions(npc)); _doPickpocket(npc); }
-					}] : []),
-					{
-						label: '⚔️ Attack',
-						action: () => {
-							const enemyType = npc.name || `${npc.race || 'Human'} ${npc.profession || ''}`.trim();
-							addStory(`⚔️ You draw your weapon against ${npc.name || 'the stranger'}!`);
-							startCombat(enemyType);
-						}
-					},
-					..._deliverSpokes,
-					{ label: '← Nevermind', action: _goBack, isBack: true },
-				], npc.name || 'Stranger');
-			}
-
-			function _showSocialWheel() {
-				const cell    = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-				const kingdom = cell.kingdom || player.currentKingdom || null;
-
-				// NPCs previously met at this location
-				const knownHere = Object.values(worldNPCs.registry)
-					.filter(r => r.lastLocation === player.currentLocation && r.importance >= 2)
-					.sort((a, b) => (b.lastSeenTurn || 0) - (a.lastSeenTurn || 0))
-					.slice(0, 3);
-
-				// Fill up to 4 total with freshly generated strangers
-				const numFresh = Math.max(1, 4 - knownHere.length);
-				const freshNPCs = [];
-				for (let i = 0; i < numFresh; i++) {
-					freshNPCs.push(
-						typeof NPCGenerator !== 'undefined'
-							? NPCGenerator.generate({ biome: cell.biome, zone: cell.zone, kingdom })
-							: { race: 'Human', profession: 'Farmer', gender: 'Male', flags: { canBePickpocketed: true, recruitable: false, romanceable: false, dropsLootOnDeath: false } }
-					);
-				}
-
-				const opts = [];
-
-				// Known NPCs listed by name
-				knownHere.forEach(rec => {
-					opts.push({
-						label: rec.name.length > 22 ? rec.name.slice(0, 20) + '…' : rec.name,
-						action: () => _showNpcInteractOptions({
-							_worldId:   rec.id,
-							name:       rec.name,
-							race:       rec.race,
-							profession: rec.profession || 'Local',
-							morality:   rec.morality   || 'Neutral',
-							traits:     rec.traits     || [],
-							flags:      { canBePickpocketed: true, recruitable: false, romanceable: false, dropsLootOnDeath: false },
-						}),
-					});
-				});
-
-				// Unknown NPCs listed by appearance
-				freshNPCs.forEach(npc => {
-					opts.push({
-						label: _shortNpcLabel(npc),
-						action: () => _showNpcInteractOptions(npc),
-					});
-				});
-
-				opts.push({ label: '← Back', action: _goBack, isBack: true });
-				_buildWheel(opts, 'Social');
-			}
-
 			function _showTownWheel() {
 				const coord    = player.currentLocation;
 				const cell     = (typeof mapData !== 'undefined' && mapData[coord]) || {};
@@ -9255,8 +8785,8 @@ function showRadialMenu(iconEl, items) {
 							? () => { addStory("You've already found everything this settlement has to offer."); }
 							: () => { _wheelStack.push(_showTownWheel); _exploreTown(); },
 					},
-					{ label: '👥 Social',
-					  action: () => { _wheelStack.push(_showTownWheel); _showSocialWheel(); } },
+					{ label: 'Talk to Someone',
+					  action: () => { _wheelStack.push(_showTownWheel); _talkToNpc(); } },
 					{
 						label:  `Known Places${hasKnown ? ` (${disc.length})` : ''}`,
 						action: hasKnown
@@ -9432,37 +8962,20 @@ function showRadialMenu(iconEl, items) {
 				const gen  = (typeof NPCGenerator !== 'undefined') ? NPCGenerator : null;
 				if (!gen) { addStory('⚠️ NPC generator unavailable.'); _goBack(); return; }
 
-				// Build a natural visual description from what you can plainly see
-				function _strangerVis(npc) {
-					const base = (npc.appearance || '').split('.')[0].trim();
-					const r    = npc.race || 'Human';
-					const g    = npc.gender || '';
-					const gNoun = g === 'Female' ? 'woman' : g === 'Male' ? 'man' : 'figure';
-					const art  = /^[aeiou]/i.test(r) ? 'An' : 'A';
-					if (r === 'Human') {
-						const art2 = /^[aeiou]/i.test(base) ? 'An' : 'A';
-						return `${art2} ${base.toLowerCase()}`;
-					}
-					// Non-human race is visually distinctive — name it
-					return `${art} ${r} — ${base.toLowerCase()}`;
-				}
-
 				const npcs = [gen.generateTavernNPC(ctx), gen.generateTavernNPC(ctx), gen.generateTavernNPC(ctx)];
-				npcs.forEach(n => { n._isStranger = true; registerNPC(n, 1); });
+				npcs.forEach(n => registerNPC(n, 1));
 				addStory('👀 You glance around the room. A few figures catch your attention...');
-				npcs.forEach(n => addStory(`• ${_strangerVis(n)}.`));
+				npcs.forEach(n => {
+					const first = n.appearance.split(',')[0];
+					addStory(`• ${capitalize(first)}.`);
+				});
 				_buildWheel([
 					...npcs.map(npc => ({
-						label: _strangerVis(npc).substring(0, 30),
+						label: npc.appearance.split(',')[0].substring(0, 28),
 						action: () => {
 							if (npc._worldId) bumpImportance(npc._worldId, 'player approached in tavern', 2);
 							_wheelStack.push(_tavernTalkToStranger);
-							if (typeof openNpcConversation !== 'undefined') {
-								addStory(`You make your way over. ${npc.description || ''}`);
-								openNpcConversation(npc);
-							} else {
-								_showNpcInteraction(npc, { anonymous: true });
-							}
+							_showNpcInteraction(npc, { anonymous: true });
 						}
 					})),
 					{ label: '← Back', action: _goBack, isBack: true },
@@ -9543,7 +9056,7 @@ function showRadialMenu(iconEl, items) {
 				await runInlineProgress('Seeking out the cook…', 2000);
 
 				const cookName = ['the cook', 'the innkeeper', 'the barkeep'][Math.floor(Math.random() * 3)];
-				const tier = await performSkillCheck('Persuasion', 0, 'getting the recipe from the cook');
+				const tier = performSkillCheck('Persuasion');
 
 				if (tier <= 2) {
 					const rejections = [
@@ -9610,7 +9123,6 @@ function showRadialMenu(iconEl, items) {
 				await runInlineProgress('Retiring for the night…', 2000);
 				addStory(`💤 You bolt the door and sink into the bed. Sleep comes quickly.`);
 				addStory(`🌅 You wake with the dawn, rested and ready.`);
-				SoundManager?.play('chicken', 0.3);
 				player.life    = player.maxLife;
 				player.stamina = player.maxStamina;
 				player.timeOfDay = '🌅 Dawn';
@@ -9618,15 +9130,13 @@ function showRadialMenu(iconEl, items) {
 				removeCondition('fatigued');
 				updateTopStats();
 				updatePlayerStats();
-				SoundManager?.updateAmbience();
 				if (Math.random() < 0.10) {
 					await fireRandomEvent('tavern', ['hazard', 'traveler_encounter']);
 				}
 				_goBack();
 			}
 
-			async function _listenToBard() {
-				_buildWheel([{ label: '🎵 Listening…', action: () => {} }]);
+			function _listenToBard() {
 				const BARD_SONGS = [
 					'A bard in the corner strums a melancholy air about kings long dead.',
 					'A throaty voice fills the room with an old ballad — the words half-remembered by the older patrons.',
@@ -9637,14 +9147,7 @@ function showRadialMenu(iconEl, items) {
 					'The ballad tells of a wandering knight who found more in a stranger\'s firelight than in any keep.',
 					'A slow, quiet piece — barely audible over the noise of the room. You lean in despite yourself.',
 				];
-				const _songSeed = BARD_SONGS[Math.floor(Math.random() * BARD_SONGS.length)];
-				const _bardCtx  = buildActionContext();
-				const _bardLine = await callGameAI(
-					`Write one short evocative sentence describing what a bard is performing in a medieval fantasy tavern in ${_bardCtx.location.name} (${_bardCtx.location.kingdom}). It is ${_bardCtx.location.timeOfDay}. The description should mention the mood, song type, or subject matter. Use this as a seed: ${_songSeed}`,
-					_bardCtx,
-					{ mode: 'narrative', fallback: _songSeed, maxTokens: 70 }
-				);
-				addStory(`🎵 ${_bardLine}`);
+				addStory(`🎵 ${BARD_SONGS[Math.floor(Math.random() * BARD_SONGS.length)]}`);
 				if (Math.random() < 0.50) {
 					const learned = learnRandomLore('bard', { source: 'bard' });
 					if (!learned) addStory('Nothing in the tale is new to you.');
@@ -9653,8 +9156,7 @@ function showRadialMenu(iconEl, items) {
 				_goBack();
 			}
 
-			async function _tavernRumors() {
-				_buildWheel([{ label: '👂 Listening…', action: () => {} }]);
+			function _tavernRumors() {
 				const TAVERN_RUMORS = [
 					'A merchant mutters that the northern roads are watched by something that isn\'t bandits.',
 					'A weathered soldier claims the last three supply wagons never reached their destination.',
@@ -9674,13 +9176,7 @@ function showRadialMenu(iconEl, items) {
 				} else {
 					tavernRumor = TAVERN_RUMORS[Math.floor(Math.random() * TAVERN_RUMORS.length)];
 				}
-				const _rumCtx  = buildActionContext();
-				const _rumLine = await callGameAI(
-					`You are writing a rumor overheard in a tavern in ${_rumCtx.location.name} (${_rumCtx.location.kingdom}), a medieval fantasy setting. Write exactly one sentence — an atmospheric, specific rumor in the voice of a nameless patron. It should feel local and believable. Use this as a seed: ${tavernRumor}`,
-					_rumCtx,
-					{ mode: 'narrative', fallback: tavernRumor, maxTokens: 70 }
-				);
-				addStory(`👂 ${_rumLine}`);
+				addStory(`👂 ${tavernRumor}`);
 				// 30% chance rumour points to an undiscovered establishment
 				const _undiscTav = _getUndiscoveredEstabs();
 				if (_undiscTav.length && Math.random() < 0.30) {
@@ -9823,8 +9319,8 @@ async function _doPickpocket(npc, rec) {
   await runInlineProgress('Watching for an opening…', 2500);
 
   // Both Stealth and Thievery matter — use the lower tier as the limiting factor
-  const stealthTier  = await performSkillCheck('Stealth');
-  const thieveryTier = await performSkillCheck('Thievery');
+  const stealthTier  = performSkillCheck('Stealth');
+  const thieveryTier = performSkillCheck('Thievery');
   const tier = Math.min(stealthTier, thieveryTier);
 
   if (tier >= 4) {
@@ -10270,15 +9766,12 @@ function _tradeRenderShopGrid() {
   grid.innerHTML = '';
   _tradeState.shopItems.forEach((item, i) => {
     const el = document.createElement('div');
-    const _rrShop = _isRaceRestricted(item.name);
-    el.className = 'trade-item' +
-      (_tradeState.selectedSide === 'shop' && _tradeState.selectedIndex === i ? ' selected-buy' : '') +
-      (_rrShop ? ' race-restricted' : '');
+    el.className = 'trade-item' + (_tradeState.selectedSide === 'shop' && _tradeState.selectedIndex === i ? ' selected-buy' : '');
     el.innerHTML =
       `<img src="${_getItemIcon(item.name)}" alt="${item.name}" onerror="this.style.display='none'">` +
       `<span class="trade-price-tag">${item.buyPrice}g</span>` +
       (item.qty > 1 ? `<span class="trade-qty">×${item.qty}</span>` : '');
-    el.title = `${item.name} — ${item.buyPrice}g${item.qty > 1 ? ' ×' + item.qty : ''}${_rrShop ? ` (not wearable by ${player.race}s)` : ''}`;
+    el.title = `${item.name} — ${item.buyPrice}g${item.qty > 1 ? ' ×' + item.qty : ''}`;
     el.addEventListener('click', () => _tradeSelectShopItem(i));
     grid.appendChild(el);
   });
@@ -10297,15 +9790,12 @@ function _tradeRenderPlayerGrid() {
         : Math.max(1, Math.floor(((data && data.value) || 5) * 0.55));
       const el  = document.createElement('div');
       const qty = data.quantity || 1;
-      const _rrPlayer = _isRaceRestricted(name);
-      el.className = 'trade-item' +
-        (_tradeState.selectedSide === 'player' && _tradeState.selectedIndex === i ? ' selected-sell' : '') +
-        (_rrPlayer ? ' race-restricted' : '');
+      el.className = 'trade-item' + (_tradeState.selectedSide === 'player' && _tradeState.selectedIndex === i ? ' selected-sell' : '');
       el.innerHTML =
         `<img src="${_getItemIcon(name)}" alt="${name}" onerror="this.style.display='none'">` +
         (qty > 1 ? `<span class="trade-qty">${qty}</span>` : '') +
         `<span class="trade-price-tag">${sellPrice}g</span>`;
-      el.title = `${name}${qty > 1 ? ' (' + qty + ')' : ''} — sell: ${sellPrice}g${_rrPlayer ? ` (not wearable by ${player.race}s)` : ''}`;
+      el.title = `${name}${qty > 1 ? ' (' + qty + ')' : ''} — sell: ${sellPrice}g`;
       el.addEventListener('click', () => _tradeSelectPlayerItem(i, name, data, sellPrice));
       grid.appendChild(el);
     });
@@ -10604,7 +10094,7 @@ async function _doBarterTrade(offerName, offerValue, wantName, wantPrice, stock,
 
   // Under-valued — needs a Negotiating check
   await runInlineProgress('Making your case…', 1500);
-  const tier = await performSkillCheck('Negotiating');
+  const tier = performSkillCheck('Negotiating');
 
   if (tier >= 4) {
     removeItem(offerName, 1);
@@ -10904,7 +10394,7 @@ async function _portWorkWheel(port) {
         _buildWheel([{ label: '⏳ Working…', action: () => {} }]);
         addStory(`💼 ${job.desc}`);
         await runInlineProgress(job.label, 3000);
-        const tier = await performSkillCheck(job.skill);
+        const tier = performSkillCheck(job.skill);
         const pay  = Math.round(job.pay[0] + (job.pay[1] - job.pay[0]) * ((tier - 1) / 4));
         player.gold += pay;
         updateTopStats();
@@ -10963,7 +10453,6 @@ function _openEstablishment(est) {
   const isSmith     = /blacksmith|armorer|armourer|forge/i.test(est.type || est.name || '');
 
   if (isSmith) {
-    SoundManager?.play('hammer_strikes_anvil_single');
     addStory(`🔨 The clang of hammer on anvil fills the air as you enter ${est.name}.`);
     const shopkeeper = _generateShopkeeper('blacksmith');
     addStory(`${shopkeeper.name}, a ${shopkeeper.race} smith, wipes their hands and looks up.`);
@@ -11111,7 +10600,7 @@ function _openEstablishment(est) {
           action: async () => {
             _wheelStack.push(_loreMenu);
             await runInlineProgress(isLoremasterType ? 'Consulting…' : 'Studying…', 2500);
-            const tier = await performSkillCheck('Decrypting', 0, 'studying the texts');
+            const tier = performSkillCheck('Lore');
             if (tier >= 3) {
               const learned = learnRandomLore(studySource, { source: studySource, kingdom: player.currentKingdom });
               if (!learned) addStory('📚 You find nothing you don\'t already know here.');
@@ -11191,7 +10680,7 @@ async function _tavernArmWrestle() {
   addStory(`💪 You slap ${bet} gold on the table and roll up your sleeve. The barroom hushes.`);
   _buildWheel([{ label: '⏳ Wrestling…', action: () => {} }]);
   await runInlineProgress('Arm wrestling…', 3000);
-  const tier = await performSkillCheck('Brawling');
+  const tier = performSkillCheck('Brawling');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(bet * 3, 'arm wrestling');
     addStory(`💥 Dominant. Your opponent's knuckles hit the table before they can blink. (+${bet * 3}g)`);
@@ -11278,7 +10767,7 @@ async function _arenaSpar() {
   _buildWheel([{ label: '⏳ Sparring…', action: () => {} }]);
   addStory('🥊 A training partner steps forward. Practice — no money, just skill.');
   await runInlineProgress('Sparring…', 3500);
-  const tier = await performSkillCheck('Brawling');
+  const tier = performSkillCheck('Brawling');
   if (tier >= OUTCOME.MAJOR_POS) {
     gainSkillXp('Swordsmanship', 3);
     addStory('⚡ You outclass them completely. They ask if you\'d consider teaching.');
@@ -11315,7 +10804,7 @@ async function _arenaTournament() {
     _buildWheel([{ label: `⏳ Round ${round}…`, action: () => {} }]);
     addStory(`⚔️ Round ${round}. The crowd watches.`);
     await runInlineProgress(`Round ${round}…`, 3500);
-    const tier = await performSkillCheck('Swordsmanship');
+    const tier = performSkillCheck('Swordsmanship');
     if (tier >= OUTCOME.MINOR_POS) {
       addStory(`✅ You advance — round ${round} is yours.`);
       if (round < 3) {
@@ -11386,7 +10875,7 @@ async function _horseRace() {
   addStory('🏁 You draw your lane. Five riders at the post. The flag drops.');
   _buildWheel([{ label: '⏳ Racing…', action: () => {} }]);
   await runInlineProgress('Racing…', 4500);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   const pos   = tier >= OUTCOME.MAJOR_POS ? 1 : tier >= OUTCOME.MINOR_POS ? 2 : tier === OUTCOME.NEUTRAL ? 3 : 4;
   const place = ['', '1st 🥇', '2nd 🥈', '3rd 🥉', '4th'][pos];
   const prize = [0, PRIZES[3], PRIZES[2], PRIZES[1], 0][pos];
@@ -11413,7 +10902,7 @@ async function _betOnRace() {
   addStory('🏁 The race card is posted by the gate. Four horses competing today:');
   HORSES.forEach(h => addStory(`  • ${h.name} — ${h.odds}:1 odds`));
   // Tracking check gives a small hint about the favourite's real condition
-  const hint = await performSkillCheck('Tracking', 0);
+  const hint = performSkillCheck('Tracking', 0);
   if (hint >= OUTCOME.MINOR_POS) {
     const tip = HORSES[Math.floor(Math.random() * 2)]; // one of the two favourites
     addStory(`👁️ You notice ${tip.name} moving with unusual confidence in the warm-up. Could mean something.`);
@@ -11531,7 +11020,7 @@ async function _gamblingCards() {
   addStory(`🃏 You sit down at the table. ${bet} gold in the pot. The dealer's face gives nothing away.`);
   _buildWheel([{ label: '⏳ Playing…', action: () => {} }]);
   await runInlineProgress('Playing cards…', 4000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(bet * 3, 'card game big win');
     addStory(`🃏 You read every face at the table. A clean sweep. (+${bet * 3}g)`);
@@ -11560,7 +11049,7 @@ async function _gamblingShell() {
   addStory('🐚 The operator\'s hands blur across the table. Follow the shell with the pebble underneath...');
   _buildWheel([{ label: '⏳ Watching…', action: () => {} }]);
   await runInlineProgress('Watching…', 2800);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(BET * 5, 'shell game — caught the switch');
     addStory(`👁️ You track every movement. The operator blinks. "Lucky guess." (+${BET * 5}g)`);
@@ -11585,7 +11074,7 @@ async function _doArcheryContest() {
   addStory('🏹 The targets are set at distance. A small crowd watches. You notch your first arrow.');
   _buildWheel([{ label: '⏳ Competing…', action: () => {} }]);
   await runInlineProgress('Competing…', 4000);
-  const tier = await performSkillCheck('Archery');
+  const tier = performSkillCheck('Archery');
   if (tier >= OUTCOME.MAJOR_POS) {
     _actGold(30, 'archery contest — first place');
     addStory('🏆 Dead centre three times in a row. The crowd cheers. You take first prize. (+30g)');
@@ -11620,7 +11109,7 @@ async function _doPitFightBetting() {
   if (!BET_OPTS.length) { addStory('⚠️ You need at least 5 gold to bet.'); _goBack(); return; }
   addStory('⚔️ Two fighters circle each other in the pit. The bookmaker rattles off the odds:');
   FIGHTERS.forEach(f => addStory(`  • ${f.name} — ${f.odds}:1`));
-  const hint = await performSkillCheck('Tracking', 0);
+  const hint = performSkillCheck('Tracking', 0);
   if (hint >= OUTCOME.MINOR_POS) {
     const tip = FIGHTERS[Math.floor(Math.random() * 2)];
     addStory(`👁️ You notice ${tip.name} favouring their left — or hiding it well.`);
@@ -11671,7 +11160,7 @@ async function _doStreetPickpocket() {
   addStory('🤚 You drift through the crowd, eyes on soft targets. A fat purse catches your eye.');
   _buildWheel([{ label: '⏳ Working the crowd…', action: () => {} }]);
   await runInlineProgress('Working the crowd…', 3000);
-  const tier = await performSkillCheck('Thievery');
+  const tier = performSkillCheck('Thievery');
   if (tier >= OUTCOME.MAJOR_POS) {
     const gain = randomInt(8, 20);
     _actGold(gain, 'pickpocket');
@@ -11705,13 +11194,13 @@ async function _doStreetPickpocket() {
 // ── Mugging ───────────────────────────────────────────────────
 
 async function _doMugSomeone() {
-  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌌 Late Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
+  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
   if (!isNight) { addStory('🌞 The streets are too busy. This kind of work needs dark.'); _goBack(); return; }
   addStory('🌑 You follow a well-dressed figure into a less-travelled alley and make your move.');
   _buildWheel([{ label: '⏳ Moving…', action: () => {} }]);
   await runInlineProgress('Moving…', 3500);
-  const stealthTier = await performSkillCheck('Stealth');
-  const brawlTier   = await performSkillCheck('Brawling');
+  const stealthTier = performSkillCheck('Stealth');
+  const brawlTier   = performSkillCheck('Brawling');
   const combinedTier = Math.round((stealthTier + brawlTier) / 2);
   if (combinedTier >= OUTCOME.MAJOR_POS) {
     const gain = randomInt(15, 40);
@@ -11753,7 +11242,7 @@ async function _reportCrimeToGuards() {
   addStory(`⚔️ You find the guard post and recount what happened — ${robbery.amount} gold stolen at ${robbery.location}.`);
   _buildWheel([{ label: '⏳ Filing report…', action: () => {} }]);
   await runInlineProgress('Filing report…', 2500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= OUTCOME.MAJOR_POS) {
     const recovered = Math.floor(robbery.amount * 0.5);
     _actGold(recovered, 'crime report — partial recovery');
@@ -11895,7 +11384,7 @@ function _showTournamentsWheel() {
 }
 
 function _showCrimeWheel() {
-  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌌 Late Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
+  const isNight = ['🌆 Evening','🌃 Mid-Evening','🌙 Dusk','🌑 Night','⭐ Late Night'].includes(player.timeOfDay);
 
   _buildWheel([
     {
@@ -11934,48 +11423,25 @@ async function _doOddJobs() {
       label: '✅ Accept',
       action: async () => {
         _buildWheel([{ label: '⏳ Working…', action: () => {} }]);
-        checkQuestObjectives?.('work_found');
         await runInlineProgress(`${job.label}…`, 4000);
-        const tier = await performSkillCheck(job.skill);
-        const _flavourExcellent = [
-          `They clap you on the back and slip a few extra coins into your palm.`,
-          `Word of your work spreads quickly. A small crowd has noticed.`,
-          `"Come back any time," they say, and mean it.`,
-          `You finish ahead of schedule. They're visibly impressed.`,
-        ];
-        const _flavourGood = [
-          `They nod, satisfied. The coin changes hands without ceremony.`,
-          `"Good enough." High praise, around here.`,
-          `The work is done right. They don't say much more than that.`,
-          `You leave them with one less problem than they woke up with.`,
-        ];
-        const _flavourMid = [
-          `You got it done, more or less. They pay half without complaint.`,
-          `Not your finest hour, but not a disaster either. Half pay.`,
-          `They look it over, then shrug. Half now. Maybe call on you again if they're desperate.`,
-        ];
-        const _flavourFail = [
-          `Things fell apart faster than you could hold them together.`,
-          `You tried. They noticed. They won't be forgetting it.`,
-          `The look on their face says it all. No coin. No second chance.`,
-        ];
-        const _pick = arr => arr[Math.floor(Math.random() * arr.length)];
+        const tier = performSkillCheck(job.skill);
         if (tier >= OUTCOME.MAJOR_POS) {
           _actGold(job.pay + 3, 'odd job bonus');
-          addStory(`⭐ ${_pick(_flavourExcellent)} (+${job.pay + 3}g)`);
+          addStory(`⭐ Excellent work. They add a little extra. (+${job.pay + 3}g)`);
           changeMorality(1);
         } else if (tier >= OUTCOME.MINOR_POS) {
           _actGold(job.pay, 'odd job');
-          addStory(`✅ ${_pick(_flavourGood)} (+${job.pay}g)`);
+          addStory(`✅ Done well. (+${job.pay}g)`);
           changeMorality(1);
         } else if (tier === OUTCOME.NEUTRAL) {
           _actGold(Math.floor(job.pay / 2), 'odd job partial');
-          addStory(`😐 ${_pick(_flavourMid)} (+${Math.floor(job.pay / 2)}g)`);
+          addStory(`😐 Acceptable, if not impressive. Half pay. (+${Math.floor(job.pay / 2)}g)`);
         } else {
-          addStory(`❌ ${_pick(_flavourFail)} No pay.`);
+          addStory(`❌ Things went sideways. No pay — and they won't be calling on you again.`);
           changeMorality(-1);
         }
-        advanceTime(1);
+        advanceTime(2);
+        checkQuestObjectives?.('work_found');
         checkQuestObjectives?.('job_done');
         _goBack();
       },
@@ -11993,7 +11459,7 @@ async function _doSearchAlleys() {
   _buildWheel([{ label: '⏳ Searching…', action: () => {} }]);
   addStory('🔍 You slip into the back streets — alcoves, refuse heaps, forgotten corners...');
   await runInlineProgress('Searching alleys…', 4500);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   player.flags = player.flags || {};
   player.flags[hourKey] = true;
   if (tier >= OUTCOME.MAJOR_POS) {
@@ -12024,7 +11490,7 @@ async function _doBusk() {
   _buildWheel([{ label: '⏳ Performing…', action: () => {} }]);
   addStory('🎭 You find a good corner, attract some passing interest, and begin.');
   await runInlineProgress('Performing…', 4000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   player.stamina = Math.max(0, (player.stamina || 0) - 5); updatePlayerStats?.();
   if (tier >= OUTCOME.MAJOR_POS) {
     const tips = randomInt(10, 18);
@@ -12068,7 +11534,7 @@ async function _doLocalGames() {
         player.gold -= BET; updateTopStats?.();
         _buildWheel([{ label: '⏳ Competing…', action: () => {} }]);
         await runInlineProgress(`${game.name}…`, 3500);
-        const tier = await performSkillCheck(game.skill);
+        const tier = performSkillCheck(game.skill);
         if (tier >= OUTCOME.MAJOR_POS) {
           _actGold(BET * 4, `${game.name} win`);
           changeMorality(2);
@@ -12110,7 +11576,7 @@ async function _doFavorBoard() {
       action: async () => {
         _buildWheel([{ label: '⏳ Working…', action: () => {} }]);
         await runInlineProgress('On the job…', 5000);
-        const tier = await performSkillCheck(favor.skill);
+        const tier = performSkillCheck(favor.skill);
         if (tier >= OUTCOME.MINOR_POS) {
           const bonus = tier >= OUTCOME.MAJOR_POS ? 8 : 0;
           _actGold(favor.gold + bonus, 'favor');
@@ -12248,13 +11714,11 @@ function runCountdownBar(id, durationMs) {
 					player.level++;
 					player.maxLife    = (player.maxLife    || 100) + 10;
 					player.maxStamina = (player.maxStamina || 50)  + 5;
-					if ((player.maxMana || 0) > 0) player.maxMana += 5;
-					player.life    = player.maxLife;
-					player.stamina = player.maxStamina;
-					player.mana    = player.maxMana;
-					const _manaMsg = (player.maxMana || 0) > 0 ? ' · Max Mana +5' : '';
-					SoundManager?.play('level_up');
-					addStory(`<strong>🌟 Level ${player.level}! Max Life +10 · Max Stamina +5${_manaMsg}. All pools restored.</strong>`);
+					player.maxMana    = (player.maxMana    || 50)  + 5;
+					player.life       = player.maxLife;
+					player.stamina    = player.maxStamina;
+					player.mana       = player.maxMana;
+					addStory(`<strong>🌟 Level ${player.level}! Max Life +10 · Max Stamina +5 · Max Mana +5. All pools restored.</strong>`);
 					addWorldEvent(`Reached Level ${player.level}.`, 'player');
 					changeHope(3, 'leveled up');
 					checkAchievementTitles?.();
@@ -12353,7 +11817,7 @@ function addItem(name, qty, options = {}) {
     if (!player.pouchContents) player.pouchContents = { herb: {}, ingredient: {} };
     if (!player.pouchContents.herb) player.pouchContents.herb = {};
     player.pouchContents.herb[name] = (player.pouchContents.herb[name] || 0) + qty;
-    addStory(`+ ${qty} ${pluralize(name, qty)}. [Herb Pouch]`);
+    addStory(`+ ${qty} ${name}(s). [Herb Pouch]`);
     checkQuestObjectives?.('item', { item: name, qty });
     updateTopStats();
     updateInventory();
@@ -12363,7 +11827,7 @@ function addItem(name, qty, options = {}) {
     if (!player.pouchContents) player.pouchContents = { herb: {}, ingredient: {} };
     if (!player.pouchContents.ingredient) player.pouchContents.ingredient = {};
     player.pouchContents.ingredient[name] = (player.pouchContents.ingredient[name] || 0) + qty;
-    addStory(`+ ${qty} ${pluralize(name, qty)}. [Ingredient Pouch]`);
+    addStory(`+ ${qty} ${name}(s). [Ingredient Pouch]`);
     checkQuestObjectives?.('item', { item: name, qty });
     updateTopStats();
     updateInventory();
@@ -12385,7 +11849,7 @@ function addItem(name, qty, options = {}) {
     };
   }
   player.inventory[name].quantity += qty;
-  addStory(`+ ${qty} ${pluralize(name, qty)}.`);
+  addStory(`+ ${qty} ${name}(s).`);
   const mapMatch = name.match(/^Map of (.+)$/);
   if (mapMatch) learnKingdom(mapMatch[1]);
   checkQuestObjectives?.('item', { item: name, qty });
@@ -12493,7 +11957,6 @@ function removeItem(name, qty = 1) {
 						              : cell.zone === 'City'        ? 'city'
 						              : cell.zone === 'Village'     ? 'village'
 						              : 'location';
-						SoundManager?.play('notice');
 						addStory(`📍 Discovered a new ${locType}: ${name}!`);
 						addWorldEvent(`Discovered ${name}.`, 'exploration');
 						awardProfessionXp('location_discover');
@@ -12684,8 +12147,7 @@ function removeItem(name, qty = 1) {
 					tooltip.style.cssText = 'display:block; left:50%; top:38%; transform:translateX(-50%);';
 				}
 
-				// When a pulseLabel targets a specific spoke, default to click-mode so only that spoke works
-				const isClickMode = opts.advance === 'click' || (!!opts.pulseLabel && opts.advance !== 'enter');
+				const isClickMode = opts.advance === 'click';
 				msgEl.innerHTML  = message;
 				contEl.innerHTML = isClickMode
 					? 'Click the highlighted area to continue'
@@ -12841,7 +12303,7 @@ function removeItem(name, qty = 1) {
 					);
 					await tutorialHint(
 						'#hud-player-info',
-						'<strong>Your Stats</strong><br>Searching for a spot to camp has used up some stamina!<br>Your life, stamina, and mana are shown here — you\'re weary and hungry from your journey, so all three are low. Eating restores life and stamina; resting restores stamina and mana. Keep an eye on these as you explore.<br>Now, click <strong>Survival</strong> to set up your new campsite.',
+						'<strong>Your Stats</strong><br>Your life, stamina, and mana are shown here — you\'re weary and hungry from your journey, so all three are low. Eating restores life and stamina; resting restores stamina and mana. Keep an eye on these as you explore.<br>Now, click <strong>Survival</strong> to set up your new campsite.',
 					);
 					if (!player.flags) player.flags = {};
 					player.flags.tutShowSurvivalHint = true;
@@ -12918,7 +12380,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutGatherSticksWheelShown) return;
 				player.flags.tutGatherSticksWheelShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', `<strong>Gather Sticks</strong><br>Need ${5 - sticks} more ${pluralize('Stick Bundle', 5 - sticks)} for the shelter. Choose <strong>Gather</strong>.`, { pulseLabel: 'Gather' });
+					await tutorialHint('#wheel-area', `<strong>Gather Sticks</strong><br>Need ${5 - sticks} more Stick Bundle(s) for the shelter. Choose <strong>Gather</strong>.`, { pulseLabel: 'Gather' });
 				}, 120);
 			}
 
@@ -12954,18 +12416,7 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutBuildCampfireShown) return;
 				player.flags.tutBuildCampfireShown = true;
 				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Build Campfire</strong><br>Click <strong>Build Campfire</strong> to lay the stone fire pit using your Stones.', { pulseLabel: 'Build Campfire' });
-				}, 120);
-			}
-
-			// Fires from _doBuildCampfire after construction completes — prompts player to select Campfire again
-			function _tutAfterBuildCampfire() {
-				const inst = typeof getActiveQuestInstance === 'function' ? getActiveQuestInstance('lay_of_the_land') : null;
-				if (!inst || inst.objectiveIndex !== 3) return;
-				if (player.flags?.tutAfterBuildCampfireShown) return;
-				player.flags.tutAfterBuildCampfireShown = true;
-				setTimeout(async () => {
-					await tutorialHint('#wheel-area', '<strong>Campfire</strong><br>The fire pit is laid! Now select <strong>Campfire</strong> again to light it.', { pulseLabel: 'Campfire' });
+					await tutorialHint('#wheel-area', '<strong>Build Campfire</strong><br>Click <strong>Build Campfire</strong> to lay the stone fire pit using your Stones. Once completed, click <strong>Campfire</strong> again to light it.', { pulseLabel: 'Build Campfire' });
 				}, 120);
 			}
 
@@ -13227,17 +12678,9 @@ function removeItem(name, qty = 1) {
 				if (player.flags?.tutFillWaterskinShown) return;
 				player.flags.tutFillWaterskinShown = true;
 				setTimeout(async () => {
-					const alreadyFull = Object.keys(player.inventory || {}).some(k => /waterskin.*full/i.test(k));
-					if (alreadyFull) {
-						// Waterskin already full — skip fill hint and guide player back
-						await tutorialHint('#wheel-area',
-							'<strong>Waterskin Full</strong><br>Your waterskin is already full — you\'re set for water. Click <strong>Back</strong> to continue.',
-							{ pulseLabel: '← Back', advance: 'click' });
-					} else {
-						await tutorialHint('#wheel-area',
-							'<strong>Fill Waterskin</strong><br>Click <strong>Fill Waterskin</strong> to collect fresh water. Luckily, you\'re on the coast, so finding water is easy. Your location will have a significant effect on the resources you can find.',
-							{ pulseLabel: 'Fill Waterskin', advance: 'click' });
-					}
+					await tutorialHint('#wheel-area',
+						'<strong>Fill Waterskin</strong><br>Click <strong>Fill Waterskin</strong> to collect fresh water. Luckily, you\'re on the coast, so finding water is easy. Your location will have a significant effect on the resources you can find.',
+						{ pulseLabel: 'Fill Waterskin', advance: 'click' });
 				}, 120);
 			}
 
@@ -13251,7 +12694,7 @@ function removeItem(name, qty = 1) {
 					await tutorialHint('#wheel-area',
 						'<strong>Gather Materials</strong><br>Now you\'ve got food and water. Let\'s get a fire going to cook your food!<br>To build and light a campfire you need:<br>• <strong>8 Stones</strong><br>• <strong>1 Bundle of Sticks</strong><br>• <strong>Kindling</strong><br>Luckily, you already found some supplies while setting up your camp.');
 					await tutorialHint('#wheel-area',
-						'<strong>Gather Materials</strong><br>If you need more supplies before building your campfire, use this menu to gather them now. When ready, select <strong>Back</strong>, then choose <strong>Encampment</strong>.');
+						'<strong>Gather Materials</strong><br>If you need more supplies before building your campfire, use this menu to gather them now. When ready, select <strong>Back</strong>.');
 				}, 120);
 			}
 
@@ -13328,6 +12771,13 @@ function removeItem(name, qty = 1) {
 
 				// ── Objective 5: eat_food ─────────────────────────────────────────────
 				} else if (newIndex === 5) {
+					if (!player.flags?.tutBackOutAfterCookShown) {
+						player.flags.tutBackOutAfterCookShown = true;
+						await tutorialHint(
+							'#wheel-area',
+							'<strong>Back Out of the Menus</strong><br>Well done — your food is cooked! Now press <strong>← Back</strong> in the wheel until you return to the main Action Wheel. From there, you\'ll find the <strong>Exploration</strong> menu.',
+						);
+					}
 					if (!player.flags?.tutEatHintShown) {
 						player.flags.tutEatHintShown = true;
 						await tutorialHint(
@@ -13359,13 +12809,6 @@ function removeItem(name, qty = 1) {
 							{ advance: 'click' }
 						);
 					}
-					if (!player.flags?.tutBackOutAfterCookShown) {
-						player.flags.tutBackOutAfterCookShown = true;
-						await tutorialHint(
-							'#wheel-area',
-							'<strong>Back Out of the Menus</strong><br>Well done — your food is cooked! Now press <strong>← Back</strong> in the wheel until you return to the main Action Wheel. From there, you\'ll find the <strong>Exploration</strong> menu.',
-						);
-					}
 
 				// ── Objective 6: check_surroundings ──────────────────────────────────
 				} else if (newIndex === 6) {
@@ -13385,7 +12828,7 @@ function removeItem(name, qty = 1) {
 						if (_sticks < 5) {
 							await tutorialHint(
 								'#wheel-area',
-								`<strong>Gather More Sticks</strong><br>Now you\'ll need to build a shelter to get some proper rest. You need 5 Stick Bundles to build a shelter (have ${_sticks}). Select <strong>Done Searching</strong>, then back out and find the Survival menu again.`,
+								`<strong>Gather More Sticks</strong><br>Now you\'ll need to build a shelter to get some proper rest. You need 5 Stick Bundles to build a shelter (have ${_sticks}). Select <strong>Done Searching</strong>, then find the Survival menu.`,
 							);
 						} else {
 							await tutorialHint(
@@ -13402,7 +12845,7 @@ function removeItem(name, qty = 1) {
 						player.flags.tutVillageHintShown = true;
 						await tutorialHint(
 							'[data-bksec="map"]',
-							'<strong>Find a Village</strong><br>The bandits took your gold! You should find a village and look for work so you can earn back some coin. Click the <em>Map</em> tab to plan your route.',
+							'<strong>Find a Village</strong><br>The bandits took your gold! You should find a village and look for work. Click the <em>Map</em> tab to plan your route.',
 							{ advance: 'click' }
 						);
 						await new Promise(r => setTimeout(r, 400));
@@ -13949,16 +13392,11 @@ function _devShowNPCs() {
 				const existing = player.journal.npcs.find(n => n.name === npc.name);
 				if (!existing) {
 					player.journal.npcs.push(npc);
-					if (npc._isStranger) {
-						// Don't reveal name — player doesn't know this person yet
-						addStory(`You approach them. Their name is unknown to you.`);
-					} else {
-						addStory(`You meet ${npc.name}, a ${npc.race || ''} ${npc.profession || 'stranger'}.`.replace(/\s+/g,' '));
-						if (npc.outsiderNote) addStory(`It's clear they're not from around here — ${npc.outsiderNote}.`);
-					}
-					addWorldEvent(`Met a stranger in ${player.currentLocation}.`, 'npc');
+					addStory(`You meet ${npc.name}, a ${npc.race || ''} ${npc.profession || 'stranger'}.`.replace(/\s+/g,' '));
+					if (npc.outsiderNote) addStory(`It's clear they're not from around here — ${npc.outsiderNote}.`);
+					addWorldEvent(`Met ${npc.name} in ${player.currentLocation}.`, 'npc');
 				} else {
-					addStory(npc._isStranger ? `You approach the same figure again.` : `You encounter ${npc.name} again.`);
+					addStory(`You encounter ${npc.name} again.`);
 				}
 				checkQuestObjectives?.('npc', { npc: npc.name });
 				updateJournal();
@@ -14162,7 +13600,6 @@ function _devShowNPCs() {
 					const idx  = instance.branchObjectiveIndex ?? 0;
 					const done = branch.objectives?.[idx];
 					if (done) addStory(`✅ ${done.text}`);
-					SoundManager?.play('quest_update');
 					instance.branchObjectiveIndex = idx + 1;
 					if (!branch.objectives?.[instance.branchObjectiveIndex]) {
 						completeQuest(instance, def, branch);
@@ -14173,7 +13610,6 @@ function _devShowNPCs() {
 				} else {
 					const completed = def.objectives[instance.objectiveIndex];
 					addStory(`✅ ${completed.text}`);
-					SoundManager?.play('quest_update');
 					instance.objectiveIndex++;
 					if (instance.objectiveIndex >= def.objectives.length) {
 						completeQuest(instance, def);
@@ -14197,9 +13633,6 @@ function _devShowNPCs() {
 
 			function _awardTutorialStarterKit() {
 				const _pick = arr => arr[Math.floor(Math.random() * arr.length)];
-
-				// Narrate before awarding so the message precedes the item lines
-				addStory(`🎒 The locals send you off with a bundle of supplies — a good start for the road ahead.`);
 
 				// Always awarded
 				addItem('Inn Token', 1, {
@@ -14229,16 +13662,23 @@ function _devShowNPCs() {
 					['Hunting Knife', 1],
 				]);
 				addItem(bonusName, bonusQty);
+
+				// Narrate the reward
+				addStory(`🎒 The locals send you off with a bundle of supplies — a good start for the road ahead.`);
 			}
 
 			function completeQuest(instance, def, branch = null) {
 				instance.status = 'Completed';
+				if (instance.id === 'lay_of_the_land') {
+					if (!player.flags) player.flags = {};
+					player.flags.tutorialComplete = true;
+					_awardTutorialStarterKit();
+				}
 				// Clear tracking if this was the tracked quest
 				if (player.trackedQuest === instance.id) {
 					player.trackedQuest = null;
 					_rebuildQuestMarkers();
 				}
-				SoundManager?.play('quest_complete');
 				addStory(`<strong>🏆 Quest Complete: ${def.name}!</strong>`);
 				addWorldEvent(`Completed quest: ${def.name}.`, 'quest');
 				checkGlobalEventTriggers();
@@ -14247,31 +13687,21 @@ function _devShowNPCs() {
 				player.traitCounters.questsCompleted = (player.traitCounters.questsCompleted || 0) + 1;
 				if (player.currentKingdom) changeKingdomStat(player.currentKingdom, 'prosperity', 3);
 				const r = branch?.rewards || def.rewards || {};
-				if (instance.id === 'lay_of_the_land') {
-					// Tutorial: narration first, then items, then rewards, then congratulations last
-					if (!player.flags) player.flags = {};
-					player.flags.tutorialComplete = true;
-					_awardTutorialStarterKit();
-					if (r.experience) gainExperience(r.experience);
-					if (r.gold) { player.gold = (player.gold || 0) + r.gold; updateTopStats(); addStory(`+ ${r.gold} gold.`); }
-					addStory('🌟 <strong>Congratulations!</strong> You\'ve learned the basics. The world is yours to explore…');
-				} else {
-					if (r.experience) gainExperience(r.experience);
-					if (r.gold) { player.gold = (player.gold || 0) + r.gold; updateTopStats(); addStory(`+ ${r.gold} gold.`); }
-					(r.items || []).forEach(item => {
-						const name = item.displayName || item.name || item.questItem;
-						if (name) addItem(name, item.qty || 1, { type: item.itemType || 'misc', rarity: item.rarity || 'Common', consumable: item.consumable || false, weight: item.weight || 0.1, description: item.description || '' });
-					});
-					if (r.skills) Object.entries(r.skills).forEach(([sk, xp]) => gainSkillXp(sk, Math.min(5, Math.max(1, xp))));
-					(r.special || []).forEach(s => {
-						if (s.type === 'skill_unlock' && s.skill) learnSkill(s.skill);
-						if (s.type === 'recipe'       && s.name)  learnRecipe(s.name);
-						if (s.type === 'flag')    { if (!player.flags) player.flags = {}; player.flags[s.key] = s.value; }
-						if (s.type === 'morality' && s.value)    changeMorality(s.value);
-						if (s.type === 'title'        && s.value) awardGameTitle?.(s.value);
-						if (s.type === 'reputation'   && s.kingdom && s.value) changeKingdomReputation(s.kingdom, s.value);
-					});
-				}
+				if (r.experience) gainExperience(r.experience);
+				if (r.gold) { player.gold = (player.gold || 0) + r.gold; updateTopStats(); addStory(`+ ${r.gold} gold.`); }
+				(r.items || []).forEach(item => {
+					const name = item.displayName || item.name || item.questItem;
+					if (name) addItem(name, item.qty || 1, { type: item.itemType || 'misc', rarity: item.rarity || 'Common', consumable: item.consumable || false, weight: item.weight || 0.1, description: item.description || '' });
+				});
+				if (r.skills) Object.entries(r.skills).forEach(([sk, xp]) => gainSkillXp(sk, Math.min(5, Math.max(1, xp))));
+				(r.special || []).forEach(s => {
+					if (s.type === 'skill_unlock' && s.skill) learnSkill(s.skill);
+					if (s.type === 'recipe'       && s.name)  learnRecipe(s.name);
+					if (s.type === 'flag')    { if (!player.flags) player.flags = {}; player.flags[s.key] = s.value; }
+					if (s.type === 'morality' && s.value)    changeMorality(s.value);
+					if (s.type === 'title'        && s.value) awardGameTitle?.(s.value);
+					if (s.type === 'reputation'   && s.kingdom && s.value) changeKingdomReputation(s.kingdom, s.value);
+				});
 				// Award reputation in the current kingdom for completing a quest
 				if (player.currentKingdom) changeKingdomReputation(player.currentKingdom, 8);
 				checkAchievementTitles?.();
@@ -14303,6 +13733,7 @@ function _devShowNPCs() {
 
 			const TIME_PERIODS = [
 				'🌅 Early Morning',
+				'🌄 Mid-Morning',
 				'☀️ Morning',
 				'🌞 Midday',
 				'🌤️ Afternoon',
@@ -14310,7 +13741,6 @@ function _devShowNPCs() {
 				'🌇 Late Afternoon',
 				'🌆 Evening',
 				'🌃 Mid-Evening',
-				'🌌 Late Evening',
 				'🌙 Dusk',
 				'🌑 Night',
 				'⭐ Late Night',
@@ -14319,7 +13749,7 @@ function _devShowNPCs() {
 			// Periods that are "night" for establishment gating
 			const NIGHT_PERIODS = new Set(['🌑 Night', '⭐ Late Night']);
 			// Periods considered "late" (cold risk, reduced visibility)
-			const LATE_PERIODS  = new Set(['🌇 Late Afternoon', '🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night']);
+			const LATE_PERIODS  = new Set(['🌇 Late Afternoon', '🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night']);
 
 			function isNightTime()  { return NIGHT_PERIODS.has(player.timeOfDay); }
 			function isLateTime()   { return LATE_PERIODS.has(player.timeOfDay);  }
@@ -14332,7 +13762,6 @@ function _devShowNPCs() {
 				const nextIdx  = (idx === -1 ? 0 : idx + 1) % TIME_PERIODS.length;
 				const wasLate  = TIME_PERIODS[idx] === '⭐ Late Night';
 				player.timeOfDay = TIME_PERIODS[nextIdx];
-				if (player.timeOfDay === '🌅 Early Morning') SoundManager?.play('chicken', 0.3);
 				if (wasLate) player.day = (player.day || 1) + 1;
 				// Advance weather every ~3 time periods (landmark periods always eligible)
 				if (!silent || LANDMARK_PERIODS.has(player.timeOfDay)) {
@@ -14350,7 +13779,6 @@ function _devShowNPCs() {
 				if (!silent || LANDMARK_PERIODS.has(player.timeOfDay)) {
 					addStory(`🕐 ${player.timeOfDay}`);
 				}
-				SoundManager?.updateAmbience();
 			}
 
 			// Advance n periods; only the final period announces
@@ -14593,7 +14021,7 @@ function initializeQuickSlots() {
 // 12.5 · Biome Colors
 const biomeColors = {
 				Forest: 'rgba(34,139,34,0.5)',
-				Mountains: 'rgba(139,137,137,0.5)',
+				Mountain: 'rgba(139,137,137,0.5)',
 				Hills: 'rgba(205,133,63,0.5)',
 				Wetlands: 'rgba(70,130,180,0.5)',
 				Coastal: 'rgba(135,206,235,0.5)',
@@ -14778,12 +14206,12 @@ function applyEventEffects(effects = []) {
       case 'life':       changeLife(fx.amount); break;
       case 'stamina':    changeStamina(fx.amount); break;
       case 'gold':       player.gold = Math.max(0, (player.gold || 0) + fx.amount); updateTopStats(); break;
-      case 'item':       addItem(fx.name, fx.qty || 1, fx.options || {}); SoundManager?.play('item_pickup'); break;
+      case 'item':       addItem(fx.name, fx.qty || 1, fx.options || {}); break;
       case 'removeItem': removeItem(fx.name, fx.qty || 1); break;
       case 'experience': gainExperience(fx.amount); break;
       case 'skill':      learnSkill(fx.name); break;
       case 'status':     applyCondition(fx.value.toLowerCase()); break;
-      case 'weather':    player.weather = fx.value; updateTopStats(); SoundManager?.updateAmbience(); addStory(`The weather shifts to ${fx.value}.`); break;
+      case 'weather':    player.weather = fx.value; updateTopStats(); addStory(`The weather shifts to ${fx.value}.`); break;
       case 'kingdomRep': {
         const _k = fx.kingdom || player.currentKingdom;
         if (_k) changeKingdomReputation(_k, fx.amount);
@@ -14833,15 +14261,7 @@ async function resolveRandomEvent(event) {
 
   if (event.simple) {
     applyEventEffects(event.simple.effects || []);
-    if (event.simple.storyText) {
-      const _evSimCtx = buildActionContext({ event: { name: event.name, type: event.type, polarity: event.polarity } });
-      const _evSimNarr = await callGameAI(
-        `You are narrating a ${event.polarity || 'neutral'} ${event.type} event called "${event.name}" in a medieval fantasy RPG. Expand the following outcome into 1–2 immersive sentences that fit the setting (${_evSimCtx.location.name}, ${_evSimCtx.location.biome}, ${_evSimCtx.location.timeOfDay}, ${_evSimCtx.location.weather}). Do not change the meaning. Seed: ${event.simple.storyText}`,
-        _evSimCtx,
-        { mode: 'narrative', fallback: event.simple.storyText, maxTokens: 120 }
-      );
-      addStory(_evSimNarr);
-    }
+    if (event.simple.storyText) addStory(event.simple.storyText);
   }
 
   if (event.choice) {
@@ -14879,15 +14299,7 @@ async function resolveRandomEvent(event) {
     } else {
       outcome = chosen.onSuccess;
     }
-    if (outcome.storyText) {
-      const _evCtx = buildActionContext({ event: { name: event.name, type: event.type, polarity: event.polarity, choiceText: chosen.text } });
-      const _evNarr = await callGameAI(
-        `You are narrating the outcome of a player's choice in a medieval fantasy RPG event called "${event.name}". The player chose: "${chosen.text}". Expand the following outcome into 1–2 vivid sentences that fit the current setting (${_evCtx.location.name}, ${_evCtx.location.biome}, ${_evCtx.location.weather}). Keep the same meaning. Seed: ${outcome.storyText}`,
-        _evCtx,
-        { mode: 'narrative', fallback: outcome.storyText, maxTokens: 120 }
-      );
-      addStory(_evNarr);
-    }
+    if (outcome.storyText) addStory(outcome.storyText);
     applyEventEffects(outcome.effects || []);
   }
 
@@ -14940,7 +14352,7 @@ async function fireRandomEvent(context = 'travel', allowedTypes = null) {
     if (t.requiredEquipped && !Object.values(player.equipped || {}).includes(t.requiredEquipped)) return false;
     return true;
   });
-  if (!eligible.length) return false;
+  if (!eligible.length) return;
   // Listener's Compass — boosts discovery and mystical event weight when equipped
   const _hasCompass = player.equipped?.leftHand === "Listener's Compass";
   const _eventWeight = e => {
@@ -14955,7 +14367,6 @@ async function fireRandomEvent(context = 'travel', allowedTypes = null) {
   for (const e of eligible) { rand -= _eventWeight(e); if (rand <= 0) { picked = e; break; } }
   await resolveRandomEvent(picked);
   if (picked.once) { _wsInit(); if (!player.worldState.firedEvents.includes(picked.id)) player.worldState.firedEvents.push(picked.id); }
-  return true;
 }
 
 // Full async travel sequence. Called after the player confirms a journey.
@@ -15090,19 +14501,18 @@ function advanceWeather() {
   const sev = getWeatherSeverity(next);
   if (sev >= 4) addStory(`⚠️ ${next === 'Blizzard' ? 'A blizzard is moving in.' : 'A violent storm closes in.'} Seek shelter.`);
   else if (sev >= 3) addStory(`⚠️ The weather is turning dangerous.`);
-  SoundManager?.updateAmbience();
 }
 
 const TRAVEL_TIME = {
   '🌅 Early Morning': ['The world is barely awake. Mist sits low on the fields.', 'The air is cold and still. First light ahead.', 'Dawn birds are the only sound on the road.'],
-  '☀️ Morning':       ['The sun climbs. The road warms under the growing light.', 'The morning air is fresh and clear.', 'Birdsong fills the early light. A good time to be moving.'],
+  '🌄 Mid-Morning':   ['The sun climbs. Dew still on the grass.', 'The road warms under the growing light.', 'A crisp morning. Good traveling weather.'],
+  '☀️ Morning':       ['The morning air is fresh and clear.', 'Birdsong fills the early light.', 'A good time to be moving.'],
   '🌞 Midday':        ['The sun is directly overhead. The road shimmers slightly.', 'High sun. You find shade where you can.', 'The day is at its peak. The road is busy.'],
   '🌤️ Afternoon':    ['The afternoon is warm. The road is quiet.', 'High sun makes the distance hazy.', 'Good light and a steady pace.'],
   '⛅ Mid-Afternoon': ['The sun begins its descent. Still plenty of light.', 'The road is familiar at this hour — well-traveled.'],
   '🌇 Late Afternoon':['The light turns golden. Shadows stretch long across the road.', 'Getting late. You keep a solid pace.'],
   '🌆 Evening':       ['The sun drops low. Long shadows cross the road ahead.', 'The light is golden and fading fast.', 'Evening is coming on. You push your pace.'],
   '🌃 Mid-Evening':   ['The sky deepens to purple. The first stars appear.', 'Lanterns are lit in farmhouse windows.'],
-  '🌌 Late Evening':  ['The stars are fully out now. The road feels longer in the dark.', 'The village lights have gone quiet. Just you and the road.'],
   '🌙 Dusk':          ['The last of the light fades. The road grows grey.', 'Dusk settles in. Hard to read the terrain now.'],
   '🌑 Night':         ['You travel by starlight. The road is dark and quiet.', 'Owls call in the dark. You keep to the road.', 'The night is cold and clear.'],
   '⭐ Late Night':    ['Deep night. The road is yours alone.', 'The stars are bright. The silence is complete.', 'Late night travel. Every sound carries further.'],
@@ -15111,80 +14521,6 @@ const TRAVEL_TIME = {
 function _travelLine(table, key) {
   const pool = table[key] || table.default || [];
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : '';
-}
-
-// Per-grid travel time multipliers by biome (relative to the 10 s base)
-const BIOME_TRAVEL_MULT = {
-  Grassland: 1.0, Plains: 1.0, Savanna: 1.0,
-  Coastal: 1.1, River: 1.2,
-  Hills: 1.2, Desert: 1.2,
-  Tundra: 1.3, Cave: 1.3,
-  Mountains: 1.5, Forest: 1.4, Jungle: 1.5, Rainforest: 1.5,
-  Swamp: 1.6, Wetlands: 1.5, 'Dense Forest': 1.6,
-};
-
-// Per-grid progress bar labels — picked by the biome the player is passing through
-const GRID_TRAVEL_LABELS = {
-  Grassland:      ['Walking through open grassland', 'Following a worn path through the fields', 'A gentle slope of grass and wind'],
-  Plains:         ['Crossing flat, open country', 'The road stretches long and straight', 'Open land in all directions'],
-  Savanna:        ['Crossing the dry savanna', 'Sparse trees and pale grass on all sides', 'The heat rises off the ground ahead'],
-  Forest:         ['Threading through the trees', 'Pushing through dense undergrowth', 'Picking a path between old trunks', 'Following a narrow animal trail'],
-  'Dense Forest': ['Forcing a way through dense brush', 'The canopy blocks the sky entirely', 'Squeezing between ancient trunks', 'Every step fought from the undergrowth'],
-  Jungle:         ['Hacking through thick jungle growth', 'Sweat and green in equal measure', 'The jungle closes in from all sides'],
-  Rainforest:     ['Moving beneath a dripping canopy', 'Everything is wet and alive', 'The understory tangles at every step'],
-  Mountains:      ['Picking a path up the rocky slope', 'Scrambling over loose stone', 'The altitude makes every step heavier', 'Cold air and thin ground underfoot'],
-  Hills:          ['Climbing the rolling hillside', 'Cresting a low ridge', 'The path dips and rises with the land'],
-  Desert:         ['Crossing open sand', 'Heat shimmers off the ground ahead', 'Each step stirs a puff of pale dust', 'The sand shifts underfoot'],
-  Tundra:         ['Crunching across frozen ground', 'The wind cuts without mercy', 'Pale, empty flats in all directions'],
-  Coastal:        ['Following the coastal track', 'Salt air and the sound of waves to one side', 'Threading between rocks above the tideline'],
-  River:          ['Following the riverbank', 'The river murmurs alongside', 'Picking a line along the water\'s edge'],
-  Swamp:          ['Wading through shallow murk', 'Testing each step before trusting the ground', 'Mud pulls at every footfall'],
-  Wetlands:       ['Picking through reeds and waterlogged earth', 'The ground sinks with every step', 'Marsh grass and standing water on all sides'],
-  Cave:           ['Feeling along the cavern wall', 'The air turns damp and cool', 'Footsteps echo off close stone'],
-  default:        ['Pressing on', 'Keeping to the road', 'Continuing the journey'],
-};
-
-// Severe weather overrides the biome label entirely
-const WEATHER_GRID_LABELS = {
-  'Heavy Rain':  ['Trudging through sheets of rain', 'The rain hammers down as you push on', 'Visibility falls in the downpour'],
-  Stormy:        ['Fighting through the storm', 'Thunder above, mud below', 'Every step a struggle against wind and rain'],
-  Blizzard:      ['Forcing a way through the blizzard', 'The world is white and featureless', 'Snow drives hard into your face'],
-  Fog:           ['Feeling your way through thick fog', 'The fog swallows the road a few paces ahead', 'Navigating by feel as much as sight'],
-  Mist:          ['Moving through low mist', 'The mist muffles every sound', 'Shapes resolve slowly out of the grey'],
-  'Strong Wind': ['Leaning into a punishing headwind', 'The wind nearly costs you your footing', 'Every step costs double against the gale'],
-  Snowy:         ['Trudging through fresh snow', 'The snow muffles the world', 'Each step leaves a deep print behind'],
-};
-
-function _gridTravelLabel(cell, weather) {
-  // Severe weather overrides biome
-  if (weather && WEATHER_GRID_LABELS[weather]) {
-    const pool = WEATHER_GRID_LABELS[weather];
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  const zone = (cell.zone || '').toLowerCase();
-  const cv   = cell.cityVillage || '';
-  // Named settlement labels
-  if (cv && /^(city|capitalcity|capital city)$/.test(zone)) {
-    const pool = [
-      `Navigating through the streets of ${cv}`,
-      `Moving through the crowds of ${cv}`,
-      `Passing through ${cv}`,
-      `Threading through the market district of ${cv}`,
-      `Weaving through the city traffic of ${cv}`,
-    ];
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  if (cv && zone === 'village') {
-    const pool = [
-      `Passing through the village of ${cv}`,
-      `Walking through ${cv}`,
-      `Crossing through ${cv}`,
-    ];
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  // Biome
-  const pool = GRID_TRAVEL_LABELS[cell.biome] || GRID_TRAVEL_LABELS.default;
-  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts = {}) {
@@ -15239,149 +14575,80 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
 
   if (!opts.skipDeparture) {
     // Departure flavor
-    const _depSeed = _travelLine(TRAVEL_DEPARTURE, fromBiome);
-    const _depCtx  = buildActionContext({ destination: destName });
-    const _depLine = await callGameAI(
-      `One atmospheric sentence describing a traveller departing from ${_depCtx.location.name} (${fromBiome} biome), heading toward ${destName}. It is ${_depCtx.location.timeOfDay}, weather: ${_depCtx.location.weather}. Grounded, observational, no melodrama. Use this as a seed: ${_depSeed}`,
-      _depCtx,
-      { mode: 'narrative', fallback: _depSeed, maxTokens: 60 }
-    );
-    addStory(`🚶 ${_depLine}`);
+    const depLine = _travelLine(TRAVEL_DEPARTURE, fromBiome);
+    addStory(`🚶 ${depLine}`);
     _buildWheel([{ label: '🚶 Travelling…', action: () => {} }]);
 
-    // Speed modifiers (computed once for the whole journey)
-    const _weatherMod      = _travelSev >= 3 ? 1.6 : _travelSev >= 2 ? 1.3 : _travelSev >= 1 ? 1.1 : 1.0;
-    const _compassMod      = player.inventory?.['Compass'] ? 0.8 : 1.0;
-    const _horseMod        = player.flags?.hasHiredHorse   ? 0.85 : 1.0;
+    // Weather modifies travel time
+    const _weatherMod = _travelSev >= 3 ? 1.6 : _travelSev >= 2 ? 1.3 : _travelSev >= 1 ? 1.1 : 1.0;
+    // Short trips: single bar. Longer trips: split with mid-narrative.
+    const baseTravelMs = Math.max(2000, Math.min(45000, gridSquares * 1200));
+    const _compassMod  = player.inventory?.['Compass'] ? 0.8 : 1.0;
+    const _horseMod    = player.flags?.hasHiredHorse   ? 0.85 : 1.0;
     const _litTorchEquipped = Object.values(player.equipped || {}).some(n => n && /^lit torch$/i.test(n));
-    const _torchMod        = (isLateTime() && _litTorchEquipped) ? 0.9 : 1.0;
-    const perGridMs        = Math.round(10000 * _compassMod * _horseMod * _weatherMod * _torchMod);
+    const _torchMod    = (isLateTime() && _litTorchEquipped) ? 0.9 : 1.0; // 10% faster at night with light
+    const travelMs     = Math.round(baseTravelMs * _compassMod * _horseMod * _weatherMod * _torchMod);
+    if (gridSquares > 3) {
+      const halfMs = Math.round(travelMs / 2);
+      await runInlineProgress(`Travelling to ${destName}…`, halfMs);
+      const midLines = [
+        _travelLine(TRAVEL_MID, destBiome),
+        player.weather && TRAVEL_WEATHER[player.weather] ? _travelLine(TRAVEL_WEATHER, player.weather) : '',
+        player.timeOfDay && TRAVEL_TIME[player.timeOfDay]  ? _travelLine(TRAVEL_TIME, player.timeOfDay)  : '',
+      ].filter(Boolean);
+      if (midLines.length) addStory(midLines[Math.floor(Math.random() * midLines.length)]);
+      // Mid-journey conditions during extended travel
+      if (['Rainy', 'Heavy Rain', 'Stormy'].includes(player.weather)) applyCondition('wet');
+      if (player.weather === 'Blizzard') { applyCondition('wet'); applyCondition('cold'); }
+      if (isLateTime() && !player.hasShelter) applyCondition('cold');
+      await runInlineProgress('Nearly there…', halfMs);
+    } else {
+      await runInlineProgress(`Travelling to ${destName}…`, travelMs);
+    }
 
-    // Stamina — resolve one-time free-travel abilities upfront
+    // Deduct stamina — severe weather increases drain; some abilities waive it once
     const _staminaSevMult = _travelSev >= 4 ? 1.8 : _travelSev >= 3 ? 1.4 : _travelSev >= 2 ? 1.2 : 1.0;
     const _coastalBiomes  = ['Coastal', 'Ocean', 'Sea', 'Shoreline'];
     const _woodlandBiomes = ['Forest', 'Dense Forest', 'Swamp', 'Jungle', 'Rainforest', 'Woodland'];
-    let _freeTravel = false;
     if (player.orienteeringActive) {
-      player.orienteeringActive = false; _freeTravel = true;
+      player.orienteeringActive = false;
       addStory('🧭 Orienteering: this journey costs no stamina.');
     } else if (player.seaLegsActive && (_coastalBiomes.includes(destBiome) || _coastalBiomes.includes(fromBiome))) {
-      player.seaLegsActive = false; _freeTravel = true;
+      player.seaLegsActive = false;
       addStory('🌊 Sea Legs: coastal travel costs no stamina.');
     } else if (player.woodlandStrideActive && (_woodlandBiomes.includes(destBiome) || _woodlandBiomes.includes(fromBiome))) {
-      player.woodlandStrideActive = false; _freeTravel = true;
+      player.woodlandStrideActive = false;
       addStory('🌲 Woodland Stride: the terrain imposes no stamina penalty.');
-    }
-    const totalStaminaCost = Math.round(staminaCost * _staminaSevMult);
-    let staminaDeducted = 0;
-
-    // Origin pixel coords for computing intermediate stop positions on event interrupt
-    const _fromPxMatch = player.currentLocation.match(/^x(\d+)_y(\d+)$/);
-    const _fpx = _fromPxMatch ? (+_fromPxMatch[1] + GRID_SIZE / 2) : toX;
-    const _fpy = _fromPxMatch ? (+_fromPxMatch[2] + GRID_SIZE / 2) : toY;
-
-    // Per-grid event setup
-    const _nightTravel        = isLateTime();
-    const _torchCarried       = Object.values(player.equipped || {}).some(n => n && /^lit torch$/i.test(n));
-    const _encounterThreshold = _nightTravel ? (_torchCarried ? 8 : 9) : 6;
-    const _COOLDOWN_START = 6, _COOLDOWN_DECAY = 3;
-    let _eventCooldown = 0;
-    let gridsCompleted = 0;
-    const midGrid = Math.floor(gridSquares / 2);
-
-    for (let i = 0; i < gridSquares; i++) {
-      // Resolve the map cell the player is currently passing through (midpoint of this step)
-      const _stepRatio = (i + 0.5) / gridSquares;
-      const _scx = _fpx + (toX - _fpx) * _stepRatio;
-      const _scy = _fpy + (toY - _fpy) * _stepRatio;
-      const _skx = Math.round((_scx - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      const _sky = Math.round((_scy - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-      const _curCell = (mapData && mapData[`x${_skx}_y${_sky}`]) || {};
-
-      // Contextual progress bar label based on biome/weather/settlement
-      const _barLabel = _gridTravelLabel(_curCell, player.weather);
-      // Biome affects how long this grid takes to traverse
-      const _biomeMult = BIOME_TRAVEL_MULT[_curCell.biome] || 1.0;
-      const _stepMs    = Math.round(perGridMs * _biomeMult);
-      await runInlineProgress(_barLabel, _stepMs);
-
-      // Mid-journey flavour and conditions at the halfway point
-      if (i === midGrid && gridSquares > 2) {
-        const midLines = [
-          _travelLine(TRAVEL_MID, destBiome),
-          player.weather && TRAVEL_WEATHER[player.weather] ? _travelLine(TRAVEL_WEATHER, player.weather) : '',
-          player.timeOfDay && TRAVEL_TIME[player.timeOfDay]  ? _travelLine(TRAVEL_TIME, player.timeOfDay)  : '',
-        ].filter(Boolean);
-        const _midSeed = midLines.length ? midLines[Math.floor(Math.random() * midLines.length)] : '';
-        if (_midSeed) {
-          const _midCtx  = buildActionContext({ destination: destName });
-          const _midLine = await callGameAI(
-            `One atmospheric sentence describing what a traveller observes in the middle of a journey through ${destBiome || 'unknown terrain'}. Weather: ${player.weather}. Time: ${player.timeOfDay}. Grounded, evocative. Use this as a seed: ${_midSeed}`,
-            _midCtx,
-            { mode: 'narrative', fallback: _midSeed, maxTokens: 60 }
-          );
-          addStory(_midLine);
-        }
-        if (['Rainy', 'Heavy Rain', 'Stormy'].includes(player.weather)) applyCondition('wet');
-        if (player.weather === 'Blizzard') { applyCondition('wet'); applyCondition('cold'); }
-        if (isLateTime() && !player.hasShelter) applyCondition('cold');
-      }
-
-      // Deduct stamina for this step; absorb rounding error on the last step
-      if (!_freeTravel) {
-        const stepCost = (i === gridSquares - 1)
-          ? totalStaminaCost - staminaDeducted
-          : Math.round(totalStaminaCost / gridSquares);
-        changeStamina(-stepCost);
-        staminaDeducted += stepCost;
-      }
-
-      // Advance time 1 period per grid square
-      advanceTime(1);
-      gridsCompleted++;
-
-      // Random event check for this grid — settlements raise encounter chance
-      const _inSettlement = ['City', 'CapitalCity', 'Village'].includes(_curCell.zone || '');
-      const _effectiveThreshold = Math.max(0, _encounterThreshold + (_inSettlement ? 3 : 0) - _eventCooldown);
-      if (_effectiveThreshold > 0 && Math.floor(Math.random() * 20) + 1 <= _effectiveThreshold) {
-        // Interpolate the map cell reached after this step
-        const _ratio    = (i + 1) / gridSquares;
-        const _cx       = _fpx + (toX - _fpx) * _ratio;
-        const _cy       = _fpy + (toY - _fpy) * _ratio;
-        const _stopKeyX = Math.round((_cx - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-        const _stopKeyY = Math.round((_cy - GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
-        const _stopKey  = `x${_stopKeyX}_y${_stopKeyY}`;
-
-        // Place the player at this intermediate cell
-        player.currentLocation = _stopKey;
-        const _stopCell = mapData[_stopKey] || {};
-        if (_stopCell.kingdom) player.currentKingdom = _stopCell.kingdom;
-        const _sm = _stopKey.match(/^x(\d+)_y(\d+)$/);
-        if (_sm) updatePlayerSymbol(+_sm[1], +_sm[2]);
-        _markDiscovered(_stopKey);
-        updateTopStats();
-        checkDiscovery();
-        if (['Drizzle','Light Rain','Rainy','Heavy Rain','Stormy','Blizzard'].includes(player.weather)) applyCondition('wet');
-        if (isLateTime() && !player.hasShelter) applyCondition('cold');
-        if (gridsCompleted >= 6 && player.conditions?.find(c => c.id === 'encumbered' || c.id === 'overloaded')) {
-          applyCondition('sore');
-        }
-
-        // Fire the event; only halt travel if an event actually triggered
-        const _eventFired = await fireRandomEvent('travel', _nightTravel ? ['creature_encounter', 'hazard', 'traveler_encounter', 'discovery', 'mystical'] : null);
-        if (_eventFired) {
-          addStory('You stop to deal with what lies ahead. Continue your journey when ready.');
-          _showDefaultWheel?.();
-          return;
-        }
-      } else {
-        _eventCooldown = Math.max(0, _eventCooldown - _COOLDOWN_DECAY);
-      }
+    } else {
+      changeStamina(-Math.round(staminaCost * _staminaSevMult));
     }
 
-    // Sore muscles from hauling a heavy load over a long march (only on full completion)
+    // 1 period per grid square (12-period day), minimum 1
+    advanceTime(Math.max(1, gridSquares));
+
+    // Sore muscles from hauling a heavy load over a long march
     if (gridSquares >= 6 && player.conditions?.find(c => c.id === 'encumbered' || c.id === 'overloaded')) {
       applyCondition('sore');
+    }
+  }
+
+  // Random events — one check per 3 squares
+  // Night raises danger chance; lit torch equipped reduces it slightly
+  const _nightTravel    = isLateTime();
+  const _torchCarried   = Object.values(player.equipped || {}).some(n => n && /^lit torch$/i.test(n));
+  const _encounterThreshold = _nightTravel ? (_torchCarried ? 8 : 9) : 6; // day:30%, night:45%, torch:40%
+  // Quest: The Slow Becoming — check if Ithris should appear during this journey
+  if (typeof _checkIthrisMeetTrigger === 'function') _checkIthrisMeetTrigger();
+  // Romance NPCs — check all travel triggers
+  if (typeof _checkRomanceTravelTriggers === 'function') await _checkRomanceTravelTriggers(destCell);
+
+  const checks = Math.floor(gridSquares / 3);
+  for (let i = 0; i < checks; i++) {
+    if (Math.floor(Math.random() * 20) + 1 <= _encounterThreshold) {
+      await fireRandomEvent('travel', _nightTravel ? ['creature_encounter', 'hazard', 'traveler_encounter', 'discovery', 'mystical'] : null);
+      // Brief pause so the wheel readjusts between events
+      _buildWheel([{ label: '🚶 Continuing…', action: () => {} }]);
+      await runInlineProgress('Continuing journey…', 800);
     }
   }
 
@@ -15512,7 +14779,6 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
         setBuiltIcon?.('campfire-button', false);
       }
       updateComfortProtection?.();
-      SoundManager?.updateAmbience();
       if (!player.flags) player.flags = {};
       player.flags._campRaidResult = { lostSupplies: lostNames, shelterDestroyed, fireDestroyed };
     } else if (raidRoll <= 12) {
@@ -15536,11 +14802,6 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
     }
   }
 
-  // Quest: The Slow Becoming — check if Ithris should appear on arrival
-  if (typeof _checkIthrisMeetTrigger === 'function') _checkIthrisMeetTrigger();
-  // Romance NPCs — check travel triggers against the actual arrival cell
-  if (typeof _checkRomanceTravelTriggers === 'function') await _checkRomanceTravelTriggers(destCell);
-
   updateJournal();
   checkQuestObjectives?.('location', { coord: destKey });
   addWorldEvent(`Travelled to ${locDisplay}.`, 'exploration');
@@ -15557,7 +14818,6 @@ async function executeTravelTo(destKey, toX, toY, gridSquares, staminaCost, opts
   }
   checkAchievementTitles?.();
   checkGlobalEventTriggers();
-  SoundManager?.updateAmbience();
   saveGame();
   if (!rollReencounters()) {
     if (isSettlement) {
@@ -15793,7 +15053,7 @@ async function _prof_quick_brew_action() {
   const herbs = Object.keys(player.inventory || {}).filter(k => /herb/i.test(k) && (player.inventory[k].quantity ?? 0) >= 2);
   if (!herbs.length) { addStory('⛔ You need at least 2 Healing Herbs to brew.'); _goBack(); return; }
   removeItem(herbs[0], 2);
-  const tier = await performSkillCheck('Alchemy');
+  const tier = performSkillCheck('Alchemy');
   if (tier <= 1) { addStory('⚗️ The mixture is ruined. Materials wasted.'); }
   else {
     const qty = tier >= 5 ? 2 : 1;
@@ -15811,7 +15071,7 @@ async function _prof_transmute() {
   if (!commons.length) { addStory('⛔ Need 5× of any Common material to transmute.'); _goBack(); return; }
   const [name] = commons[0];
   removeItem(name, 5);
-  const tier = await performSkillCheck('Alchemy');
+  const tier = performSkillCheck('Alchemy');
   const result = tier >= 4 ? 'Silver Dust' : 'Iron Powder';
   addItem(result, 1, { type: 'material', weight: 0.2, rarity: 'Uncommon', consumable: false });
   addStory(`🔄 Transmuted 5× ${name} → 1× ${result}.`);
@@ -15827,7 +15087,7 @@ async function _prof_master_formula() {
 async function _prof_steady_aim() {
   if (!combatState) { addStory('⛔ You are not in combat.'); _goBack(); return; }
   await runInlineProgress('Drawing breath, taking aim…', 1500);
-  let tier = await performSkillCheck('Archery');
+  let tier = performSkillCheck('Archery');
   if (combatState.eagleEye) tier = Math.max(3, tier);
   if (player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
   const wepBonus    = _getEquippedWeaponDamage();
@@ -15849,7 +15109,7 @@ async function _prof_steady_aim() {
 async function _prof_volley() {
   if (!combatState) { addStory('⛔ You are not in combat.'); _goBack(); return; }
   await runInlineProgress('Loosing volley…', 1500);
-  const tier = await performSkillCheck('Archery');
+  const tier = performSkillCheck('Archery');
   const dmg  = Math.max(1, tier * 3 + randomInt(-1, 2));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   combatState.enemySkipsNext = true;
@@ -15896,7 +15156,7 @@ async function _prof_silent_kill() {
 
 async function _prof_ballad() {
   await runInlineProgress('Playing…', 2000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 1) { addStory('🎵 The notes fall flat. No effect.'); _goBack(); return; }
   applyCondition('inspired', 3);
   (player.party || []).forEach(() => {}); // party can't have conditions but note it narratively
@@ -15914,7 +15174,7 @@ async function _prof_tale_of_valor() {
 
 async function _prof_epic_performance() {
   await runInlineProgress('Performing…', 3000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 2) { addStory('🎭 The performance falls flat with this crowd.'); _goBack(); return; }
   addStory('🎭 The crowd erupts. Your name will be spoken here for days. All locals are now Friendly.');
   player.settlementReputation = (player.settlementReputation || {});
@@ -15933,7 +15193,7 @@ async function _prof_field_repair() {
   }, ['', null]);
   const wear = itemName ? getItemWear(itemName) : 100;
   if (!itemName || wear >= 100) { addStory('🔧 Nothing in your pack needs repair.'); _goBack(); return; }
-  const tier = await performSkillCheck('Smithing');
+  const tier = performSkillCheck('Smithing');
   if (tier <= 1) { addStory('🔧 The repair doesn\'t hold.'); _goBack(); return; }
   const repaired = Math.min(100, wear + 25 * tier);
   player.inventory[itemName].wear = repaired;
@@ -15945,7 +15205,7 @@ async function _prof_field_repair() {
 
 async function _prof_sharpen_blade() {
   await runInlineProgress('Honing the edge…', 2000);
-  const tier = await performSkillCheck('Smithing');
+  const tier = performSkillCheck('Smithing');
   if (tier <= 1) { addStory('⚔️ The blade slips. No improvement.'); _goBack(); return; }
   player.sharpenedWeaponBonus = 3;
   addStory('⚔️ Edge is razor sharp. +3 damage on your next combat.');
@@ -15970,7 +15230,7 @@ async function _prof_manhunt() {
   await runInlineProgress('Tracking the quarry…', 2500);
   const active = (player.journal?.quests || []).filter(q => q.status === 'Active');
   if (!active.length) { addStory('🗺️ No active quarry to track.'); _goBack(); return; }
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier <= 2) { addStory('🗺️ The trail is cold. You find no leads.'); _goBack(); return; }
   addStory(`🗺️ Your instincts sharpen. Your quarry is somewhere in ${player.currentKingdom || 'this region'}.`);
   _goBack();
@@ -15980,7 +15240,7 @@ async function _prof_capture() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   const e = combatState.enemy;
   await runInlineProgress('Subduing…', 2000);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier <= 2) { addStory('⛓️ They resist. The capture fails.'); _showCombatWheel(); return; }
   addStory(`⛓️ You subdue the ${e.name} and take them in. Bounty collected.`);
   const bonus = Math.floor((e.goldRange?.[1] || 20) * 0.5);
@@ -16001,7 +15261,7 @@ async function _prof_bless() {
 
 async function _prof_divine_healing() {
   await runInlineProgress('Channelling divine power…', 2500);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   if (tier <= 1) { addStory('💫 The connection wavers. No healing.'); _goBack(); return; }
   changeLife(25);
   removeCondition('injured');
@@ -16013,7 +15273,7 @@ async function _prof_divine_healing() {
 async function _prof_holy_wrath() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Invoking divine wrath…', 2000);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   const dmg  = Math.max(1, tier * 7 + randomInt(0, 5));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   addStory(`⚡ Holy fire strikes the ${combatState.enemy.name} for ${dmg} damage! (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
@@ -16026,7 +15286,7 @@ async function _prof_holy_wrath() {
 
 async function _prof_survey_area() {
   await runInlineProgress('Surveying the terrain…', 2500);
-  const tier = await performSkillCheck('Navigation');
+  const tier = performSkillCheck('Navigation');
   if (tier <= 1) { addStory('🔭 The terrain is confusing. You gain nothing.'); _goBack(); return; }
   const key = player.currentLocation;
   const match = key.match(/^x(\d+)_y(\d+)$/);
@@ -16056,7 +15316,7 @@ async function _prof_orienteering() {
 
 async function _prof_first_expedition() {
   await runInlineProgress('Searching carefully…', 3000);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier <= 2) { addStory('🏔️ You find nothing hidden here.'); _goBack(); return; }
   const cell   = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
   const hidden = (cell.pointsOfInterest || []).find(p => !((player.discoveredEstablishments || {})[player.currentLocation] || []).includes(p.name));
@@ -16097,7 +15357,7 @@ async function _prof_craft_arrows() {
   await runInlineProgress('Fletching arrows…', 2000);
   const hasSticks = (player.inventory?.['Sticks']?.quantity ?? 0) >= 3 || (player.inventory?.['Stick']?.quantity ?? 0) >= 3;
   const qty = hasSticks ? 5 : 3;
-  const tier = await performSkillCheck('Fletching');
+  const tier = performSkillCheck('Fletching');
   if (tier <= 1) { addStory('🪶 The fletching splits. No arrows made.'); _goBack(); return; }
   addItem('Arrow', qty, { type: 'material', weight: 0.1, rarity: 'Common', consumable: false });
   addStory(`🪶 You craft ${qty} arrows.`);
@@ -16114,7 +15374,7 @@ async function _prof_broadhead() {
 
 async function _prof_perfect_shot() {
   await runInlineProgress('Crafting the perfect arrow…', 3000);
-  const tier = await performSkillCheck('Fletching');
+  const tier = performSkillCheck('Fletching');
   if (tier <= 2) { addStory('🎯 The arrow warps. It won\'t fly true.'); _goBack(); return; }
   player.perfectArrowReady = true;
   addItem('Perfect Arrow', 1, { type: 'material', weight: 0.1, rarity: 'Rare', consumable: false, description: 'Guarantees a Tier 5 Archery check when used.' });
@@ -16132,7 +15392,7 @@ async function _prof_brace() {
 async function _prof_intimidate() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Staring them down…', 1500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 3 && Math.random() < 0.5) {
     addStory(`😤 The ${combatState.enemy.name} flinches and flees!`);
     combatState = null; _showDefaultWheel(); return;
@@ -16163,7 +15423,7 @@ async function _prof_cure_ailment() {
   const harmful = (player.conditions || []).filter(c => CONDITION_DEFS[c.id]?.harmful);
   if (!harmful.length) { addStory('💊 No harmful conditions to treat.'); _goBack(); return; }
   await runInlineProgress('Treating the condition…', 2000);
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   if (tier <= 1) { addStory('💊 The treatment has no effect.'); _goBack(); return; }
   const removed = harmful[0];
   removeCondition(removed.id);
@@ -16174,7 +15434,7 @@ async function _prof_cure_ailment() {
 
 async function _prof_full_restoration() {
   await runInlineProgress('Full treatment…', 3500);
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   if (tier <= 2) { addStory('✨ The treatment is incomplete. Partial recovery only.'); changeLife(15); _goBack(); return; }
   const targetLife = Math.floor(player.maxLife * 0.8);
   player.life = Math.max(player.life, targetLife);
@@ -16193,7 +15453,7 @@ async function _prof_set_snare() {
 
 async function _prof_study_prey() {
   await runInlineProgress('Reading the signs…', 2000);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier <= 1) { addStory('🦌 The signs are unclear. No guaranteed encounter.'); _goBack(); return; }
   player.guaranteedHuntEncounter = true;
   addStory('🦌 You spot clear signs of prey. Your next hunt is guaranteed to find an animal.');
@@ -16209,7 +15469,7 @@ async function _prof_apex_predator() {
 async function _prof_honors_strike() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Striking with honour…', 1500);
-  const tier    = await performSkillCheck('Swordsmanship');
+  const tier    = performSkillCheck('Swordsmanship');
   const dmg     = Math.max(1, tier * 4 + 5 + randomInt(-1, 2));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   applyCondition('fortified', 2);
@@ -16231,7 +15491,7 @@ async function _prof_stand_firm() {
 async function _prof_charge() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Charging…', 1500);
-  const tier = await performSkillCheck('Swordsmanship');
+  const tier = performSkillCheck('Swordsmanship');
   const dmg  = Math.max(1, tier * 8 + randomInt(0, 5));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   combatState.enemySkipsNext = true;
@@ -16243,7 +15503,7 @@ async function _prof_charge() {
 
 async function _prof_detect_magic() {
   await runInlineProgress('Sensing magic…', 2000);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   if (tier <= 1) { addStory('🔍 The magical sense fades before you can focus it.'); _goBack(); return; }
   const magical = Object.entries(player.inventory || {}).filter(([, v]) => v.rarity === 'Rare' || v.type === 'potion' || /magic|enchant|arcane|rune/i.test(JSON.stringify(v)));
   if (!magical.length) { addStory('🔍 You detect no magical items in your pack.'); _goBack(); return; }
@@ -16255,7 +15515,7 @@ async function _prof_arcane_bolt() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Channelling arcane force…', 1500);
   const skill = (player.skills?.['Light Magic']?.level || 0) >= (player.skills?.['Black Magic']?.level || 0) ? 'Light Magic' : 'Black Magic';
-  const tier  = await performSkillCheck(skill);
+  const tier  = performSkillCheck(skill);
   const dmg   = Math.max(1, tier * 6 + randomInt(0, 4));
   combatState.enemy.life = Math.max(0, combatState.enemy.life - dmg);
   addStory(`⚡ Arcane bolt deals ${dmg} — no mana spent. (${combatState.enemy.life}/${combatState.enemy.maxLife} HP)`);
@@ -16271,7 +15531,7 @@ async function _prof_ritual_casting() {
   _buildWheel([{ label: '🌀 Ritual…', action: () => {} }]);
   await runInlineProgress('Preparing ritual…', 5000);
   await runInlineProgress('Weaving the arcane…', 5000);
-  const tier = await performSkillCheck('Light Magic');
+  const tier = performSkillCheck('Light Magic');
   const outcomes = [
     'The ritual fails. A cold wind snuffs out nearby fires.',
     'A faint shimmer — nothing tangible, but the air feels cleaner.',
@@ -16301,7 +15561,7 @@ async function _prof_battle_hardened() {
 
 async function _prof_appraise() {
   await runInlineProgress('Appraising…', 1500);
-  const tier = await performSkillCheck('Negotiating');
+  const tier = performSkillCheck('Negotiating');
   const items = Object.entries(player.inventory || {});
   if (!items.length) { addStory('🧐 Nothing in your pack to appraise.'); _goBack(); return; }
   const [name, data] = items[Math.floor(Math.random() * items.length)];
@@ -16384,7 +15644,7 @@ async function _prof_study() {
     tier = 5;
     addStory('🔤 Decipher Runes: your study check auto-succeeds.');
   } else {
-    tier = await performSkillCheck('Decrypting');
+    tier = performSkillCheck('Decrypting');
   }
   if (tier <= 2) { addStory('📚 Your study yields nothing new this time.'); _goBack(); return; }
   const allRecipes = typeof Recipes !== 'undefined' ? Object.values(Recipes).flat() : [];
@@ -16449,7 +15709,7 @@ async function _prof_killing_blow() {
 
 async function _prof_gather_intel() {
   await runInlineProgress('Observing…', 2000);
-  const tier = await performSkillCheck('Stealth');
+  const tier = performSkillCheck('Stealth');
   if (tier <= 2) { addStory('🕵️ You learn nothing of value.'); _goBack(); return; }
   const secrets = [
     'They owe a debt they cannot repay.',
@@ -16458,21 +15718,14 @@ async function _prof_gather_intel() {
     'They are being watched by someone else in this settlement.',
     'Their true motivation is self-preservation above all else.',
   ];
-  const _intelSeed = secrets[Math.floor(Math.random() * secrets.length)];
-  const _intelCtx  = buildActionContext();
-  const _intelLine = await callGameAI(
-    `One sentence of covert intelligence gathered through observation in ${_intelCtx.location.name}. The intelligence is about a person nearby. Specific, intriguing, foreboding. Use this as a seed: ${_intelSeed}`,
-    _intelCtx,
-    { mode: 'narrative', fallback: _intelSeed, maxTokens: 60 }
-  );
-  addStory(`🕵️ Intel gathered: ${_intelLine}`);
+  addStory(`🕵️ Intel gathered: ${secrets[Math.floor(Math.random() * secrets.length)]}`);
   awardProfessionXp('social_success');
   _goBack();
 }
 
 async function _prof_plant_evidence() {
   await runInlineProgress('Planting evidence…', 2000);
-  const tier = await performSkillCheck('Stealth');
+  const tier = performSkillCheck('Stealth');
   if (tier <= 2) { addStory('📄 Your manipulation is too clumsy. No effect.'); _goBack(); return; }
   const npcs = player.journal?.npcs || [];
   if (!npcs.length) { addStory('📄 No known NPCs to manipulate.'); _goBack(); return; }
@@ -16554,7 +15807,7 @@ async function _skAct_power_strike() {
 async function _skAct_disarm() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Disarming…', 1500);
-  const tier = await performSkillCheck('Swordsmanship');
+  const tier = performSkillCheck('Swordsmanship');
   if (tier <= 2) { addStory('🗡️ The disarm fails — they keep their weapon.'); _enemyCounterattack(); _showCombatWheel(); return; }
   combatState.enemy.damage = [1, 3];
   addStory(`🗡️ You knock the weapon aside! The ${combatState.enemy.name} fights barehanded (1–3 damage).`);
@@ -16567,7 +15820,7 @@ async function _skAct_disarm() {
 async function _skAct_aimed_shot() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Taking aim…', 2000);
-  let tier = await performSkillCheck('Archery');
+  let tier = performSkillCheck('Archery');
   if (combatState.eagleEye) tier = Math.max(3, tier);
   if (player.perfectArrowReady) { tier = 5; player.perfectArrowReady = false; addStory('🎯 The perfect arrow flies true. (Auto Tier 5)'); }
   const wepBonus    = _getEquippedWeaponDamage();
@@ -16589,7 +15842,7 @@ async function _skAct_aimed_shot() {
 async function _skAct_grapple() {
   if (!combatState) { addStory('⛔ Not in combat.'); _goBack(); return; }
   await runInlineProgress('Grappling…', 1500);
-  const tier = await performSkillCheck('Brawling');
+  const tier = performSkillCheck('Brawling');
   if (tier <= 2) { addStory('🤼 They shake you off.'); _enemyCounterattack(); _showCombatWheel(); return; }
   combatState.grappled         = true;
   combatState.enemySkipsNext   = true;
@@ -16605,7 +15858,7 @@ async function _skAct_calm_beast() {
     addStory('🐾 This only works on beasts, not intelligent foes.'); _showCombatWheel(); return;
   }
   await runInlineProgress('Calming the beast…', 2000);
-  const tier = await performSkillCheck('Animal Handling');
+  const tier = performSkillCheck('Animal Handling');
   if (tier >= 4) {
     addStory(`🐾 The ${combatState.enemy.name} calms and withdraws. No further hostility.`);
     combatState = null; _showDefaultWheel(); return;
@@ -16619,7 +15872,7 @@ async function _skAct_calm_beast() {
 
 async function _skAct_rally() {
   await runInlineProgress('Rallying…', 1500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 2) { addStory('📯 The call falls flat. No effect.'); if (combatState) _showCombatWheel(); else _goBack(); return; }
   changeStamina(10);
   applyCondition('inspired', 2);
@@ -16631,7 +15884,7 @@ async function _skAct_rally() {
 
 async function _skAct_read_tracks() {
   await runInlineProgress('Reading the tracks…', 2500);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   const findings = [
     'The ground tells you nothing. The trail is old.',
     'Something passed through here recently — unclear what.',
@@ -16646,7 +15899,7 @@ async function _skAct_read_tracks() {
 
 async function _skAct_chart_area() {
   await runInlineProgress('Charting…', 2500);
-  const tier = await performSkillCheck('Navigation');
+  const tier = performSkillCheck('Navigation');
   if (tier <= 1) { addStory('🗺️ Your charting is off. Nothing useful mapped.'); _goBack(); return; }
   const key   = player.currentLocation;
   const match = key.match(/^x(\d+)_y(\d+)$/);
@@ -16677,7 +15930,7 @@ async function _skAct_mend_wounds() {
     const herbKey = Object.keys(player.inventory).find(k => /healing herb/i.test(k));
     if (herbKey) removeItem(herbKey, 1);
   }
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   const heal = tier >= 4 ? 20 : tier >= 3 ? 15 : 10;
   changeLife(heal);
   addStory(`🩹 You tend to the wounds. +${heal} life.`);
@@ -16690,7 +15943,7 @@ async function _skAct_field_surgery() {
     addStory('🩺 You are not Injured — no surgery needed.'); _goBack(); return;
   }
   await runInlineProgress('Performing field surgery…', 3000);
-  const tier = await performSkillCheck('Healing');
+  const tier = performSkillCheck('Healing');
   if (tier <= 2) { addStory('🩺 The surgery is incomplete. Injured condition remains.'); _goBack(); return; }
   removeCondition('injured');
   changeLife(25);
@@ -16704,7 +15957,7 @@ async function _skAct_quick_brew() {
   const herbKey = Object.keys(player.inventory || {}).find(k => /healing herb/i.test(k) && (player.inventory[k].quantity ?? 0) >= 2);
   if (!herbKey) { addStory('⚗️ Need at least 2 Healing Herbs to quick-brew.'); _goBack(); return; }
   removeItem(herbKey, 2);
-  const tier = await performSkillCheck('Alchemy');
+  const tier = performSkillCheck('Alchemy');
   if (tier <= 1) { addStory('⚗️ The mixture is wrong. Materials wasted.'); _goBack(); return; }
   addItem('Health Potion', 1, { type: 'potion', weight: 0.3, rarity: 'Common', consumable: true });
   addStory('⚗️ Quick Brew: 1× Health Potion crafted.');
@@ -16714,7 +15967,7 @@ async function _skAct_quick_brew() {
 
 async function _skAct_identify_plants() {
   await runInlineProgress('Examining the flora…', 2000);
-  const tier = await performSkillCheck('Herbalism');
+  const tier = performSkillCheck('Herbalism');
   if (tier <= 2) { addStory('🌿 Nothing particularly useful here.'); _goBack(); return; }
   const qty = tier >= 5 ? 3 : 2;
   addItem('Healing Herb', qty, { type: 'material', weight: 0.1, rarity: 'Common', consumable: false });
@@ -16724,7 +15977,7 @@ async function _skAct_identify_plants() {
 
 async function _skAct_inspire() {
   await runInlineProgress('Inspiring…', 1500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier <= 2) { addStory('✨ Your words ring hollow. No one is moved.'); _goBack(); return; }
   applyCondition('inspired', 3);
   addStory('✨ Your words lift spirits. You and the party feel inspired.');
@@ -16734,7 +15987,7 @@ async function _skAct_inspire() {
 
 async function _skAct_read_aura() {
   await runInlineProgress('Reading the aura…', 2000);
-  const tier = await performSkillCheck('Mysticism');
+  const tier = performSkillCheck('Mysticism');
   if (tier <= 2) { addStory('🔮 The aura is murky. You read nothing.'); _goBack(); return; }
   const insights = [
     'A concealed fear drives them.',
@@ -16743,14 +15996,7 @@ async function _skAct_read_aura() {
     'They harbour a deep loyalty to someone you haven\'t met.',
     'Their aura is surprisingly clean — this person means well.',
   ];
-  const _auraSeed = insights[Math.floor(Math.random() * insights.length)];
-  const _auraCtx  = buildActionContext();
-  const _auraLine = await callGameAI(
-    `One mystical sentence describing what a traveller senses while reading a person's aura in ${_auraCtx.location.name}. Cryptic, atmospheric, medieval fantasy. Use this as a seed: ${_auraSeed}`,
-    _auraCtx,
-    { mode: 'narrative', fallback: _auraSeed, maxTokens: 60 }
-  );
-  addStory(`🔮 ${_auraLine}`);
+  addStory(`🔮 Reading the aura: ${insights[Math.floor(Math.random() * insights.length)]}`);
   _goBack();
 }
 
@@ -16986,10 +16232,7 @@ function loadGame(slot) {
     const [, xStr, yStr] = m;
     updatePlayerSymbol(+xStr, +yStr);
   }
-  _prevGoldForSound = player.gold;
   updateTopStats();
-  window.titleMusicFadeOut?.();
-  SoundManager?.updateAmbience();
 }
 
 	// ============================================================
@@ -17051,7 +16294,7 @@ function _checkIthrisMeetTrigger() {
   const corruptZones = ['Crimson Valley'];
   if (corruptZones.some(z => (cell.zone || '').includes(z) || (cell.description || '').toLowerCase().includes(z.toLowerCase()))) return;
   const tod = player.timeOfDay || '';
-  const dayTimes = ['🌅 Early Morning','☀️ Morning','🌞 Midday'];
+  const dayTimes = ['🌅 Early Morning','🌄 Mid-Morning','☀️ Morning','🌞 Midday'];
   if (!dayTimes.includes(tod)) return;
   // Rolls 1-in-6 chance per travel step — same rhythm as other random events.
   if (Math.random() > (1/6)) return;
@@ -17412,7 +16655,7 @@ async function _doHerbSteal() {
   addStory('You wait for the wardens to change their patrol, then slip into the gardens in the small hours.');
   _buildWheel([{ label: '🌙 Slipping in...', action: () => {} }]);
   await runInlineProgress('Moving through the gardens...', 4000);
-  const tier = await performSkillCheck('Stealth');
+  const tier = performSkillCheck('Stealth');
   if (tier >= 4) {
     addStory('🌿 You move like shadow and breath. You find the Moonwither Herb in its dedicated plot — pale, silver-glowing under moonlight — and cut a sprig without disturbing a leaf. You\'re out before the next patrol turns the corner.');
     addItem('Moonwither Herb', 1);
@@ -17441,7 +16684,7 @@ async function _doHerbFavor() {
   addStory('"Lorien Veth," he says. "Keeper of the east and south beds." He studies you. "You\'re asking about the Moonwither. The east beds are infested — root-borers. Nobody else has had time. If you clear them, we can talk about what I can offer."');
   _buildWheel([{ label: '🌿 Working on it...', action: () => {} }]);
   await runInlineProgress('Clearing the root-borers...', 5000);
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier >= 3) {
     addStory('It takes the better part of a morning, but you clear every last borer from the beds. Lorien comes to inspect and nods, apparently satisfied — which, you sense, is a meaningful response from him.');
     addStory('He reaches into his apron pocket and holds out a seed — small, pearl-grey, faintly luminescent.');
@@ -17462,7 +16705,7 @@ async function _doHerbGrowSeed() {
   addStory('You find a sheltered spot with good moonlight — a clearing, or a south-facing windowsill at an inn — and plant the seed. Then you wait.');
   _buildWheel([{ label: '🌱 Waiting for growth...', action: () => {} }]);
   await runInlineProgress('Days pass...', 5000);
-  const tier = await performSkillCheck('Herbalism');
+  const tier = performSkillCheck('Herbalism');
   if (tier >= 3) {
     addStory('Three days later, a pale silver sprout has pushed through the soil. By the fifth day it blooms — tiny, white-edged petals that glow faintly in the dark. You harvest it carefully.');
     removeItem('Moonwither Seed', 1);
@@ -17506,7 +16749,7 @@ async function _doElfBloodPersuade() {
   addStory('You approach an elf — a traveler or a local, it doesn\'t matter — and explain what you need. You try to be honest about why.');
   _buildWheel([{ label: '🗣️ Explaining...', action: () => {} }]);
   await runInlineProgress('Making your case...', 3000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 4) {
     addStory('The elf is quiet for a long time. Then they roll up their sleeve. "Corruption is a tragedy," they say simply. They let you draw a small amount into a vial, seal it, and hand it back.');
     addStory('"I hope it works," they say. They don\'t say anything else.');
@@ -17616,7 +16859,7 @@ async function _doMineSearchForRing() {
   addStory('You step back from the entrance and look around the surrounding area — the loose stone, the worn path, the shadows between boulders where things roll and settle.');
   _buildWheel([{ label: '🔍 Searching...', action: () => {} }]);
   await runInlineProgress('Searching the area...', 4000);
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier >= 3) {
     addStory('There — in a crack between two flat stones, half-covered by wind-blown grit — a ring. Heavy iron. A square-and-flame emblem on the band. The craftsmanship is old and unmistakable. This was made to last generations.');
     addItem('Ironbrand Family Ring', 1);
@@ -17650,7 +16893,7 @@ async function _doMineEntryStealth() {
   addStory('You wait for the shift change — the one quiet window when both guards are looking the other way — and slip past the entrance into the dark of the mountain.');
   _buildWheel([{ label: '🌙 Moving in silence...', action: () => {} }]);
   await runInlineProgress('Slipping past the guards...', 4000);
-  const tier = await performSkillCheck('Stealth');
+  const tier = performSkillCheck('Stealth');
   if (tier >= 4) {
     addStory('You move like part of the dark. Not a sound. The guards never know. You\'re in.');
     setQuestFlag('the_slow_becoming', 'mine_method', 'stealth');
@@ -17672,7 +16915,7 @@ async function _doMineEntryPersuade() {
   addStory('You approach the guards formally, announce yourself as a dwarf of the outer settlements, and make your case — clan ties, mutual trade interests, the reasonable expectation of kin-courtesy.');
   _buildWheel([{ label: '🗣️ Presenting your case...', action: () => {} }]);
   await runInlineProgress('Negotiating entry...', 3500);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 4) {
     addStory('The guards confer. Then: "One hour. Clan business only. You don\'t go past the second level." It\'s more than you expected.');
     setQuestFlag('the_slow_becoming', 'mine_method', 'persuasion');
@@ -17689,7 +16932,7 @@ async function _doMineEntryDisguise() {
   addStory('You acquire a miner\'s coat and lamp from a supply shed near the road, rough your hands with dirt, and join a shift change — head down, walking with the tired confidence of someone who\'s done this a hundred times before.');
   _buildWheel([{ label: '🧢 Blending in...', action: () => {} }]);
   await runInlineProgress('Assuming the role...', 4000);
-  const tier = await performSkillCheck('Deception');
+  const tier = performSkillCheck('Deception');
   if (tier >= 3) {
     addStory('No one looks twice. You\'re just another tired dwarf heading in for the early shift. The guards wave you through.');
     setQuestFlag('the_slow_becoming', 'mine_method', 'disguise');
@@ -17730,7 +16973,7 @@ async function _doCavernSearch() {
   await waitForEnter('Press Enter to search...');
   _buildWheel([{ label: '💎 Searching the cavern...', action: () => {} }]);
   await runInlineProgress('Searching the vein...', 5000);
-  const tier = await performSkillCheck('Mining');
+  const tier = performSkillCheck('Mining');
   const crystalsFound = tier >= 5 ? 3 : tier >= 4 ? 2 : tier >= 2 ? 1 : 0;
   if (crystalsFound === 0) {
     addStory('The vein is there but the crystals are buried deep and you haven\'t the tools to reach them properly. You\'ll have to come back with a better approach — or different skills.');
@@ -18265,8 +17508,8 @@ function _isRomanceAvailable(id) {
   const data = ROMANCE_DATA[id];
   if (!data) return false;
   const pg = (player.gender || '').toLowerCase();
-  if (data.interestedIn === 'men'   && pg !== 'male'      && pg !== 'masculine') return false;
-  if (data.interestedIn === 'women' && pg !== 'female'    && pg !== 'feminine')  return false;
+  if (data.interestedIn === 'men'   && pg !== 'male')   return false;
+  if (data.interestedIn === 'women' && pg !== 'female') return false;
   return true;
 }
 
@@ -18326,11 +17569,9 @@ function _getRomanceWheelOptions() {
 }
 
 async function _checkRomanceTravelTriggers(destCell = {}) {
-  if (!player.flags?.tutorialComplete) return;
-  const dk  = destCell.kingdom     || '';
-  const dz  = destCell.zone        || '';
-  const db  = destCell.biome       || '';
-  const dcv = destCell.cityVillage || '';
+  const dk = destCell.kingdom || '';
+  const dz = destCell.zone   || '';
+  const db = destCell.biome  || '';
   const inSettlement = ['City','CapitalCity','Village'].includes(dz);
   if (typeof _checkRynTravelTrigger    === 'function') await _checkRynTravelTrigger();
   if (typeof _checkMiraTravelTrigger   === 'function') await _checkMiraTravelTrigger(dk, inSettlement);
@@ -18343,7 +17584,7 @@ async function _checkRomanceTravelTriggers(destCell = {}) {
   if (typeof _checkBrynnTravelTrigger  === 'function') await _checkBrynnTravelTrigger(dk);
   if (typeof _checkTormundTravelTrigger=== 'function') await _checkTormundTravelTrigger(dk);
   if (typeof _checkDagriTravelTrigger  === 'function') await _checkDagriTravelTrigger(dk);
-  if (typeof _checkAldricTravelTrigger === 'function') await _checkAldricTravelTrigger(dcv);
+  if (typeof _checkAldricTravelTrigger === 'function') await _checkAldricTravelTrigger(dk);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -18502,7 +17743,7 @@ async function _rynTailScene() {
   _buildWheel([{ label: '⏳ …', action: () => {} }]);
   addStory('You\'re walking together when you catch it — the same figure, two streets back. Third time in the last hour.');
   await waitForEnter('You say nothing yet. You\'re watching.');
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier >= 3) {
     addStory('You get a clean look: the gait, the coat, the way they\'ve been angling to match you without being obvious. Amateur, but not alone.');
     addStory('You tell Ryn. Quietly. Without turning around. She doesn\'t react visibly. "How long?" "An hour." "I know a way out."');
@@ -18540,7 +17781,7 @@ async function _rynFindClerk() {
   const r = _romance('ryn');
   _buildWheel([{ label: '⏳ Searching…', action: () => {} }]);
   await runInlineProgress('Tracing Aldus Prell through old records…', 3000);
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 4) {
     addStory('It takes three days and a chain of favours. Aldus Prell is in Ealdenford — comfortable house, new name, quiet life. He\'s aged a decade in three years.');
     addStory('He knows why you\'re there the moment he sees you aren\'t a debt collector. He tries to close the door. Ryn steps into the frame.');
@@ -18606,7 +17847,7 @@ async function _rynConfront() {
   addStory('He isn\'t expecting anyone. Ryn stands across from him. She doesn\'t raise her voice.');
   await waitForEnter();
   const plan = r.flags.plan;
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (plan === 'magistrate') {
     if (tier >= 3) {
       addStory('"The magistrate already has a copy," Ryn says. "This conversation is a courtesy." He goes white. Then says nothing. There isn\'t much to say.');
@@ -18756,7 +17997,7 @@ async function _miraTracingPattern() {
   addStory('She spreads three pages of notes on the table. Careful handwriting, sketches of symptoms, dates. "Three villages. Six weeks apart. Same symptoms in the same order. That\'s not illness — illness doesn\'t keep a schedule."');
   addStory('"I need to reach the next village before it starts. Will you travel with me?"');
   await waitForEnter();
-  const tier = await performSkillCheck('Perception');
+  const tier = performSkillCheck('Perception');
   if (tier >= 3) {
     addStory('Looking at the map, you spot something she hasn\'t marked: all three villages sit on the same trade road.');
     addStory('"That\'s significant," she says, looking where you pointed. "That changes where we start looking."');
@@ -18776,7 +18017,7 @@ async function _miraAheadOfIt() {
   await runInlineProgress('Investigating before symptoms appear…', 4000);
   const r = _romance('mira');
   addStory('You arrive before anything has started. Mira moves through the village methodically — water sources, food stores, every merchant who passed through in the last two weeks.');
-  const tier = await performSkillCheck('Herbalism');
+  const tier = performSkillCheck('Herbalism');
   if (tier >= 4) {
     addStory('Your examination of the well water reveals something faint. Not natural contamination — too consistent, too targeted. You show Mira.');
     addStory('"There." She crouches beside the well. "Deliberate. Someone knew what they were doing." Her voice is controlled. "This is very bad and very specific."');
@@ -18801,7 +18042,7 @@ async function _miraFollowSource() {
   await runInlineProgress('Following the supply chain…', 4000);
   const r = _romance('mira');
   addStory('The contamination traces to one merchant who serviced all three villages. He isn\'t hard to find.');
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 4) {
     addStory('You approach carefully — not accusing, just asking about his route and suppliers. He opens up. He had no idea what he was carrying. Someone paid him to include an additive "for preservation" and told him it was standard practice.');
     addStory('"I\'ve been doing this for twenty years," he says, shaken. "I never questioned things I should have."');
@@ -18858,7 +18099,7 @@ async function _miraStopIt() {
     }},
     { label: '⚔️ Confront them directly', action: async () => {
       await runInlineProgress('Moving on the land agent…', 3500);
-      const tier = await performSkillCheck('Combat');
+      const tier = performSkillCheck('Combat');
       if (tier >= 3) {
         addStory('The confrontation is dangerous and direct. The hired men are not a match for someone ready for them. The agent himself folds quickly when he understands the situation isn\'t theoretical anymore.');
         addStory('He signs a formal withdrawal of interest in all three villages. He understands what you have on him.');
@@ -18909,7 +18150,7 @@ async function _meetCassin() {
       _goBack();
     }},
     { label: '🃏 Challenge him to an honest game', action: async () => {
-      const tier = await performSkillCheck('Deception');
+      const tier = performSkillCheck('Deception');
       if (tier >= 4) {
         addStory('He loses, which delights him. "You\'re better at this than you look," he says. "That\'s the nicest thing I know how to say."');
         _romanceTrust('cassin', 10);
@@ -19006,7 +18247,7 @@ async function _cassinFullStory() {
   await waitForEnter();
   addStory('"Her son has found me," he says. "He\'s not violent by nature. He\'s been carrying this for ten years and violence has started to seem like a reasonable response." He looks at his hands. "I understand that."');
   await waitForEnter();
-  const tier = await performSkillCheck('Empathy');
+  const tier = performSkillCheck('Empathy');
   if (tier >= 3) {
     addStory('You say something that isn\'t absolution and isn\'t condemnation. He looks up.');
     addStory('"You\'re not going to tell me it wasn\'t that bad," he says. "Good. I don\'t need that." He seems, slightly, to relax.');
@@ -19029,7 +18270,7 @@ async function _cassinWrongedParty() {
   await waitForEnter();
   _buildWheel([
     { label: '🗣️ Push him toward it', action: async () => {
-      const tier = await performSkillCheck('Persuasion');
+      const tier = performSkillCheck('Persuasion');
       if (tier >= 3) {
         addStory('"What does he actually want that you can give him?" you ask. Cassin is quiet for a long time.');
         addStory('"He wants to know what his father was like during those months. I\'m the only person who can tell him." He looks like he\'d rather be anywhere else.');
@@ -19076,7 +18317,7 @@ async function _cassinChoice() {
   _buildWheel([
     { label: '💬 Tell him to tell the truth', action: async () => {
       await runInlineProgress('The truth…', 3000);
-      const tier = await performSkillCheck('Persuasion');
+      const tier = performSkillCheck('Persuasion');
       if (tier >= 3) {
         addStory('He tells Aldus everything he remembers — the things that were real, separate from the con. A man who was kind to strangers. Who laughed too easily. Who trusted people he shouldn\'t have.');
         addStory('Aldus leaves without speaking. Cassin stays in town for a week doing nothing in particular. It seems to help.');
@@ -19223,7 +18464,7 @@ async function _edricShowsEvidence() {
   addStory('He doesn\'t offer the journal. You ask about what he does out here, and after a moment he goes to his pack and brings it out. Four months of entries: kill sites, sketched wounds, a map with marks.');
   addStory('"It\'s been killing without eating," he says. "No carcasses scavenged. No meat taken. Wounds that don\'t match anything I know." He\'s been working alone because no one believed him.');
   await waitForEnter();
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier >= 4) {
     addStory('The pattern is immediately clear — the spacing between sites, the progression, the interval shortening. "It\'s accelerating," you say.');
     addStory('He looks at you the way someone looks when they\'ve been alone with information too long and someone else finally sees it.');
@@ -19255,7 +18496,7 @@ async function _edricTrackBack() {
   _buildWheel([{ label: '⏳ Tracking the origin…', action: () => {} }]);
   await runInlineProgress('Following the creature\'s route backward…', 4000);
   const r = _romance('edric');
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier >= 4) {
     addStory('The trail back is clear once you know what you\'re following — a pattern in the land, a route used repeatedly. It leads toward old ruins in the hills. The place feels wrong when you approach it.');
     _romanceTrust('edric', 8);
@@ -19415,7 +18656,7 @@ async function _sylaraWhatSheFound() {
   addStory('She shows you the fragments — old script, careful hand. The official founding story says a coalition of scholars and warriors built Thalorion on uninhabited land. This account says there were people there. Not many — a small community — but they were removed.');
   addStory('"The documents don\'t say how," she says. "I\'ve been trying to find out." She says it the way she says most things — as a statement of current operational status, not a plea.');
   await waitForEnter();
-  const tier = await performSkillCheck('History');
+  const tier = performSkillCheck('History');
   if (tier >= 3) {
     addStory('Your knowledge of elven settlement patterns adds context — the timing matches a gap in the migration records that scholars have attributed to poor documentation. It wasn\'t poor documentation.');
     addStory('"That fills in three weeks of searching," she says. She doesn\'t look grateful exactly; she looks satisfied, which for her is the same thing.');
@@ -19462,7 +18703,7 @@ async function _sylaraFindFragments() {
   const r = _romance('sylara');
   addStory('The fragments she has aren\'t the whole document. The rest was split and redistributed — standard practice when burying something you can\'t bring yourself to destroy. Finding the other pieces requires travel to two other elven kingdoms.');
   await waitForEnter();
-  const tier = await performSkillCheck('Research');
+  const tier = performSkillCheck('Research');
   if (tier >= 4) {
     addStory('Your research approach cuts weeks off the search — cross-referencing catalogue references across three archives, finding the fragments catalogued under unrelated headings. The Loremasters Society is also looking. You beat them to one fragment by hours.');
     _romanceTrust('sylara', 12);
@@ -19535,7 +18776,7 @@ async function _sylaraEscalation() {
   _buildWheel([
     { label: '⚔️ Face the Society directly', action: async () => {
       await runInlineProgress('Confronting the Loremasters…', 4000);
-      const tier = await performSkillCheck('Persuasion');
+      const tier = performSkillCheck('Persuasion');
       if (tier >= 4) {
         addStory('The confrontation is direct and, surprisingly, measured. You present what you have — including the records of the Society\'s own concealment — and make clear what publication would mean versus what silence would cost them. They stand down.');
         _romanceTrust('sylara', 15);
@@ -19676,7 +18917,7 @@ async function _eavanMapRing() {
   const r = _romance('eavan');
   addStory('Together you trace the full circumference. The ring is precise — mathematically so. The spacing between the dead trees is identical. Something made this pattern.');
   await waitForEnter();
-  const tier = await performSkillCheck('Mysticism');
+  const tier = performSkillCheck('Mysticism');
   if (tier >= 3) {
     addStory('At the center of the ring, still alive, stands a tree that is older than anything else in the forest — older than the forest itself, by your estimate. It is the only tree in the ring that isn\'t sick. That is not a coincidence.');
     addStory('"The center is the point," Eavan says quietly. "Everything else is the radius."');
@@ -19709,7 +18950,7 @@ async function _eavanStructure() {
   const r = _romance('eavan');
   addStory('A structure — older than Orindroth, older than the elves settling this forest. Built into the rock. It\'s still running. Mechanisms drawing something up through conduits that connect to root systems above. The structure was designed to do exactly this: drain from the forest, feeding something in the deepest chamber.');
   await waitForEnter();
-  const tier = await performSkillCheck('Herbalism');
+  const tier = performSkillCheck('Herbalism');
   if (tier >= 3) {
     addStory('The conduit material is biological — grown, not carved. Whoever built this understood plant root systems at a level that took modern herbalists centuries to reach. They built this before that knowledge existed by any record.');
     _romanceTrust('eavan', 8);
@@ -19899,7 +19140,7 @@ async function _vorathMove() {
     { label: '🌑 A smuggler\'s route', action: async () => {
       _buildWheel([{ label: '⏳ Finding the contact…', action: () => {} }]);
       await runInlineProgress('Navigating the underground route…', 4000);
-      const tier = await performSkillCheck('Stealth');
+      const tier = performSkillCheck('Stealth');
       if (tier >= 3) {
         addStory('The smuggler\'s route works. Elarin is out of Velra\'syl before dawn. Vorath walks the entire way with them — it\'s the most tense you\'ve seen him, and the most present.');
         _romanceTrust('vorath', 10);
@@ -19914,7 +19155,7 @@ async function _vorathMove() {
     { label: '📋 Falsified travel documents', action: async () => {
       _buildWheel([{ label: '⏳ Acquiring the seals…', action: () => {} }]);
       await runInlineProgress('Forging the papers…', 4000);
-      const tier = await performSkillCheck('Deception');
+      const tier = performSkillCheck('Deception');
       if (tier >= 4) {
         addStory('The documents are perfect. Elarin walks through the gate as a minor merchant\'s apprentice. The guard doesn\'t look twice. Vorath, watching from across the square, allows himself to exhale.');
         _romanceTrust('vorath', 12);
@@ -19949,7 +19190,7 @@ async function _vorathTrail() {
   const r = _romance('vorath');
   addStory('The trail leads outside Velra\'syl — the first time Vorath has left Naradreth in years. He handles this by being very precise about logistics and saying nothing about how strange it feels.');
   await waitForEnter();
-  const tier = await performSkillCheck('Perception');
+  const tier = performSkillCheck('Perception');
   if (tier >= 3) {
     addStory('You notice he\'s different outside the city — less managed, less careful. Not relaxed, exactly. Just slightly less constructed. You don\'t comment on it.');
     _romanceTrust('vorath', 10);
@@ -20137,7 +19378,7 @@ async function _lorienObservation() {
   await waitForEnter();
   addStory('"It\'s been doing this since I noticed it," he says. "I\'m starting to think it noticed me first." He says this as a factual observation, though the implication is remarkable.');
   await waitForEnter();
-  const tier = await performSkillCheck('Mysticism');
+  const tier = performSkillCheck('Mysticism');
   if (tier >= 3) {
     addStory('Your reading suggests this movement isn\'t simple phototropism or response to warmth — it\'s specifically responsive to voice frequencies, consistently and selectively.');
     addStory('"That\'s what I thought," he says, "but I wanted another person to see it first."');
@@ -20171,7 +19412,7 @@ async function _lorienSource() {
   const r = _romance('lorien');
   addStory('The plant traces to a root system that runs beneath the garden\'s oldest section and out through the wall — outside entirely. Following it into the Sivanrift countryside leads to an old location, marked on no map. The ground is unusual. Things grow too fast, then stop.');
   await waitForEnter();
-  const tier = await performSkillCheck('Herbalism');
+  const tier = performSkillCheck('Herbalism');
   if (tier >= 3) {
     addStory('The root system here is ancient — far older than the gardens, older than the city itself. Not a foreign invader. A foundation. The garden was built on top of this.');
     addStory('"Oh," Lorien says, quietly. He\'s putting something together.');
@@ -20205,7 +19446,7 @@ async function _lorienCommunicate() {
   const r = _romance('lorien');
   addStory('Lorien is systematic about it — patterns, repeated sounds, responses to responses. You assist. The plant — the entire organism, as it becomes clear the garden beds are a single growing thing — responds to specific sequences. Not immediately. Slowly. Deliberately.');
   await waitForEnter();
-  const tier = await performSkillCheck('Mysticism');
+  const tier = performSkillCheck('Mysticism');
   if (tier >= 4) {
     addStory('A pattern emerges in the responses — not language, but structure. Something like memory. Something like trying to surface a thought that has been forming for a very long time.');
     addStory('"It\'s been trying to communicate since it noticed the gardens were occupied," Lorien says. "That\'s been happening for longer than the gardens have existed."');
@@ -20362,7 +19603,7 @@ async function _brynnJourney() {
   addStory('Three days of travel. She talks a lot when she\'s interested in something, goes quiet when she\'s thinking, and occasionally stops walking to look at something in the landscape — a crystal formation in the rock, the way water moves around a particular stone.');
   addStory('"You\'ve been to a lot of places," she says, on the second night. "What\'s the strangest thing you\'ve seen?"');
   await waitForEnter();
-  const tier = await performSkillCheck('Persuasion', 0, 'telling an impressive story');
+  const tier = performSkillCheck('Lore');
   if (tier >= 3) {
     addStory('Your answer surprises her — which takes something. She asks three questions about it. She adds it to her mental catalogue and visibly cross-references it against things she already knows.');
     _romanceTrust('brynn', 10);
@@ -20398,7 +19639,7 @@ async function _brynnOthersArrive() {
   await waitForEnter();
   addStory('"We need to understand it before either of them takes it," Brynn says. "I need more time." She looks at you. "Can you buy it?"');
   await waitForEnter();
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 3) {
     addStory('You negotiate a window — a few days for preliminary analysis before any decisions are made. The military is skeptical. The scholar is grateful. Brynn uses every minute.');
     _romanceTrust('brynn', 10);
@@ -20596,7 +19837,7 @@ async function _tormundTraceTheft() {
   const r = _romance('tormund');
   addStory('The piece went through a fence in Feldarún — not hard to identify. The fence passed it to a buyer outside the city. The buyer is a collector of rare dwarven craftwork who lives in another kingdom.');
   await waitForEnter();
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 3) {
     addStory('The right approach with the right people gets you a name and an approximate location. The collector doesn\'t advertise, but people who handle rare pieces know who buys them.');
     _romanceTrust('tormund', 8);
@@ -20626,7 +19867,7 @@ async function _tormundCollector() {
       _goBack();
     }},
     { label: '⚖️ Find leverage', action: async () => {
-      const tier = await performSkillCheck('Perception');
+      const tier = performSkillCheck('Perception');
       if (tier >= 3) {
         addStory('The collector\'s acquisition practices have gaps — pieces obtained in ways that wouldn\'t survive legal scrutiny. You have enough to make returning the piece preferable to the alternative.');
         addStory('Tormund doesn\'t ask what the leverage was. The piece is coming home.');
@@ -20767,7 +20008,7 @@ async function _dagriLastSeen() {
   const r = _romance('dagri');
   addStory('The last time anyone saw Darvek: a mining outpost at the foot of the Ironback, where he bought supplies. Six months ago. He was confident, they say. He had a map he\'d drawn himself.');
   await waitForEnter();
-  const tier = await performSkillCheck('Persuasion');
+  const tier = performSkillCheck('Persuasion');
   if (tier >= 3) {
     addStory('You\'re good with people in the way you need to be. An older miner remembers which direction Darvek headed, and what he asked about before leaving. It\'s more than you expected to get.');
     _romanceTrust('dagri', 8);
@@ -20786,7 +20027,7 @@ async function _dagriMountains() {
   const r = _romance('dagri');
   addStory('The Ironback are not welcoming terrain. Dagri is competent here in the way of someone who grew up in Rendarost — she contributes actively rather than following. She has stopped being controlled. She is focused and fast and you can tell this is more natural to her than the stillness was.');
   await waitForEnter();
-  const tier = await performSkillCheck('Survival');
+  const tier = performSkillCheck('Survival');
   if (tier >= 3) {
     addStory('Traces: a campsite, three days old at most. One of Darvek\'s tools at a waypoint — left deliberately, a marker. He was still moving with intention when he was here.');
     _romanceTrust('dagri', 8);
@@ -20820,7 +20061,7 @@ async function _dagriFindDarvek() {
   _buildWheel([{ label: '⏳ Searching deeper…', action: () => {} }]);
   await runInlineProgress('Going further into the mountain…', 5000);
   const r = _romance('dagri');
-  const tier = await performSkillCheck('Tracking');
+  const tier = performSkillCheck('Tracking');
   if (tier >= 4) {
     addStory('The trail is clear enough to follow. Darvek went into a passage the formation partially conceals. Inside: a sheltered cave. He\'s there. Alive, rations low, a twisted ankle that slowed him enough to make leaving feel risky.');
     addStory('Dagri gets there before you do. She says nothing. She sits down next to him.');
@@ -20857,10 +20098,10 @@ async function _dagriWhatHasHe() {
 
 // ── 13.6.14 · ALDRIC VARN ──────────────────────────────────────
 
-async function _checkAldricTravelTrigger(dcv) {
+async function _checkAldricTravelTrigger(dk) {
   const r = _romance('aldric');
   if (r.met) return;
-  if (dcv !== 'Brythford') return;
+  if (dk !== 'Brythwen') return;
   if (Math.random() > 0.65) return;
   await _meetAldric();
 }
@@ -20930,7 +20171,7 @@ async function _aldricRubbings() {
   const r = _romance('aldric');
   addStory('Paper rubbings taken during a previous authorized expedition: the runes are precise, formal, extensive. Not the work of carving a message in passing. Someone spent a long time making these. The space they\'re in is large — Aldric has seen perhaps a third of it.');
   await waitForEnter();
-  const tier = await performSkillCheck('History');
+  const tier = performSkillCheck('History');
   if (tier >= 3) {
     addStory('Your knowledge of pre-settlement history adds context: this script predates the earliest known dwarven expansion into this region by at least three millennia. Whatever made this predates dwarven civilization as recorded.');
     addStory('"That\'s what I concluded," he says. "It\'s good to hear it from someone else."');
@@ -20950,7 +20191,7 @@ async function _aldricVault() {
   _buildWheel([
     { label: '📋 Find the right paperwork', action: async () => {
       await runInlineProgress('Navigating the archive bureaucracy…', 4000);
-      const tier = await performSkillCheck('Decrypting', 0, 'navigating archival bureaucracy');
+      const tier = performSkillCheck('Lore');
       if (tier >= 4) {
         addStory('The right signature from the right authority — available if you know where to look and what to ask for. Aldric watches you work through this with the interest of someone who recognizes a particular kind of intelligence.');
         addStory('"I wouldn\'t have thought of that," he says. He means it as a compliment.');
@@ -20965,7 +20206,7 @@ async function _aldricVault() {
     }},
     { label: '🎭 Create a distraction', action: async () => {
       await runInlineProgress('Working around the restriction…', 3000);
-      const tier = await performSkillCheck('Deception');
+      const tier = performSkillCheck('Deception');
       if (tier >= 3) {
         addStory('The distraction is clean and effective. The vault is accessed while the relevant archivist is occupied elsewhere. Aldric moves with surprising efficiency once the opening exists.');
         _romanceTrust('aldric', 8);
@@ -21013,7 +20254,7 @@ async function _aldricInscription() {
   _buildWheel([{ label: '⏳ Reading the full accounting…', action: () => {} }]);
   await runInlineProgress('Following the inscription sequence…', 5000);
   const r = _romance('aldric');
-  const tier = await performSkillCheck('Mysticism');
+  const tier = performSkillCheck('Mysticism');
   if (tier >= 4) {
     addStory('Working the sequence with Aldric, a pattern emerges: the runes record extinctions. Species, civilizations, ways of existing — catalogued with the precision of someone who understood they were watching the end of things and wanted the record to survive them.');
     addStory('"Something made this," Aldric says, "that understood what was being lost." He says this quietly, like he\'s working out how large that thought is.');
@@ -21177,12 +20418,12 @@ window.PROFESSION_DATA = PROFESSION_DATA;
 
 // ── Culture data — stat modifiers and racial bonuses ─────────────────────
 const CULTURE_DATA = {
-  'Human':      { maxLife:100, maxStamina:50, maxMana:0,  bonusSkill:'Persuasion' },
-  'Elf':        { maxLife:90,  maxStamina:50, maxMana:70, bonusSkill:'Herbalism'  },
-  'Half-Elf':   { maxLife:95,  maxStamina:50, maxMana:55, bonusSkill:'Persuasion' },
-  'Dwarf':      { maxLife:120, maxStamina:65, maxMana:0,  bonusSkill:'Smithing'   },
-  'Half-Orc':   { maxLife:110, maxStamina:70, maxMana:25, bonusSkill:'Axes'       },
-  'Half-Goblin':{ maxLife:85,  maxStamina:65, maxMana:0,  bonusSkill:'Stealth'    },
+  'Human':      { maxLife:100, maxStamina:50, maxMana:0,  bonusSkill:null,          bonusItem:null,          bonusGold:15 },
+  'Elf':        { maxLife:90,  maxStamina:50, maxMana:70, bonusSkill:'Herbalism',   bonusItem:'Herb Pouch',  bonusGold:0  },
+  'Half-Elf':   { maxLife:95,  maxStamina:50, maxMana:55, bonusSkill:'Persuasion',  bonusItem:null,          bonusGold:0  },
+  'Dwarf':      { maxLife:120, maxStamina:65, maxMana:0,  bonusSkill:'Smithing',    bonusItem:'Iron Ingot',  bonusGold:0  },
+  'Half-Orc':   { maxLife:110, maxStamina:70, maxMana:0,  bonusSkill:'Axes',         bonusItem:'Battle Axe', bonusGold:0  },
+  'Half-Goblin':{ maxLife:85,  maxStamina:65, maxMana:0,  bonusSkill:'Stealth',     bonusItem:'Dagger',      bonusGold:0  },
 };
 window.CULTURE_DATA = CULTURE_DATA;
 
@@ -21199,27 +20440,33 @@ window.CULTURE_PROFESSIONS = CULTURE_PROFESSIONS;
 
 // ── Origin data ────────────────────────────────────────────────────────────
 const ORIGIN_DATA = {
-  noble:      { label:'Noble house',        skill:'Persuasion', trait:'Honorable',   item:['Fine Clothing',1],  gold:15 },
-  village:    { label:'Common village',     skill:'Herbalism',  trait:'Trustworthy', item:['Rations',2],        gold:0  },
-  wilderness: { label:'The wilderness',     skill:'Survival',   trait:'Resilient',   item:['Hunting Knife',1],  gold:0  },
-  port:       { label:'Port town',          skill:'Navigation', trait:'Cunning',     item:['Waterskin',1],      gold:5  },
-  mountain:   { label:'A mountain hold',    skill:'Smithing',   trait:'Determined',  item:['Torch',2],          gold:3  },
-  farmstead:  { label:'The farmsteads',     skill:'Foraging',   trait:'Patient',     item:['Rations',2],        gold:0  },
-  slums:      { label:'The slums',          skill:'Thievery',   trait:'Sneaky',      item:['Candle',3],         gold:3  },
-  monastery:  { label:'Monastic grounds',   skill:'Healing',    trait:'Wise',        item:['Herb Pouch',1],     gold:0  },
+  noble:      { desc: '+15 gold · Fine Clothing',           items: [['Fine Clothing',1]],               gold: 15 },
+  village:    { desc: '+Rations ×2 · Rope',                 items: [['Rations',2],['Rope',1]],          gold: 0  },
+  wilderness: { desc: '+Torch ×2 · Hunting Knife',          items: [['Torch',2],['Hunting Knife',1]],   gold: 0  },
+  port:       { desc: '+Rope · Waterskin · +5 gold',        items: [['Rope',1],['Waterskin',1]],        gold: 5  },
 };
 
 // ── Motivation data ────────────────────────────────────────────────────────
 const MOTIVATION_DATA = {
-  vengeance:  { label:'Seeking vengeance',       morality:-5, hope:-3  },
-  knowledge:  { label:'Pursuing knowledge',      morality: 0, hope: 5  },
-  law:        { label:'Running from the law',    morality:-3, hope:-5  },
-  honor:      { label:'Answering a call',        morality: 8, hope: 6  },
-  fortune:    { label:'Chasing fortune',         morality:-3, hope: 3  },
-  protect:    { label:'Protecting someone',      morality: 7, hope: 8  },
-  wanderlust: { label:'Wanderlust',              morality: 2, hope: 7  },
-  atonement:  { label:'Seeking atonement',       morality: 4, hope:-2  },
+  vengeance: { desc: '+1 level to primary combat skill',         bonus: 'combat'  },
+  knowledge: { desc: '+1 level to primary arcane/craft skill',   bonus: 'arcane'  },
+  law:        { desc: '+1 Stealth level',                        bonus: 'stealth' },
+  honor:      { desc: '+1 level to first skill',                 bonus: 'first'   },
+  fortune:    { desc: '+20 gold',                                bonus: 'gold',  gold: 20 },
 };
+
+// ── Helper: determine which skill gets a motivation bonus level ────────────
+function _motivationBoostedSkill(profSkills, motivationKey) {
+  if (!motivationKey || !MOTIVATION_DATA[motivationKey]) return null;
+  const bonus = MOTIVATION_DATA[motivationKey].bonus;
+  const COMBAT_SKILLS  = new Set(['Swordsmanship','Archery','Brawling']);
+  const ARCANE_SKILLS  = new Set(['Light Magic','Alchemy','Crafting','Smithing','Fletching']);
+  if (bonus === 'combat')  return profSkills.find(s => COMBAT_SKILLS.has(s))  || null;
+  if (bonus === 'arcane')  return profSkills.find(s => ARCANE_SKILLS.has(s))  || null;
+  if (bonus === 'stealth') return profSkills.includes('Stealth') ? 'Stealth'  : null;
+  if (bonus === 'first')   return profSkills[0] || null;
+  return null; // 'gold' bonus has no skill effect
+}
 
 // ── Populate profession select ─────────────────────────────────────────────
 const charModal   = document.getElementById('character-modal');
@@ -21287,35 +20534,35 @@ function updateCharPreview() {
     return;
   }
 
-  // Skills: primary profession skill only
-  const primarySkillPreview = profData.skills[0] || '—';
-  skillsEl.textContent = primarySkillPreview + ' (Lv 1)';
+  // Skills
+  const boostedSkill = _motivationBoostedSkill(profData.skills, motivSel.value);
+  skillsEl.innerHTML = profData.skills.map(s => {
+    const lv = (boostedSkill === s) ? 2 : 1;
+    return `${s} <span style="opacity:0.65">(Lv ${lv})</span>`;
+  }).join('<br>');
 
   // Trait
   traitEl.textContent = profData.trait;
 
-  // Items — profession (up to 3) + origin item
+  // Items — merge profession + origin items, sum duplicates
   const itemMap = new Map();
-  profData.items.slice(0, 3).forEach(([name, qty]) => {
+  const allItems = [...profData.items, ...(origData ? origData.items : [])];
+  allItems.forEach(([name, qty]) => {
     itemMap.set(name, (itemMap.get(name) || 0) + qty);
   });
-  if (origData && origData.item) {
-    const [oName, oQty] = origData.item;
-    itemMap.set(oName, (itemMap.get(oName) || 0) + oQty);
-  }
   itemsEl.innerHTML = [...itemMap.entries()]
     .map(([name, qty]) => qty > 1 ? `${name} ×${qty}` : name)
     .join('<br>');
 
-  // Gold — profession + origin
-  const totalGold = (profData.gold || 0) + (origData ? (origData.gold || 0) : 0);
+  // Gold
+  const totalGold = profData.gold
+    + (origData  ? origData.gold  : 0)
+    + (motivData && motivData.bonus === 'gold' ? (motivData.gold || 0) : 0);
   goldEl.textContent = `${totalGold} gp`;
 }
 
 // ── Create character ───────────────────────────────────────────────────────
 				createBtn.onclick = async () => {
-					// Read skip-tutorial preference before any validation
-					window.__enableTutorial = !document.getElementById('skip-tutorial-checkbox')?.checked;
 					const name = document.getElementById('char-name').value.trim();
 					const profKey = profSelect.value;
 					if (!name) {
@@ -21323,7 +20570,7 @@ function updateCharPreview() {
 						return;
 					}
 					if (!chosenGender) {
-						alert('Please select a body type.');
+						alert('Please select a gender.');
 						return;
 					}
 					if (!chosenCulture) {
@@ -21348,8 +20595,14 @@ function updateCharPreview() {
 					player.activeProfession = profKey;
 					player.socialClass      = PROFESSION_DATA[profKey]?.socialClass || '';
 
-					// Apply culture stat bonuses + 1 culture skill
+					// Apply skills
+					const boostedSkill = _motivationBoostedSkill(profData.skills, motivSel.value);
 					if (!player.skills) player.skills = {};
+					profData.skills.forEach(skillName => {
+						player.skills[skillName] = { level: (boostedSkill === skillName ? 2 : 1) };
+					});
+
+					// Apply culture stat bonuses
 					const cultData = CULTURE_DATA[chosenCulture];
 					if (cultData) {
 						player.maxLife    = cultData.maxLife;
@@ -21359,19 +20612,16 @@ function updateCharPreview() {
 						player.maxMana    = cultData.maxMana;
 						player.mana       = cultData.maxMana;
 						if (cultData.bonusSkill) {
-							player.skills[cultData.bonusSkill] = { level: 1, xp: 0, usageCount: 0 };
+							if (!player.skills[cultData.bonusSkill]) {
+								player.skills[cultData.bonusSkill] = { level: 1 };
+							} else {
+								player.skills[cultData.bonusSkill].level = Math.min(5, (player.skills[cultData.bonusSkill].level || 1) + 1);
+							}
 						}
+						if (cultData.bonusItem) addItem(cultData.bonusItem, 1);
 					}
 
-					// Apply profession: 1 primary skill + 1 trait + up to 3 items
-					const primarySkill = profData.skills[0];
-					if (primarySkill) {
-						if (player.skills[primarySkill]) {
-							player.skills[primarySkill].level = Math.min(5, (player.skills[primarySkill].level || 1) + 1);
-						} else {
-							player.skills[primarySkill] = { level: 1, xp: 0, usageCount: 0 };
-						}
-					}
+					// Apply trait
 					player.traits = [profData.trait];
 
 					// Apply starting recipes (silently — no per-recipe story spam at creation)
@@ -21380,32 +20630,15 @@ function updateCharPreview() {
 						if (!player.knownRecipes.includes(r)) player.knownRecipes.push(r);
 					});
 
-					// Apply profession items (up to 3)
-					const profItems = profData.items.slice(0, 3);
+					// Apply items — merge prof + origin, sum duplicates
 					const itemMap = new Map();
-					profItems.forEach(([iName, qty]) => {
+					const allItems = [...profData.items, ...(origData ? origData.items : [])];
+					allItems.forEach(([iName, qty]) => {
 						itemMap.set(iName, (itemMap.get(iName) || 0) + qty);
 					});
-
-					// Apply origin: 1 skill + 1 trait + 1 item
-					if (origData) {
-						if (origData.skill) {
-							if (player.skills[origData.skill]) {
-								player.skills[origData.skill].level = Math.min(5, (player.skills[origData.skill].level || 1) + 1);
-							} else {
-								player.skills[origData.skill] = { level: 1, xp: 0, usageCount: 0 };
-							}
-						}
-						if (origData.trait && !player.traits.includes(origData.trait)) {
-							player.traits.push(origData.trait);
-						}
-						if (origData.item) {
-							const [oName, oQty] = origData.item;
-							itemMap.set(oName, (itemMap.get(oName) || 0) + oQty);
-						}
-					}
-
-					itemMap.forEach((qty, iName) => { addItem(iName, qty); });
+					itemMap.forEach((qty, iName) => {
+						addItem(iName, qty);
+					});
 
 					// Every character starts with a waterskin (unless their profession already gives one)
 					if (!player.inventory['Waterskin'] && !player.inventory['Waterskin (Full)']) {
@@ -21470,18 +20703,14 @@ function updateCharPreview() {
 					  if (!player.equipped[_slot]) player.equipped[_slot] = clothingName;
 					});
 
-					// Apply gold: profession + origin
-					player.gold = (profData.gold || 0) + (origData ? (origData.gold || 0) : 0);
+					// Apply gold
+					const motivGold = (motivData && motivData.bonus === 'gold') ? (motivData.gold || 0) : 0;
+					const cultGold  = cultData ? (cultData.bonusGold || 0) : 0;
+					player.gold = profData.gold + (origData ? origData.gold : 0) + motivGold + cultGold;
 
 					// Store background for profile
 					player.origin     = originSel.value;
 					player.motivation = motivSel.value;
-
-					// Apply motivation: morality + hope
-					if (motivData) {
-						player.morality = motivData.morality || 0;
-						player.hope     = motivData.hope     || 0;
-					}
 
 					// Apply bonus attributes selected at character creation
 					const _bonusAttrs = window.__selectedBonusAttributes || [];
@@ -21505,26 +20734,8 @@ function updateCharPreview() {
 							if (!player.bonusFlags) player.bonusFlags = {};
 							player.bonusFlags[_fx.flag] = true;
 						}
-						if (_fx.items) {
-							for (const _iname of _fx.items) addItem(_iname, 1);
-						}
 					}
 					window.__selectedBonusAttributes = [];
-
-					// Apply backstory quiz results (parents trait, 3 attrs, inheritance gold, backstory)
-					const _quiz = window.__quizResults || {};
-					for (const _tr of (_quiz.traits || [])) {
-						if (!player.traits.includes(_tr)) player.traits.push(_tr);
-					}
-					player.gold = (player.gold || 0) + (_quiz.gold || 0);
-					player.backstory = _quiz.backstory || '';
-					window.__quizResults = null;
-
-					// Store pronouns and appearance
-					player.pronouns   = window.__pronouns   || { subject: 'they', object: 'them', possAdj: 'their', possPro: 'theirs', reflexive: 'themselves', label: 'They / Them' };
-					player.appearance = window.__appearance || { traits: {}, uniqueFeatures: [], description: '' };
-					window.__pronouns   = null;
-					window.__appearance = null;
 
 					// Initialize Sarsett quest state and corruption immunity
 					_initSarsett();
@@ -21544,9 +20755,6 @@ function updateCharPreview() {
 					updateTopStats();
 
 					_bookExitCharCreation(() => {
-						_prevGoldForSound = player.gold;
-						window.titleMusicFadeOut?.();
-						SoundManager?.updateAmbience();
 						addStory(`Character created. Welcome ${name}.`);
 						addWorldEvent(`${name} begins their journey as a ${profKey}.`, 'player');
 						addStory(`You arrive on unfamiliar shores, to a place unknown to you- a land stricken from any map you've ever seen. There's a mystical presence about this place, the very air smelling of wonder and mystery. Weary and hungry after your long journey here, you must choose your next steps wisely...`);
@@ -21572,7 +20780,6 @@ await waitForEnter();
 
 					player.currentLocation = coord;
 					updateTopStats();
-					SoundManager?.updateAmbience();
 
 					// now reposition the map marker as before…
 					const [, xStr, yStr] = coord.match(/^x(\d+)_y(\d+)$/);
@@ -21601,7 +20808,7 @@ addStory("As you stare into the object, you begin to lose yourself within its se
 await waitForEnter();
 addStory("A faint ember awakens at the heart of the sphere- a soft glow at its core that pulses slowly, as if breathing...");
 await waitForEnter();
-addStory("You can't shake the distinct feeling that it's staring back at you. Observing. Peering into your very soul...");
+addStory("You can't shake the distinct feeling that the it's staring back at you. Observing. Peering into your very soul...");
 await waitForEnter();
 addStory("In a fleeting moment of unease, it crosses your mind to discard it- to leave it in the dirt where you found it and never look back. Yet the notion triggers a sharp sorrow, tears welling in a sudden moment of grief. You feel a deep attachment to it. The object has anchored itself to you, or you to it; the difference no longer matters. Without it, you'd be lost...");
 await waitForEnter();
@@ -22195,11 +21402,10 @@ if (canShow) {
 					let html;
 					const isDiscovered = cell.discovered || iconsVisible || key === player?.currentLocation;
 					if (!isDiscovered) {
-						const _unveiledBiome = cell.biome ? ` <span style="opacity:0.6">(${cell.biome})</span>` : '';
 						if (cell.nearby) {
-							html = `<div class="tooltip-zone"><strong>&#10067; Something Nearby</strong>${_unveiledBiome}<br><em>A discovery awaits.</em></div>`;
+							html = `<div class="tooltip-zone"><strong>&#10067; Something Nearby</strong><br><em>A discovery awaits.</em></div>`;
 						} else {
-							html = `<div class="tooltip-zone"><strong>Unexplored</strong>${_unveiledBiome}<br><em>Travel here to reveal it.</em></div>`;
+							html = `<div class="tooltip-zone"><strong>Unexplored</strong><br><em>Travel here to reveal it.</em></div>`;
 						}
 					} else if (cell.zone) {
 						let icon = '';
@@ -22495,8 +21701,6 @@ function openCellEditor(key) {
 				initializeQuickSlots();
 				updatePlayerStats();
 				updateTopStats();
-				_prevGoldForSound = player.gold;
-				SoundManager?.updateAmbience();
 				_initTradeModal();
 
 	// Auto-roll toggles — both checkboxes stay in sync
@@ -22509,59 +21713,6 @@ function openCellEditor(key) {
 	}
 	document.getElementById('auto-roll-toggle')?.addEventListener('change', e => _syncAutoRoll(e.target.checked));
 	document.getElementById('settings-auto-roll')?.addEventListener('change', e => _syncAutoRoll(e.target.checked));
-
-	// Button sounds: title screen options → menu_select, everything else → button_press
-	document.addEventListener('click', e => {
-		const btn = e.target.closest('button');
-		if (!btn || btn.disabled) return;
-		const sound = btn.classList.contains('ts-btn') ? 'menu_select' : 'button_press';
-		SoundManager?.play(sound);
-	}, true);
-
-	// option_hover on section tabs, journal sub-tabs, and title screen buttons
-	document.querySelectorAll('.bk-stab, .bk-jtab, .ts-btn').forEach(btn => {
-		btn.addEventListener('mouseenter', () => SoundManager?.play('option_hover'));
-	});
-
-	// Sound settings
-	(function _initSoundSettings() {
-		const enabledChk = document.getElementById('settings-sound-enabled');
-		const sfxSlider  = document.getElementById('settings-sfx-vol');
-		const ambSlider  = document.getElementById('settings-amb-vol');
-		if (!enabledChk || !sfxSlider || !ambSlider || typeof SoundManager === 'undefined') return;
-		enabledChk.checked  = SoundManager.enabled;
-		sfxSlider.value     = SoundManager.sfxVolume;
-		ambSlider.value     = SoundManager.ambienceVolume;
-		enabledChk.addEventListener('change', e => SoundManager.setEnabled(e.target.checked));
-		sfxSlider.addEventListener('input',   e => SoundManager.setSfxVolume(parseFloat(e.target.value)));
-		ambSlider.addEventListener('input',   e => SoundManager.setAmbienceVolume(parseFloat(e.target.value)));
-	})();
-
-	// Claude API key — load persisted value then wire save button
-	(function _initApiKeySettings() {
-		const inp    = document.getElementById('settings-claude-key');
-		const btn    = document.getElementById('settings-claude-key-save');
-		const status = document.getElementById('settings-claude-key-status');
-		if (!inp || !btn) return;
-		const existing = localStorage.getItem('nea_claude_key') || '';
-		if (existing) {
-			inp.value = existing;
-			if (status) status.textContent = '✓ Key saved';
-		}
-		btn.addEventListener('click', () => {
-			const val = inp.value.trim();
-			if (!val) {
-				localStorage.removeItem('nea_claude_key');
-				if (status) status.textContent = 'Key cleared.';
-			} else if (!val.startsWith('sk-ant-')) {
-				if (status) status.textContent = '⚠ Unexpected format — saved anyway.';
-				localStorage.setItem('nea_claude_key', val);
-			} else {
-				localStorage.setItem('nea_claude_key', val);
-				if (status) status.textContent = '✓ Key saved';
-			}
-		});
-	})();
 
 	window.setupMap = setupMap;
 	window.checkDiscovery = checkDiscovery;
@@ -22698,12 +21849,11 @@ function bookTurnPage(direction) {
   );
 }
 
-const SECTION_ORDER = ['story', 'inventory', 'character', 'map', 'lute', 'settings'];
+const SECTION_ORDER = ['story', 'inventory', 'character', 'map', 'settings'];
 
 function bookSwitchSection(section) {
   if (bookState.isAnimating) return;
   if (section === bookState.activeSection) return;
-  SoundManager?.play('turn_page');
 
   // Mirror a real book: tabs to the right of the current one turn forward,
   // tabs to the left turn backward (left page peels back).
@@ -22722,7 +21872,6 @@ function bookSwitchSection(section) {
     if (section === 'map')       setTimeout(() => { setupMap?.(); checkDiscovery?.(); renderWaypointBar?.(); }, 30);
     if (section === 'inventory') setTimeout(() => updateInventory?.(), 0);
     if (section === 'character') setTimeout(() => { updateJournal?.(); updatePlayerProfile?.(); }, 0);
-    if (section === 'lute')      setTimeout(() => typeof LuteSystem !== 'undefined' && LuteSystem.render(), 0);
   }
   function _activateLeftSection() {
     _bookActivateLeftSection(section);
@@ -22771,7 +21920,6 @@ function _bookExitCharCreation(onSectionReady) {
 }
 
 function bookSwitchJournalTab(tabId) {
-  SoundManager?.play('turn_page');
   document.querySelectorAll('#bksec-character .tab-content').forEach(tc => tc.classList.remove('active'));
   document.querySelectorAll('.bk-jtab').forEach(b => b.classList.remove('active'));
   document.getElementById(tabId)?.classList.add('active');
@@ -22950,157 +22098,6 @@ window.bookTurnPage          = bookTurnPage;
 window.bookEnterCharCreation = _bookEnterCharCreation;
 window.bookExitCharCreation  = _bookExitCharCreation;
 window.showNewGameSlotPicker = () => _showSaveSlotModal('new');
-
-// ── Shared AI Utilities ───────────────────────────────────────
-// Used by npcConversationEngine.js and any future AI-driven system.
-
-const _AI_MODEL = 'claude-haiku-4-5-20251001';
-const _AI_MAX_TOKENS = { narrative: 250, json: 400, long: 700 };
-
-// Snapshot the current game state into a compact context object.
-// Pass into callGameAI as part of userContext so AI always knows where/who/when.
-// extra — optional additional keys to merge in (e.g. { combat: combatState }).
-function buildActionContext(extra = {}) {
-	const cell    = (typeof mapData !== 'undefined' && mapData[player.currentLocation]) || {};
-	const equipped = player.equipped || {};
-
-	const eqList = Object.entries(equipped)
-		.filter(([, v]) => v)
-		.map(([slot, name]) => `${slot}: ${name}`)
-		.join(', ') || 'nothing notable';
-
-	const condList = (player.conditions || []).map(c => c.id || c).join(', ') || 'none';
-
-	const activeQuests = (player.journal?.quests || [])
-		.filter(q => q.status === 'Active')
-		.slice(0, 3)
-		.map(inst => {
-			const def = (typeof getQuestDef !== 'undefined' && getQuestDef(inst.id)) || null;
-			if (!def) return { title: inst.title || inst.id };
-			const obj = def.objectives?.[inst.objectiveIndex];
-			return { title: def.title, currentObjective: obj?.description };
-		});
-
-	// Strip HTML tags from recent story so the AI gets plain text
-	const recentStory = (player.storyLog || [])
-		.slice(-8)
-		.map(s => (s || '').replace(/<[^>]+>/g, '').trim())
-		.filter(Boolean);
-
-	return {
-		player: {
-			name:       player.name,
-			race:       player.race,
-			gender:     player.gender,
-			profession: player.profession,
-			level:      player.level,
-			morality:   player.morality || 0,
-			hope:       player.hope     || 0,
-			life:       `${player.life}/${player.maxLife}`,
-			stamina:    `${player.stamina}/${player.maxStamina}`,
-			conditions: condList,
-			equipped:   eqList,
-		},
-		location: {
-			name:        cell.cityVillage || cell.biome || player.currentLocation || 'unknown',
-			biome:       cell.biome       || 'unknown',
-			kingdom:     cell.kingdom     || player.currentKingdom || 'unknown',
-			description: cell.description || '',
-			zone:        cell.zone        || '',
-			timeOfDay:   player.timeOfDay || 'daytime',
-			weather:     player.weather   || 'Clear',
-		},
-		recentStory,
-		recentEvents: (player.worldEvents || []).slice(-5).map(e => e.text || e),
-		activeQuests,
-		...extra,
-	};
-}
-
-// Central AI call used by ALL game systems.
-// systemPrompt — sets the AI's role and output rules.
-// userContext  — any object or string (auto-serialised to JSON if object).
-// opts:
-//   mode        'narrative' (returns plain string) | 'json' (returns parsed object)
-//   fallback    value returned when no key set or any error
-//   maxTokens   override token budget
-//   model       override model ID
-async function callGameAI(systemPrompt, userContext, opts = {}) {
-	const apiKey = localStorage.getItem('nea_claude_key') || '';
-	if (!apiKey) return opts.fallback !== undefined ? opts.fallback : null;
-
-	const mode      = opts.mode      || 'narrative';
-	const maxTokens = opts.maxTokens || _AI_MAX_TOKENS[mode] || 350;
-	const model     = opts.model     || _AI_MODEL;
-
-	const finalSystem = mode === 'json'
-		? systemPrompt + '\n\nOutput ONLY valid JSON — no markdown, no explanation, nothing else.'
-		: systemPrompt;
-
-	try {
-		const resp = await fetch('https://api.anthropic.com/v1/messages', {
-			method: 'POST',
-			headers: {
-				'x-api-key':                                 apiKey,
-				'anthropic-version':                         '2023-06-01',
-				'content-type':                              'application/json',
-				'anthropic-dangerous-direct-browser-access': 'true',
-			},
-			body: JSON.stringify({
-				model,
-				max_tokens: maxTokens,
-				system:     finalSystem,
-				messages: [{
-					role:    'user',
-					content: typeof userContext === 'string'
-						? userContext
-						: JSON.stringify(userContext),
-				}],
-			}),
-		});
-
-		if (!resp.ok) {
-			const errBody = await resp.text().catch(() => '');
-			console.error(`[NEA AI] HTTP ${resp.status}`, errBody);
-			return opts.fallback !== undefined ? opts.fallback : null;
-		}
-
-		const data = await resp.json();
-		const raw  = (data.content?.[0]?.text || '').trim();
-
-		if (mode === 'json') {
-			const s = raw.indexOf('{');
-			const e = raw.lastIndexOf('}');
-			if (s === -1 || e === -1) throw new Error('No JSON object in response');
-			return JSON.parse(raw.slice(s, e + 1));
-		}
-
-		// narrative — plain text
-		return raw || (opts.fallback !== undefined ? opts.fallback : '');
-
-	} catch (err) {
-		console.error('[NEA AI] Error:', err);
-		return opts.fallback !== undefined ? opts.fallback : null;
-	}
-}
-
-// ── NPC Conversation Engine bridge ───────────────────────────
-// Expose closure-private symbols needed by npcConversationEngine.js
-window._NEA = {
-	get player()        { return player; },
-	addStory,
-	_buildWheel,
-	_goBack,
-	saveGame,
-	getQuestDef,
-	bumpImportance,
-	callGameAI,
-	buildActionContext,
-	gainSkillXp,
-	performSkillCheck,
-	runInlineProgress,
-	updateTopStats,
-};
 
 // Initial state: story section is active on both pages
 _bookActivateLeftSection('story');

@@ -1043,7 +1043,7 @@ window.mapData = {
   },
   "x75_y375": {
     "coordinate": "x75_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -1054,7 +1054,7 @@ window.mapData = {
   },
   "x75_y400": {
     "coordinate": "x75_y400",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -1191,7 +1191,7 @@ window.mapData = {
   },
   "x100_y50": {
     "coordinate": "x100_y50",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -1202,7 +1202,7 @@ window.mapData = {
   },
   "x100_y75": {
     "coordinate": "x100_y75",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -1339,7 +1339,7 @@ window.mapData = {
   },
   "x100_y375": {
     "coordinate": "x100_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -1350,7 +1350,7 @@ window.mapData = {
   },
   "x100_y400": {
     "coordinate": "x100_y400",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -1513,7 +1513,7 @@ window.mapData = {
   },
   "x125_y75": {
     "coordinate": "x125_y75",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -1568,7 +1568,7 @@ window.mapData = {
   },
   "x125_y200": {
     "coordinate": "x125_y200",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -1958,7 +1958,7 @@ window.mapData = {
   },
   "x150_y225": {
     "coordinate": "x150_y225",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -2290,7 +2290,7 @@ window.mapData = {
   },
   "x175_y225": {
     "coordinate": "x175_y225",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -2301,7 +2301,7 @@ window.mapData = {
   },
   "x175_y250": {
     "coordinate": "x175_y250",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -2888,7 +2888,7 @@ window.mapData = {
   },
   "x225_y225": {
     "coordinate": "x225_y225",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Dwynbroch",
     "zone": "",
     "cityVillage": "",
@@ -2970,7 +2970,7 @@ window.mapData = {
   },
   "x225_y375": {
     "coordinate": "x225_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -3380,7 +3380,7 @@ window.mapData = {
   },
   "x250_y375": {
     "coordinate": "x250_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -3391,7 +3391,7 @@ window.mapData = {
   },
   "x250_y400": {
     "coordinate": "x250_y400",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -3402,7 +3402,7 @@ window.mapData = {
   },
   "x250_y425": {
     "coordinate": "x250_y425",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Ardrenhold",
     "zone": "",
     "cityVillage": "",
@@ -4367,7 +4367,7 @@ window.mapData = {
   },
   "x325_y300": {
     "coordinate": "x325_y300",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Orindroth",
     "zone": "",
     "cityVillage": "",
@@ -4378,7 +4378,7 @@ window.mapData = {
   },
   "x325_y325": {
     "coordinate": "x325_y325",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Sivanrift",
     "zone": "",
     "cityVillage": "",
@@ -4389,7 +4389,7 @@ window.mapData = {
   },
   "x325_y350": {
     "coordinate": "x325_y350",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Sivanrift",
     "zone": "",
     "cityVillage": "",
@@ -4662,7 +4662,7 @@ window.mapData = {
   },
   "x350_y275": {
     "coordinate": "x350_y275",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Orindroth",
     "zone": "",
     "cityVillage": "",
@@ -4673,7 +4673,7 @@ window.mapData = {
   },
   "x350_y300": {
     "coordinate": "x350_y300",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Orindroth",
     "zone": "",
     "cityVillage": "",
@@ -4684,7 +4684,7 @@ window.mapData = {
   },
   "x350_y325": {
     "coordinate": "x350_y325",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Sivanrift",
     "zone": "",
     "cityVillage": "",
@@ -4695,7 +4695,7 @@ window.mapData = {
   },
   "x350_y350": {
     "coordinate": "x350_y350",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Sivanrift",
     "zone": "",
     "cityVillage": "",
@@ -5022,7 +5022,7 @@ window.mapData = {
   },
   "x375_y375": {
     "coordinate": "x375_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Sivanrift",
     "zone": "",
     "cityVillage": "",
@@ -5428,7 +5428,7 @@ window.mapData = {
   },
   "x400_y375": {
     "coordinate": "x400_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Sivanrift",
     "zone": "",
     "cityVillage": "",
@@ -6737,7 +6737,7 @@ window.mapData = {
   },
   "x500_y200": {
     "coordinate": "x500_y200",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Orindroth",
     "zone": "",
     "cityVillage": "",
@@ -7085,7 +7085,7 @@ window.mapData = {
   },
   "x525_y200": {
     "coordinate": "x525_y200",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Orindroth",
     "zone": "",
     "cityVillage": "",
@@ -7800,7 +7800,7 @@ window.mapData = {
   },
   "x575_y325": {
     "coordinate": "x575_y325",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -7811,7 +7811,7 @@ window.mapData = {
   },
   "x575_y350": {
     "coordinate": "x575_y350",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -7822,7 +7822,7 @@ window.mapData = {
   },
   "x575_y375": {
     "coordinate": "x575_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -8154,7 +8154,7 @@ window.mapData = {
   },
   "x600_y325": {
     "coordinate": "x600_y325",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -8239,7 +8239,7 @@ window.mapData = {
   },
   "x600_y425": {
     "coordinate": "x600_y425",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -8654,7 +8654,7 @@ window.mapData = {
   },
   "x625_y425": {
     "coordinate": "x625_y425",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -8791,7 +8791,7 @@ window.mapData = {
   },
   "x650_y75": {
     "coordinate": "x650_y75",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Rendarost",
     "zone": "None",
     "cityVillage": "",
@@ -8824,7 +8824,7 @@ window.mapData = {
   },
   "x650_y150": {
     "coordinate": "x650_y150",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Rendarost",
     "zone": "",
     "cityVillage": "",
@@ -9061,7 +9061,7 @@ window.mapData = {
   },
   "x650_y500": {
     "coordinate": "x650_y500",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Brythwen",
     "zone": "",
     "cityVillage": "",
@@ -9494,7 +9494,7 @@ window.mapData = {
   },
   "x675_y450": {
     "coordinate": "x675_y450",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Brythwen",
     "zone": "",
     "cityVillage": "",
@@ -9505,7 +9505,7 @@ window.mapData = {
   },
   "x675_y475": {
     "coordinate": "x675_y475",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Brythwen",
     "zone": "",
     "cityVillage": "",
@@ -11025,7 +11025,7 @@ window.mapData = {
   },
   "x800_y275": {
     "coordinate": "x800_y275",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -11063,7 +11063,7 @@ window.mapData = {
   },
   "x800_y325": {
     "coordinate": "x800_y325",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Feldarún",
     "zone": "",
     "cityVillage": "",
@@ -11378,7 +11378,7 @@ window.mapData = {
   },
   "x825_y275": {
     "coordinate": "x825_y275",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -11389,7 +11389,7 @@ window.mapData = {
   },
   "x825_y300": {
     "coordinate": "x825_y300",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -11400,7 +11400,7 @@ window.mapData = {
   },
   "x825_y325": {
     "coordinate": "x825_y325",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -11411,7 +11411,7 @@ window.mapData = {
   },
   "x825_y350": {
     "coordinate": "x825_y350",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -11422,7 +11422,7 @@ window.mapData = {
   },
   "x825_y375": {
     "coordinate": "x825_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -11653,7 +11653,7 @@ window.mapData = {
   },
   "x850_y275": {
     "coordinate": "x850_y275",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -11707,7 +11707,7 @@ window.mapData = {
   },
   "x850_y350": {
     "coordinate": "x850_y350",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -11718,7 +11718,7 @@ window.mapData = {
   },
   "x850_y375": {
     "coordinate": "x850_y375",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -12297,7 +12297,7 @@ window.mapData = {
   },
   "x900_y300": {
     "coordinate": "x900_y300",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -12692,7 +12692,7 @@ window.mapData = {
   },
   "x925_y325": {
     "coordinate": "x925_y325",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -12703,7 +12703,7 @@ window.mapData = {
   },
   "x925_y350": {
     "coordinate": "x925_y350",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",
@@ -13019,7 +13019,7 @@ window.mapData = {
   },
   "x950_y350": {
     "coordinate": "x950_y350",
-    "biome": "Mountains",
+    "biome": "Mountain",
     "kingdom": "Nithrond",
     "zone": "",
     "cityVillage": "",

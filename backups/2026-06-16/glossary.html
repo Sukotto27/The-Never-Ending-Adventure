@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glossary — The Never-Ending Adventure</title>
+  <style>
+    @font-face {
+      font-family: "CelticHand";
+      src: url("fonts/CelticHand.ttf") format("truetype");
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      color: #d5c09a;
+      min-height: 100vh;
+      background: url('images/bg3.png') no-repeat center center fixed;
+      background-size: cover;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 140% 120% at 50% 40%,
+          transparent 15%,
+          rgba(0,0,0,0.50) 62%,
+          rgba(0,0,0,0.82) 100%),
+        linear-gradient(to bottom,
+          rgba(0,0,0,0.55) 0%,
+          rgba(0,0,0,0)    14%,
+          rgba(0,0,0,0)    78%,
+          rgba(0,0,0,0.60) 100%);
+    }
+
+    /* ── Layout ─────────────────────────────────── */
+    .page-wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2.4rem 1.4rem 5rem;
+    }
+
+    /* ── Header ─────────────────────────────────── */
+    .page-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 0.6rem;
+      margin-bottom: 2rem;
+    }
+
+    .page-header .sub {
+      font-family: 'CelticHand', serif;
+      font-size: clamp(0.85rem, 2vw, 1rem);
+      color: rgba(212,168,48,0.55);
+      letter-spacing: 0.18em;
+      text-shadow: 0 1px 5px rgba(0,0,0,0.9);
+    }
+
+    .page-header h1 {
+      font-family: 'CelticHand', serif;
+      font-size: clamp(2.8rem, 7vw, 5.2rem);
+      color: #d4a830;
+      letter-spacing: 0.07em;
+      line-height: 1;
+      text-shadow:
+        0 0 70px rgba(230,185,60,0.75),
+        0 0 28px rgba(230,185,60,0.45),
+        0 4px 16px rgba(0,0,0,1),
+        0 2px 5px rgba(0,0,0,0.95);
+    }
+
+    .page-header .rule {
+      color: rgba(212,168,48,0.50);
+      font-size: 0.95rem;
+      letter-spacing: 0.2em;
+    }
+
+    .back-link {
+      font-family: 'CelticHand', serif;
+      font-size: 1.05rem;
+      color: #907850;
+      text-decoration: none;
+      letter-spacing: 0.05em;
+      transition: color 0.18s ease, text-shadow 0.18s ease;
+    }
+
+    .back-link:hover {
+      color: #c8a060;
+      text-shadow: 0 0 12px rgba(200,160,80,0.4);
+    }
+
+    /* ── Accordion ───────────────────────────────── */
+    .accordion-item {
+      margin-bottom: 0.5rem;
+    }
+
+    .accordion-btn {
+      width: 100%;
+      background: rgba(10,5,2,0.72);
+      border: 1px solid rgba(212,168,48,0.22);
+      border-radius: 3px;
+      padding: 1rem 1.4rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      backdrop-filter: blur(6px) brightness(0.9);
+      -webkit-backdrop-filter: blur(6px) brightness(0.9);
+      transition: border-color 0.18s ease, background 0.18s ease;
+    }
+
+    .accordion-btn:hover,
+    .accordion-btn.open {
+      border-color: rgba(212,168,48,0.45);
+      background: rgba(14,7,2,0.80);
+    }
+
+    .accordion-btn h2 {
+      font-family: 'CelticHand', serif;
+      font-size: 1.4rem;
+      color: #d4a830;
+      letter-spacing: 0.05em;
+      text-align: left;
+      font-weight: normal;
+      text-shadow: 0 0 20px rgba(212,168,48,0.35);
+    }
+
+    .accordion-arrow {
+      color: rgba(212,168,48,0.55);
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      transition: transform 0.22s ease;
+    }
+
+    .accordion-btn.open .accordion-arrow {
+      transform: rotate(180deg);
+    }
+
+    .accordion-panel {
+      display: none;
+      background: rgba(8,4,1,0.70);
+      border: 1px solid rgba(212,168,48,0.15);
+      border-top: none;
+      border-radius: 0 0 3px 3px;
+      padding: 1.6rem 1.8rem;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+
+    .accordion-panel.open {
+      display: block;
+    }
+
+    /* ── Content styles ──────────────────────────── */
+    .section-intro {
+      font-size: 0.93rem;
+      color: rgba(213,192,154,0.60);
+      font-style: italic;
+      margin-bottom: 1.2rem;
+      line-height: 1.6;
+    }
+
+    .cat-header {
+      font-family: 'CelticHand', serif;
+      font-size: 1.1rem;
+      color: #c09025;
+      letter-spacing: 0.06em;
+      margin: 1.4rem 0 0.6rem;
+      padding-bottom: 0.25rem;
+      border-bottom: 1px solid rgba(192,144,37,0.20);
+    }
+
+    .cat-header:first-child { margin-top: 0; }
+
+    /* Two-column lists */
+    .item-list {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.25rem 1.2rem;
+    }
+
+    .item-list li {
+      font-size: 0.9rem;
+      color: #c8b08a;
+      padding: 0.15rem 0;
+      line-height: 1.4;
+    }
+
+    .item-list li::before {
+      content: '· ';
+      color: rgba(212,168,48,0.40);
+    }
+
+    /* Single-column list */
+    .item-list.single {
+      grid-template-columns: 1fr;
+    }
+
+    /* Trait pairs */
+    .trait-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.7rem 1.4rem;
+    }
+
+    @media (max-width: 560px) {
+      .trait-grid { grid-template-columns: 1fr; }
+    }
+
+    .trait-card {
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(212,168,48,0.12);
+      border-radius: 2px;
+      padding: 0.7rem 0.9rem;
+    }
+
+    .trait-card .trait-name {
+      font-family: 'CelticHand', serif;
+      font-size: 1rem;
+      color: #d4a830;
+      margin-bottom: 0.2rem;
+    }
+
+    .trait-card .trait-opp {
+      font-size: 0.75rem;
+      color: rgba(212,168,48,0.40);
+      margin-bottom: 0.35rem;
+      letter-spacing: 0.04em;
+    }
+
+    .trait-card .trait-desc {
+      font-size: 0.85rem;
+      color: #b09878;
+      line-height: 1.45;
+    }
+
+    .trait-card .trait-bonus {
+      font-size: 0.78rem;
+      color: rgba(213,192,154,0.50);
+      margin-top: 0.3rem;
+      font-style: italic;
+    }
+
+    /* Skill rows */
+    .skill-row {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      padding: 0.3rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    .skill-row:last-child { border-bottom: none; }
+
+    .skill-name {
+      font-family: 'CelticHand', serif;
+      font-size: 0.95rem;
+      color: #d4a830;
+      min-width: 140px;
+      flex-shrink: 0;
+    }
+
+    .skill-desc {
+      font-size: 0.87rem;
+      color: #b09878;
+      line-height: 1.4;
+    }
+
+    /* Condition rows */
+    .cond-row {
+      display: flex;
+      gap: 0.7rem;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      align-items: flex-start;
+    }
+
+    .cond-row:last-child { border-bottom: none; }
+
+    .cond-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    .cond-body { flex: 1; }
+
+    .cond-name {
+      font-family: 'CelticHand', serif;
+      font-size: 0.95rem;
+      color: #d4a830;
+      margin-bottom: 0.1rem;
+    }
+
+    .cond-name.harmful { color: #c05050; }
+    .cond-name.good    { color: #60a860; }
+
+    .cond-detail {
+      font-size: 0.82rem;
+      color: #b09878;
+      line-height: 1.4;
+    }
+
+    /* Kingdom entries */
+    .kingdom-block {
+      margin-bottom: 1.6rem;
+      padding-bottom: 1.4rem;
+      border-bottom: 1px solid rgba(212,168,48,0.10);
+    }
+
+    .kingdom-block:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+    .kingdom-name {
+      font-family: 'CelticHand', serif;
+      font-size: 1.25rem;
+      color: #d4a830;
+      margin-bottom: 0.15rem;
+    }
+
+    .kingdom-meta {
+      font-size: 0.78rem;
+      color: rgba(212,168,48,0.45);
+      letter-spacing: 0.06em;
+      margin-bottom: 0.5rem;
+      font-style: italic;
+    }
+
+    .kingdom-body {
+      font-size: 0.88rem;
+      color: #b09878;
+      line-height: 1.55;
+    }
+
+    .kingdom-body strong {
+      color: #c09025;
+      font-weight: normal;
+      font-family: 'CelticHand', serif;
+    }
+
+    /* Not-yet-implemented section */
+    .nyi-note {
+      font-size: 0.85rem;
+      color: rgba(180,140,80,0.50);
+      font-style: italic;
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .item-list.dim li { color: #7a6040; }
+    .item-list.dim li::before { color: rgba(120,90,40,0.30); }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- Header -->
+  <header class="page-header">
+    <div class="sub">The Never-Ending Adventure</div>
+    <h1>Glossary</h1>
+    <div class="rule">✦ ───────────────── ✦</div>
+    <a class="back-link" href="index.html">← Home</a>
+  </header>
+
+  <!-- ══════════════════════════════════════════════
+       BESTIARY
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>Bestiary &amp; Wildlife</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">All species that may be encountered in Estranta.</p>
+
+      <div class="cat-header">Sentient Races</div>
+      <ul class="item-list">
+        <li>Humans</li>
+        <li>Elves</li>
+        <li>Half-Elves</li>
+        <li>Dwarves</li>
+        <li>Giants</li>
+        <li>Half-Giants</li>
+        <li>Goblins</li>
+        <li>Half-Goblins</li>
+        <li>Fairies</li>
+        <li>Nymphs</li>
+        <li>Sirens</li>
+      </ul>
+
+      <div class="cat-header">Monsters &amp; Creatures</div>
+      <ul class="item-list">
+        <li>Dragons</li>
+        <li>Wyverns</li>
+        <li>Trolls</li>
+        <li>Forest Trolls</li>
+        <li>Frost Trolls</li>
+        <li>Cave Trolls</li>
+        <li>Mountain Trolls</li>
+        <li>Gryphons</li>
+        <li>Giant Spiders</li>
+        <li>Sand Worms</li>
+        <li>Dire Wolves</li>
+        <li>Ice Wyrms</li>
+        <li>Frost Wyrms</li>
+        <li>Jackalopes</li>
+      </ul>
+
+      <div class="cat-header">Wildlife</div>
+      <ul class="item-list">
+        <li>Wolves</li>
+        <li>Bears</li>
+        <li>Deer</li>
+        <li>Elk</li>
+        <li>Boar</li>
+        <li>Foxes</li>
+        <li>Rabbits</li>
+        <li>Squirrels</li>
+        <li>Chickens</li>
+        <li>Fish (many species)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SETTING
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>The World of Estranta</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">The continent of Estranta spans 32 days' walk west to east, 20 days north to south. It is home to ten kingdoms across varied terrain — from Arctic peaks to sun-baked coasts.</p>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Ardrenhold</div>
+        <div class="kingdom-meta">Human ruled · Western coast · Lush, green, forest-rich</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Brave and valiant knights, welcoming taverns.<br>
+          <strong>Capital:</strong> Ardrenkeep — a fortified city housing the main keep and throne of the noble king.<br>
+          <strong>Cities:</strong> Ealdenford, Wulfhelm, Aethelstow, Grimscastel.<br>
+          <strong>Villages:</strong> Kinsburg, Hearthmere, Wyrmwood, Brigstow, Eorlingstead, Alderwood.<br>
+          <strong>Notable Locations:</strong> Raven's Perch Lookout (wyvern nesting grounds nearby), The Shadow Cavern (legendary Raven Knight armor — solve his riddle to claim it), Ardrenwood (goblin tribe), The Goldenfields (annual Harvest Festival), The Ashbound Altar &amp; The Oaken Barrow (ancient artifact fragments).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Dwynbroch</div>
+        <div class="kingdom-meta">Human ruled (with Dwarves) · Northwestern region · Mountainous, pine forests, bogs</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Lively music and art, fascination with dragons.<br>
+          <strong>Capital:</strong> Aberwyn — a picturesque city at a river mouth.<br>
+          <strong>Cities:</strong> Lochvale, Morvarth, Glencairn, Glenvarloch.<br>
+          <strong>Villages:</strong> Dalmore, Thornwood, Braefern, Dunleith, Glenmire.<br>
+          <strong>Notable Locations:</strong> Lochvale Arena, The Thornwood Forest (enchanted, shifting paths; reclusive dragon and giant spiders within), The Misty Moors, The Dragon's Spine Ridge (dragon egg hidden here), The Weeping Waterfall (treasure cave behind the falls), The Cairn of Dunan (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Brythwen</div>
+        <div class="kingdom-meta">Human ruled · Southern coast · Coastal</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Continental hub for traders and merchants; largest marketplace on the continent.<br>
+          <strong>Capital:</strong> Brythford.<br>
+          <strong>Cities:</strong> Eldenbrook, Valdara, Greystone, Windhall.<br>
+          <strong>Villages:</strong> Thornwick, Brambleton, Oakshire, Riverwell, Meadowford, Drunmar (quarantined — mysterious illness).<br>
+          <strong>Notable Locations:</strong> Sapphire Harbor, The Shadow Market (illegal goods; gangs and pirates), Glimwood Castle (abandoned; dark secret), Stormwatch Tower, The Wyvern's Windspire, The Ruins of Windwhisper (wind chime points to hidden treasure), The Shattered Citadel of Caldris (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Nithrond</div>
+        <div class="kingdom-meta">Elf ruled · Southeastern region · Forested, autumnal</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Elven prowess in archery; the Grand Archives — largest library in Estranta (access requires Elven Loremasters Society membership).<br>
+          <strong>Capital:</strong> Thalorion — buildings carved from shimmering white stone, grown from enchanted roots.<br>
+          <strong>Cities:</strong> Sylvaen, Virelysar, Caeleth, Namorelith.<br>
+          <strong>Villages:</strong> Elmyralen, Firaelis, Tirwynn Hollow, Liraen's Cross, Thandelmere.<br>
+          <strong>Notable Locations:</strong> The Grand Archives, Rendrid's Moonlit Bazaar (open only under the full moon), The Moonlit Glade (ethereal tree reveals underground chamber on full moon), The Starfall Burrow (rare Starfall Gem), The Veil of Vines (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Sivanrift</div>
+        <div class="kingdom-meta">Elf ruled (with Humans) · Southwestern region · Gardens, canyon networks, forest</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Rare plants grown nowhere else in the world; the Grand Gardens in the capital.<br>
+          <strong>Capital:</strong> Myrthill — silverwood towers and marble courtyards; a symbol of inter-racial harmony.<br>
+          <strong>Cities:</strong> Aurelwyn, Talandras, Velendar, Iriandel.<br>
+          <strong>Villages:</strong> Willowfen, Duskwatch, Elowen's Field, Halorin Cross, Rivensong.<br>
+          <strong>Notable Locations:</strong> The Grand Gardens of Sivanrift, The Cursed Forest (Ithalia's curse; begins quest "The Sword of Ithalia"), The Echoing Canyons, The Twilight Vineyards, The Thornward Pillars (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Naradreth</div>
+        <div class="kingdom-meta">Elf ruled · Eastern coast · Coastal</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Hostile to strangers, especially non-elves; on the brink of civil war between the Twelve Great Houses.<br>
+          <strong>Capital:</strong> Velra'syl — divided into twelve noble districts; outsiders are rarely welcome.<br>
+          <strong>Cities:</strong> Ilryndor (naval academy; Silent Guard), Draes'ythil (all communication via telepathic glyphs — no one speaks aloud).<br>
+          <strong>Villages:</strong> Tiryll's Hollow, Mythren's Gate, Vaerlyn Reach.<br>
+          <strong>Notable Locations:</strong> Sunspire Tower, The Singing Springs, Twilight Mirror Lake (submerged elven shrine), Eclipse Grove, The Sunken Shrine of Vaeryn (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Feldarún</div>
+        <div class="kingdom-meta">Dwarf ruled · Central mountains · Hidden in mountainous terrain</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Mining heritage, master craftsmanship; hostile to strangers and non-dwarves.<br>
+          <strong>Capital:</strong> Khúralgron — a grand forge-city carved into a volcanic caldera.<br>
+          <strong>Cities:</strong> Darakthul, Brondrak Kazel, Vurndrim, Tharnhold.<br>
+          <strong>Villages:</strong> Stonebraith, Molgrin's Deep, Emberstead, Grummveir, Kaerbryn Hollow.<br>
+          <strong>Notable Locations:</strong> The Murkridge Hollows (goblins, cave trolls; great riches within), The Ironbell Forge, The Ironback Mountains (trolls and giants), The Emberheart Tavern, The Irondeep Catacombs (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Wistravael</div>
+        <div class="kingdom-meta">Dwarf ruled · Northern region · Mountainous, forested</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Dwarven architecture, connection to earth and heavens.<br>
+          <strong>Capital:</strong> Durkendal — built beneath the Mountain of Stars; vast underground observatory and council halls.<br>
+          <strong>Cities:</strong> Tharnvyr, Vordrun Keep, Stonewake, Kragmire Hold.<br>
+          <strong>Villages:</strong> Flinthollow, Silverdeep, Bramgar's Rest, Hearthglen, Wyrshade.<br>
+          <strong>Notable Locations:</strong> The Dwarven King's Keep, The Vordynmire Caverns, The Gilded Anvil, The Drakeling Pass (young but fierce dragons), The Dreaming Cavern (dream crystal grants visions of future events), The Celestial Observatory (star metal location revealed), The Starfall Cradle (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Orindroth</div>
+        <div class="kingdom-meta">Elf ruled · Central region · Ancient, dense forest — the entire kingdom lies within the trees</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Sacred trees with mystical properties; forest shrouded in mystery, easy to become lost in.<br>
+          <strong>Capital:</strong> Elarien — built within a ring of ancient towering trees; haven for druids and forest sages.<br>
+          <strong>Cities:</strong> Valorin (canopy city woven into treetops), Ilietha, Tirelyn Reach, Norowynn's Veil (veiled grove; meeting place of the Circle of Eldertrees).<br>
+          <strong>Villages:</strong> Larethwyn, Feyran's Nest, Thiriel Glen, Mireth's Bloom, Wendralis Shade.<br>
+          <strong>Notable Locations:</strong> The Wandering Wyvern Inn, The Eldertree Circle, The Moonstone Hollow (elven cloak of camouflage), The Eldertree Threshold (ancient artifact fragment).
+        </div>
+      </div>
+
+      <div class="kingdom-block">
+        <div class="kingdom-name">Kingdom of Rendarost</div>
+        <div class="kingdom-meta">Dwarf ruled · Far northern region · Harsh, snowy, arctic</div>
+        <div class="kingdom-body">
+          <strong>Known for:</strong> Hardiness and resilience; The Dwarven Archives (open to the public); frost ale brewed by a secret method.<br>
+          <strong>Capital:</strong> Kragmoor — tunneled into a frozen cliff face; frost-forged weapons sold only to kin.<br>
+          <strong>Cities:</strong> Dravundar, Iskroldir, Thuldrenheim, Varkol's Crown.<br>
+          <strong>Villages:</strong> (far northern outposts).<br>
+          <strong>Notable Locations:</strong> The Dwarven Archives of Rendarost, Healing Hot Springs, The Frost Troll Ridge (frost giants, frost trolls), The Frostflower Fields (ice wyrms beneath), The Frostfire Chasm (frozen flame artifact), The Frostbound Sanctum &amp; The Duskstone Vault (ancient artifact fragments).
+        </div>
+      </div>
+
+      <div class="cat-header" style="margin-top: 1.4rem;">Ancient Artifacts</div>
+      <p class="skill-desc" style="margin-bottom: 0.6rem;">Twelve ancient artifact fragments are hidden across Estranta, one in each of several kingdoms. Their combined purpose is unknown.</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       NPCs
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>NPCs &amp; Professions</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">All classes, professions, and roles that NPCs in Estranta may hold.</p>
+
+      <div class="cat-header">Magic &amp; Arcane</div>
+      <ul class="item-list">
+        <li>Mage</li><li>Wizard</li><li>Witch</li><li>Sorcerer / Sorceress</li>
+        <li>Druid</li><li>Alchemist</li><li>Sage</li><li>Loremaster</li>
+        <li>Mystic</li>
+      </ul>
+
+      <div class="cat-header">Combat &amp; Military</div>
+      <ul class="item-list">
+        <li>Warrior</li><li>Knight</li><li>Squire</li><li>Soldier</li>
+        <li>Guard</li><li>Ranger</li><li>Archer</li><li>Swordsman</li>
+        <li>Spearman</li><li>Pikeman</li><li>Axeman</li><li>Shield Maiden</li>
+        <li>Barbarian</li><li>Mercenary</li><li>Sellsword</li><li>Bounty Hunter</li>
+        <li>Siege Engineer</li><li>Captain</li><li>Marshal</li><li>Warden</li>
+        <li>Sentinel</li><li>Watchman</li><li>Constable</li><li>Scout</li>
+      </ul>
+
+      <div class="cat-header">Roguish &amp; Criminal</div>
+      <ul class="item-list">
+        <li>Thief</li><li>Assassin</li><li>Bandit</li><li>Pirate</li>
+        <li>Spy</li><li>Spymaster</li>
+      </ul>
+
+      <div class="cat-header">Crafts &amp; Trades</div>
+      <ul class="item-list">
+        <li>Blacksmith</li><li>Armorer</li><li>Smith</li><li>Carpenter</li>
+        <li>Weaver</li><li>Tailor</li><li>Leatherworker</li><li>Tanner</li>
+        <li>Fletcher</li><li>Bowyer</li><li>Mason</li><li>Potter</li>
+        <li>Glassblower</li><li>Jeweler</li><li>Sculptor</li><li>Woodworker</li>
+        <li>Cooper</li><li>Miller</li><li>Brewer</li><li>Baker</li>
+        <li>Butcher</li><li>Chandler</li><li>Cobbler</li><li>Shipwright</li>
+        <li>Calligrapher</li><li>Artist</li><li>Craftsman</li>
+      </ul>
+
+      <div class="cat-header">Commerce &amp; Service</div>
+      <ul class="item-list">
+        <li>Merchant</li><li>Trader</li><li>Tavern Keeper</li><li>Apothecary</li>
+        <li>Herbalist</li><li>Healer</li><li>Midwife</li><li>Barber</li>
+        <li>Stablemaster</li><li>Stable Hand</li><li>Courier</li>
+      </ul>
+
+      <div class="cat-header">Learning &amp; Administration</div>
+      <ul class="item-list">
+        <li>Scholar</li><li>Scribe</li><li>Historian</li><li>Librarian</li>
+        <li>Cartographer</li><li>Prospector</li><li>Navigator</li><li>Book Keeper</li>
+        <li>Tactician</li><li>Advisor</li><li>Treasurer</li><li>Chamberlain</li>
+        <li>Castellan</li><li>Steward</li><li>Bailiff</li><li>Reeve</li>
+        <li>Herald</li><li>Councilor</li><li>Ambassador</li><li>Chancellor</li>
+      </ul>
+
+      <div class="cat-header">Nobility &amp; Royalty</div>
+      <ul class="item-list">
+        <li>King</li><li>Queen</li><li>Prince</li><li>Princess</li>
+        <li>Duke</li><li>Duchess</li><li>Count</li><li>Countess</li>
+        <li>Baron</li><li>Baroness</li><li>Lord</li><li>Lady</li>
+        <li>Thane</li><li>Regent</li><li>Chief</li><li>Chieftain</li>
+        <li>Page</li>
+      </ul>
+
+      <div class="cat-header">Common Folk &amp; Rural</div>
+      <ul class="item-list">
+        <li>Peasant</li><li>Commoner</li><li>Farmer</li><li>Fisherman</li>
+        <li>Shepherd</li><li>Forager</li><li>Miner</li><li>Gardener</li>
+        <li>Woodsman</li><li>Forester</li><li>Handmaiden</li><li>Worker</li>
+      </ul>
+
+      <div class="cat-header">Arts &amp; Performance</div>
+      <ul class="item-list">
+        <li>Bard</li><li>Minstrel</li><li>Thespian</li><li>Chef</li>
+      </ul>
+
+      <div class="cat-header">Exploration &amp; Adventure</div>
+      <ul class="item-list">
+        <li>Hunter</li><li>Tracker</li><li>Pathfinder</li><li>Explorer</li>
+        <li>Adventurer</li><li>Sailor</li>
+      </ul>
+
+      <div class="cat-header">Execution &amp; Law</div>
+      <ul class="item-list">
+        <li>Executioner</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SKILLS
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>Skills</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">Skills grow with use. Every action that involves a skill awards XP on success. Each skill level grants a flat bonus to related checks (max +5 at level 6+).</p>
+
+      <div class="cat-header">Combat</div>
+      <div class="skill-row"><span class="skill-name">Swordsmanship</span><span class="skill-desc">Expertise with bladed weapons.</span></div>
+      <div class="skill-row"><span class="skill-name">Archery</span><span class="skill-desc">Skill with bows and ranged weapons.</span></div>
+      <div class="skill-row"><span class="skill-name">Axes</span><span class="skill-desc">Proficiency with axes and hatchets.</span></div>
+      <div class="skill-row"><span class="skill-name">Spears</span><span class="skill-desc">Combat with spears and javelins.</span></div>
+      <div class="skill-row"><span class="skill-name">Polearms</span><span class="skill-desc">Mastery of halberds, staves, and glaives.</span></div>
+      <div class="skill-row"><span class="skill-name">Brawling</span><span class="skill-desc">Hand-to-hand combat proficiency.</span></div>
+
+      <div class="cat-header">Wilderness &amp; Survival</div>
+      <div class="skill-row"><span class="skill-name">Survival</span><span class="skill-desc">Endure and navigate harsh environments.</span></div>
+      <div class="skill-row"><span class="skill-name">Hunting</span><span class="skill-desc">Track and fell game in the wild.</span></div>
+      <div class="skill-row"><span class="skill-name">Foraging</span><span class="skill-desc">Find edible plants and useful materials.</span></div>
+      <div class="skill-row"><span class="skill-name">Tracking</span><span class="skill-desc">Follow trails and signs left by creatures.</span></div>
+      <div class="skill-row"><span class="skill-name">Fire-making</span><span class="skill-desc">Build and maintain fires in any condition.</span></div>
+      <div class="skill-row"><span class="skill-name">Fishing</span><span class="skill-desc">Catch fish from rivers, lakes, and seas.</span></div>
+      <div class="skill-row"><span class="skill-name">Herbalism</span><span class="skill-desc">Identify and use medicinal and magical plants.</span></div>
+
+      <div class="cat-header">Crafts &amp; Trades</div>
+      <div class="skill-row"><span class="skill-name">Crafting</span><span class="skill-desc">General skill for making tools and goods.</span></div>
+      <div class="skill-row"><span class="skill-name">Smithing</span><span class="skill-desc">Forge and repair metal weapons and armor.</span></div>
+      <div class="skill-row"><span class="skill-name">Fletching</span><span class="skill-desc">Craft arrows, bolts, and bows.</span></div>
+      <div class="skill-row"><span class="skill-name">Alchemy</span><span class="skill-desc">Craft potions, poisons, and remedies.</span></div>
+      <div class="skill-row"><span class="skill-name">Cooking</span><span class="skill-desc">Prepare food to maximize its benefits.</span></div>
+      <div class="skill-row"><span class="skill-name">Brewing</span><span class="skill-desc">Craft ales, meads, and other beverages.</span></div>
+      <div class="skill-row"><span class="skill-name">Sewing</span><span class="skill-desc">Craft and repair cloth and leather goods.</span></div>
+      <div class="skill-row"><span class="skill-name">Carpentry</span><span class="skill-desc">Work with wood to build structures and items.</span></div>
+      <div class="skill-row"><span class="skill-name">Mining</span><span class="skill-desc">Extract ore and minerals from rock.</span></div>
+
+      <div class="cat-header">Magic</div>
+      <div class="skill-row"><span class="skill-name">Light Magic</span><span class="skill-desc">Harness radiant and restorative magic.</span></div>
+      <div class="skill-row"><span class="skill-name">Black Magic</span><span class="skill-desc">Wield destructive and shadow magic.</span></div>
+      <div class="skill-row"><span class="skill-name">Blood Magic</span><span class="skill-desc">Channel power through blood and sacrifice.</span></div>
+
+      <div class="cat-header">Social &amp; Knowledge</div>
+      <div class="skill-row"><span class="skill-name">Persuasion</span><span class="skill-desc">Influence others through speech.</span></div>
+      <div class="skill-row"><span class="skill-name">Negotiating</span><span class="skill-desc">Bargain and reach mutually beneficial agreements.</span></div>
+      <div class="skill-row"><span class="skill-name">Healing</span><span class="skill-desc">Treat wounds and ailments.</span></div>
+      <div class="skill-row"><span class="skill-name">Decrypting</span><span class="skill-desc">Decipher codes, ciphers, and encrypted texts.</span></div>
+
+      <div class="cat-header">Roguish</div>
+      <div class="skill-row"><span class="skill-name">Stealth</span><span class="skill-desc">Move silently and avoid detection.</span></div>
+      <div class="skill-row"><span class="skill-name">Lockpicking</span><span class="skill-desc">Open locks without a key.</span></div>
+      <div class="skill-row"><span class="skill-name">Thievery</span><span class="skill-desc">Pickpocket, sleight of hand, and larceny.</span></div>
+
+      <div class="cat-header">Trades &amp; Professions</div>
+      <div class="skill-row"><span class="skill-name">Animal Handling</span><span class="skill-desc">Care for, train, and command animals.</span></div>
+      <div class="skill-row"><span class="skill-name">Navigation</span><span class="skill-desc">Find your way by stars, maps, and landmarks.</span></div>
+      <div class="skill-row"><span class="skill-name">Artistry</span><span class="skill-desc">Create paintings, sculptures, and decorative works.</span></div>
+      <div class="skill-row"><span class="skill-name">Mysticism</span><span class="skill-desc">Read omens, commune with unseen forces, and interpret fate.</span></div>
+
+      <div class="cat-header" style="margin-top:1.4rem">Skill Tiers</div>
+      <p class="skill-desc" style="margin-bottom:0.5rem;">Each skill progresses through seven tiers as it levels up:</p>
+      <ul class="item-list single" style="font-size:0.85rem">
+        <li>Novice (level 1) — starting rank</li>
+        <li>Apprentice (level 10)</li>
+        <li>Journeyman (level 25)</li>
+        <li>Adept (level 50)</li>
+        <li>Expert (level 75)</li>
+        <li>Master (level 90)</li>
+        <li>Grandmaster (level 99) — pinnacle rank</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       TRAITS
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>Traits</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">Traits are earned through play and reflect the character you've become. Most traits have an opposing counterpart — you cannot hold both at once.</p>
+
+      <div class="trait-grid">
+
+        <div class="trait-card">
+          <div class="trait-name">Brave</div>
+          <div class="trait-opp">opposite: Cowardly</div>
+          <div class="trait-desc">Unafraid of danger.</div>
+          <div class="trait-bonus">+3 to courage checks; resist fear effects</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Cowardly</div>
+          <div class="trait-opp">opposite: Brave</div>
+          <div class="trait-desc">Flees when threatened.</div>
+          <div class="trait-bonus">−3 to courage checks; may auto-flee from combat</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Cunning</div>
+          <div class="trait-opp">opposite: Naive</div>
+          <div class="trait-desc">Schemes to gain advantage.</div>
+          <div class="trait-bonus">+2 to manipulation and deception rolls</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Naive</div>
+          <div class="trait-opp">opposite: Cunning</div>
+          <div class="trait-desc">Too trusting by half.</div>
+          <div class="trait-bonus">−2 to deception checks; susceptible to manipulation</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Loyal</div>
+          <div class="trait-opp">opposite: Treacherous</div>
+          <div class="trait-desc">Stays true to allies.</div>
+          <div class="trait-bonus">+4 to trust interactions; allies fight harder</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Treacherous</div>
+          <div class="trait-opp">opposite: Loyal</div>
+          <div class="trait-desc">Betrays allies when it suits them.</div>
+          <div class="trait-bonus">−4 to trust interactions; others slow to confide in you</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Ruthless</div>
+          <div class="trait-opp">opposite: Merciful</div>
+          <div class="trait-desc">Shows no mercy.</div>
+          <div class="trait-bonus">+3 to intimidation; enemies may flee or surrender</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Merciful</div>
+          <div class="trait-opp">opposite: Ruthless</div>
+          <div class="trait-desc">Cannot bring themselves to deliver a killing blow.</div>
+          <div class="trait-bonus">+2 to healing and social rolls; −2 to intimidation</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Kind</div>
+          <div class="trait-opp">opposite: Cruel</div>
+          <div class="trait-desc">Empathizes easily.</div>
+          <div class="trait-bonus">+2 to social rolls; NPCs more willing to help</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Cruel</div>
+          <div class="trait-opp">opposite: Kind</div>
+          <div class="trait-desc">Takes pleasure in others' suffering.</div>
+          <div class="trait-bonus">+2 to intimidation; −3 to social rolls with non-hostile NPCs</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Wise</div>
+          <div class="trait-opp">opposite: Reckless</div>
+          <div class="trait-desc">Sound judgment and deep insight.</div>
+          <div class="trait-bonus">+2 to insight and knowledge checks; resists deception</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Reckless</div>
+          <div class="trait-opp">opposite: Wise</div>
+          <div class="trait-desc">Acts without thinking through consequences.</div>
+          <div class="trait-bonus">−2 to insight checks; more likely to trigger traps and ambushes</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Charismatic</div>
+          <div class="trait-opp">opposite: Abrasive</div>
+          <div class="trait-desc">A natural leader who draws people in.</div>
+          <div class="trait-bonus">+3 to persuasion and social rolls; NPCs respond warmly</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Abrasive</div>
+          <div class="trait-opp">opposite: Charismatic</div>
+          <div class="trait-desc">Rubs everyone the wrong way.</div>
+          <div class="trait-bonus">−3 to social rolls; NPCs start with a lower disposition</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Patient</div>
+          <div class="trait-opp">opposite: Impulsive</div>
+          <div class="trait-desc">Bides time and acts at the perfect moment.</div>
+          <div class="trait-bonus">+2 to crafting and ambush checks; setbacks rarely rattle you</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Impulsive</div>
+          <div class="trait-opp">opposite: Patient</div>
+          <div class="trait-desc">Acts first, thinks later.</div>
+          <div class="trait-bonus">−1 to crafting and survival checks; prone to costly mistakes</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Honorable</div>
+          <div class="trait-opp">opposite: Deceitful</div>
+          <div class="trait-desc">Bound by an unwavering code of conduct.</div>
+          <div class="trait-bonus">+3 to trust interactions; others hold you in high regard</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Deceitful</div>
+          <div class="trait-opp">opposite: Honorable</div>
+          <div class="trait-desc">Never speaks a straight truth.</div>
+          <div class="trait-bonus">+2 to deception rolls; −3 to trust when lies are uncovered</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Resilient</div>
+          <div class="trait-opp">opposite: Fragile</div>
+          <div class="trait-desc">Bounces back from hardship quickly.</div>
+          <div class="trait-bonus">+2 to endurance rolls; negative conditions wear off faster</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Fragile</div>
+          <div class="trait-opp">opposite: Resilient</div>
+          <div class="trait-desc">Struggles to endure prolonged hardship.</div>
+          <div class="trait-bonus">−2 to endurance rolls; negative conditions last longer</div>
+        </div>
+
+        <div class="trait-card">
+          <div class="trait-name">Generous</div>
+          <div class="trait-opp">opposite: Greedy</div>
+          <div class="trait-desc">Gives freely without expectation of return.</div>
+          <div class="trait-bonus">+2 to NPC relations; merchants offer better prices</div>
+        </div>
+        <div class="trait-card">
+          <div class="trait-name">Greedy</div>
+          <div class="trait-opp">opposite: Generous</div>
+          <div class="trait-desc">Always wants more for themselves.</div>
+          <div class="trait-bonus">+3 to negotiation rolls; −2 to social rolls with giving NPCs</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       CONDITIONS
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>Conditions &amp; Status Effects</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">Conditions apply roll bonuses or penalties and stamina deltas each time-of-day tick. Harmful conditions show in red; beneficial in green.</p>
+
+      <div class="cat-header">Harmful</div>
+
+      <div class="cond-row">
+        <span class="cond-icon">🥶</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Cold</div>
+          <div class="cond-detail">−5 stamina/tick · −1 to Survival checks · Duration: 4 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">💧</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Soaked</div>
+          <div class="cond-detail">−3 stamina/tick · −1 to Fire-making · Duration: 3 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🩹</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Injured</div>
+          <div class="cond-detail">−2 to Swordsmanship, Archery, Brawling · −1 to Survival · Duration: 6 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">😮‍💨</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Exhausted</div>
+          <div class="cond-detail">−2 to all rolls · Duration: 2 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🍽️</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Peckish</div>
+          <div class="cond-detail">−1 stamina/tick · Indefinite until fed</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🫙</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Hungry</div>
+          <div class="cond-detail">−1 to all rolls · −3 stamina/tick · Indefinite until fed</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">💀</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Starving</div>
+          <div class="cond-detail">−2 to all rolls · −2 to Survival, −1 to Swordsmanship and Brawling · −5 stamina/tick · Life drain per tick · Indefinite</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">⚖️</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Encumbered</div>
+          <div class="cond-detail">−1 to all rolls · −1 to Survival · −2 stamina/tick · Indefinite while overweight</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🏋️</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Overloaded</div>
+          <div class="cond-detail">−2 to all rolls · −2 to Swordsmanship, Survival, −1 to Brawling · −4 stamina/tick · Indefinite while overweight</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🤒</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Sick</div>
+          <div class="cond-detail">−1 to all rolls · −4 stamina/tick · Duration: 8 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">☠️</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Poisoned</div>
+          <div class="cond-detail">−1 to all rolls · −6 stamina/tick · Duration: 4 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🌑</span>
+        <div class="cond-body">
+          <div class="cond-name harmful">Cursed</div>
+          <div class="cond-detail">−2 to all rolls · Indefinite until cleansed</div>
+        </div>
+      </div>
+
+      <div class="cat-header">Beneficial</div>
+
+      <div class="cond-row">
+        <span class="cond-icon">🍖</span>
+        <div class="cond-body">
+          <div class="cond-name good">Well Fed</div>
+          <div class="cond-detail">+1 to all rolls · +5 stamina/tick · Duration: 4 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">✨</span>
+        <div class="cond-body">
+          <div class="cond-name good">Rejuvenated</div>
+          <div class="cond-detail">+2 to all rolls · Duration: 5 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🌌</span>
+        <div class="cond-body">
+          <div class="cond-name good">Dreamer's Blessing</div>
+          <div class="cond-detail">+2 to all rolls · +3 stamina/tick · Duration: 6 ticks (from vivid dreams while sleeping)</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">⚡</span>
+        <div class="cond-body">
+          <div class="cond-name good">Inspired</div>
+          <div class="cond-detail">+1 to all rolls · Duration: 3 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🛡️</span>
+        <div class="cond-body">
+          <div class="cond-name good">Fortified</div>
+          <div class="cond-detail">+1 to Swordsmanship, Brawling, Survival · Duration: 4 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">🎯</span>
+        <div class="cond-body">
+          <div class="cond-name good">Focused</div>
+          <div class="cond-detail">+2 to Archery, +1 to Tracking · Duration: 3 ticks</div>
+        </div>
+      </div>
+      <div class="cond-row">
+        <span class="cond-icon">💧</span>
+        <div class="cond-body">
+          <div class="cond-name good">Hydrated</div>
+          <div class="cond-detail">+1 to Survival · +4 stamina/tick · Duration: 5 ticks</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       ITEMS
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>Items</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">All obtainable items. Items have a rarity (Common → Legendary) and a condition (Excellent → Broken) that affect their stats. Food freshness degrades over time.</p>
+
+      <div class="cat-header">Weapons</div>
+      <ul class="item-list">
+        <li>Iron Sword</li><li>Dagger</li><li>Hunting Knife</li><li>Belt Knife</li>
+        <li>Shortbow</li><li>Bow</li><li>Longbow</li><li>Recurve Bow</li>
+        <li>War Bow</li><li>Elven Bow</li><li>Composite Bow</li><li>Crossbow (Light/Heavy)</li>
+        <li>Arrow / Broadtip Arrows</li><li>Bolts</li>
+        <li>Iron Mace</li><li>Spiked Mace</li><li>Wooden Club</li><li>War Club</li>
+        <li>Iron Chain</li><li>Spiked Chain</li>
+        <li>Iron Longsword</li><li>Steel Longsword</li><li>Iron Shortsword</li><li>Steel Shortsword</li>
+        <li>Iron Greatsword</li><li>Steel Greatsword</li><li>Iron Scimitar</li><li>Steel Scimitar</li>
+        <li>Iron Hatchet</li><li>Steel Hatchet</li><li>Iron Battle Axe</li><li>Steel Battle Axe</li>
+        <li>Iron War Axe</li><li>Steel War Axe</li><li>Woodcutting Axe</li>
+        <li>Iron Spear</li><li>Steel Spear</li><li>Iron Halberd</li><li>Steel Halberd</li>
+        <li>Bo Staff</li><li>Iron Flail</li><li>Steel Flail</li>
+        <li>Dwarven Great Sword</li><li>Dwarven Battle Axe</li><li>Dwarven Warhammer</li><li>Dwarven Crossbow</li>
+        <li>Elven Longsword</li><li>Elven Saber</li><li>Elven War Bow</li><li>Elven Dagger</li>
+        <li>Wooden Shield</li><li>Kite Shield</li><li>Round Shield</li><li>Heater Shield</li>
+      </ul>
+
+      <div class="cat-header">Armor &amp; Clothing</div>
+      <ul class="item-list">
+        <li>Common Tunic</li><li>Linen Tunic</li><li>Robe</li><li>Doublet</li>
+        <li>Gambeson</li><li>Padded Gambeson</li><li>Military Tunic</li>
+        <li>Chainmail Hauberk</li><li>Chainmail Shirt</li><li>Elven Chainmail Hauberk</li><li>Dwarven Chainmail Hauberk</li>
+        <li>Leather Vest</li><li>Leather Brigandine</li><li>Leather Cuirass</li>
+        <li>Studded Leather Vest</li><li>Studded Leather Brigandine</li><li>Studded Leather Cuirass</li>
+        <li>Iron Plate Cuirass</li><li>Steel Plate Cuirass</li>
+        <li>Cape</li><li>Wool Cape</li><li>Fur Cape</li><li>Royal Cape</li>
+        <li>Common Cloak</li><li>Wool Cloak</li><li>Ranger's Cloak</li><li>Travel Cloak</li>
+        <li>Leather Boots</li><li>Fur Boots</li><li>Cavalry Boots</li><li>Commoner Shoes</li>
+        <li>Iron Plate Greaves</li><li>Steel Plate Greaves</li>
+        <li>Leather Vambraces</li><li>Iron Plate Vambraces</li><li>Steel Plate Vambraces</li>
+        <li>Iron Plate Gauntlets</li><li>Steel Plate Gauntlets</li><li>Leather Gloves</li>
+        <li>Iron Plate Pauldrons</li><li>Steel Plate Pauldrons</li><li>Leather Pauldrons</li>
+        <li>Chainmail Chausses</li><li>Iron Plate Chausses</li><li>Leather Trousers</li><li>Common Trousers</li>
+        <li>Feathered Hat</li><li>Iron Bascinet Helm</li><li>Steel Bascinet Helm</li>
+        <li>Iron Sallet Helm</li><li>Steel Sallet Helm</li><li>Knight's Helm</li>
+        <li>Leather Coif</li><li>Chainmail Coif</li><li>Elven War Helm</li><li>Dwarven War Helm</li>
+      </ul>
+
+      <div class="cat-header">Food &amp; Drink</div>
+      <ul class="item-list">
+        <li>Apple</li><li>Banana</li><li>Mango</li><li>Strawberry</li>
+        <li>Cherries</li><li>Glazed Cherries</li><li>Gooseberry</li>
+        <li>Wild Berries</li><li>Dark Berry</li>
+        <li>Blue / Green / Red Grapes</li>
+        <li>Carrot</li><li>Roasted Carrot</li><li>Cabbage</li><li>Cabbage Head</li>
+        <li>Corn Cob</li><li>Onion</li><li>Tomato</li><li>Raw Tomato</li>
+        <li>Green Pepper</li><li>Red Pepper</li><li>Turnip</li><li>Broccoli</li>
+        <li>Edible Mushrooms</li><li>Nuts</li><li>Milk</li>
+        <li>Wedge of Cheese</li><li>Cheese Round</li>
+        <li>Sausage</li><li>Roasted Meat</li><li>Cooked Meat</li><li>Roasted Chicken</li>
+        <li>Raw Bear Meat</li><li>Raw Venison</li><li>Raw Boar Meat</li>
+        <li>Raw Rabbit Meat</li><li>Raw Wolf Meat</li>
+        <li>Raw Fish</li><li>Fresh Fish</li><li>Dried Fish</li><li>Smoked Fish</li>
+        <li>Fried Red Fish</li><li>Boiled Crab</li>
+        <li>Raw Trout / Perch / Carp / Pike / Bass / Catfish / Mackerel / Herring / Eel / Tuna / Salmon</li>
+        <li>Rations</li>
+        <li>Ale</li><li>Quest Ale</li><li>Wine</li>
+      </ul>
+
+      <div class="cat-header">Potions &amp; Consumables</div>
+      <ul class="item-list">
+        <li>Potion of Healing</li>
+        <li>Potion of Endurance</li>
+      </ul>
+
+      <div class="cat-header">Tools &amp; General</div>
+      <ul class="item-list">
+        <li>Torch</li><li>Rope</li><li>Lantern</li><li>Cooking Pot</li>
+        <li>Tent</li><li>Waterskin</li><li>Fishing Rod</li>
+        <li>Lute</li><li>Flute</li>
+      </ul>
+
+      <div class="cat-header">Materials &amp; Resources</div>
+      <ul class="item-list">
+        <li>Leather</li><li>Cloth</li><li>Hide</li><li>Wool</li>
+        <li>Bundle of Wood</li><li>Stick</li><li>Stone</li>
+        <li>Tinder</li><li>Flint</li><li>Charcoal</li>
+        <li>Feather</li><li>Water</li><li>Parchment</li>
+        <li>Iron Ore</li><li>Copper Ore</li><li>Silver Ore</li>
+        <li>Iron Ingot</li><li>Steel Ingot</li><li>Silver Ingot</li>
+        <li>Dwarven Steel Ingot</li><li>Elven Steel Ingot</li>
+        <li>Clay</li><li>Sand</li>
+        <li>Ruby</li><li>Sapphire</li><li>Amethyst</li><li>Diamond</li>
+        <li>Topaz</li><li>Opal</li><li>Garnet</li><li>Onyx</li>
+        <li>Bloodstone</li><li>Emerald</li><li>Moonstone</li><li>Sunstone</li><li>Amber</li>
+      </ul>
+
+      <div class="cat-header">Item Rarity</div>
+      <ul class="item-list single" style="font-size:0.85rem">
+        <li>Common — no modifier</li>
+        <li>Uncommon — +1 roll bonus</li>
+        <li>Rare — +2 roll bonus</li>
+        <li>Epic — +3 roll bonus</li>
+        <li>Legendary — +5 roll bonus</li>
+      </ul>
+
+      <div class="cat-header">Item Condition (Weapons &amp; Armor)</div>
+      <ul class="item-list single" style="font-size:0.85rem">
+        <li>Excellent (+3) · Good (+1) · Fair (±0) · Worn (−1) · Damaged (−2) · Cracked / Rusty / Chipped (−3) · Broken (unusable)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       QUESTS
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>Quests</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="section-intro">Quests are tracked in the Journal and have typed objectives, branching choices, and rewards. They fall into 16 categories.</p>
+
+      <div class="cat-header">Quest Categories</div>
+      <ul class="item-list">
+        <li>Bounty</li><li>Beast Hunting</li><li>Diplomacy</li><li>Exploration</li>
+        <li>Rescue</li><li>Delivery</li><li>Investigation</li><li>Heist</li>
+        <li>Escort</li><li>Assassination</li><li>Collection</li><li>Mystery</li>
+        <li>Survival</li><li>Political</li><li>Lore</li><li>Personal</li>
+      </ul>
+
+      <div class="cat-header">Known Quests</div>
+      <ul class="item-list single" style="font-size:0.85rem">
+        <li>Barion's Blight — mysterious illness in Drunmar village (Brythwen)</li>
+        <li>The Sword of Ithalia — sword in a stump in the Cursed Forest (Sivanrift)</li>
+        <li>The Whispering Woods — triggered in Orindroth forest</li>
+        <li>Eratrid's Lament — triggered in Naradreth</li>
+        <li>Neialor's Feline Dilemma — cat NPC in any Naradreth village</li>
+        <li>The Lovers' Plight — inter-racial couple hiding in Naradreth</li>
+        <li>The Great Void — Brindon found at the Dwarven Archives, Rendarost</li>
+        <li>The Secrets of Sareia — unlocks Grand Archives membership (Nithrond)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       NOT YET IMPLEMENTED
+  ══════════════════════════════════════════════ -->
+  <div class="accordion-item">
+    <button class="accordion-btn" aria-expanded="false">
+      <h2>Planned — Not Yet Implemented</h2>
+      <span class="accordion-arrow">▼</span>
+    </button>
+    <div class="accordion-panel">
+      <p class="nyi-note">The following were planned in earlier design documents but have not yet been coded into the game. This list exists as a development reference.</p>
+
+      <div class="cat-header">Traits (planned, not yet coded)</div>
+      <p class="nyi-note" style="margin-bottom:0.5rem;">The trait system currently uses paired opposites (see Traits section). These single traits from the original design have not been implemented yet.</p>
+      <ul class="item-list dim">
+        <li>Strong-Willed</li><li>Evil</li><li>Good-Hearted</li><li>Strong</li>
+        <li>Calm</li><li>Intelligent</li><li>Quick-Learner</li><li>Courageous</li>
+        <li>Sneaky</li><li>Witty</li><li>Cautious</li><li>Untrustworthy</li>
+        <li>Determined</li><li>Charming</li><li>Savage</li><li>Brutal</li>
+        <li>Lucky</li><li>Scholar</li><li>Survivalist</li><li>Adventurous</li>
+        <li>Compassionate</li><li>Rude</li><li>Bloodthirsty</li><li>Clever</li>
+        <li>Inquisitive</li><li>Observant</li><li>Friendly</li><li>Gallant</li>
+        <li>Valiant</li><li>Honest</li>
+      </ul>
+
+      <div class="cat-header">Status Effects (planned)</div>
+      <ul class="item-list dim">
+        <li>Thirsty (no thirst mechanic yet)</li>
+        <li>Weary</li>
+        <li>Well-rested</li>
+        <li>Satisfied</li>
+        <li>Sore</li>
+        <li>Bleeding</li>
+        <li>Wounded</li>
+        <li>Fatally Wounded</li>
+        <li>Bleeding Out</li>
+        <li>Ill (currently covered by Sick)</li>
+      </ul>
+
+      <div class="cat-header">Spells (magic system not yet implemented)</div>
+      <ul class="item-list dim">
+        <li>Firebolt</li><li>Lightning Bolt</li><li>Lightning Strike</li>
+        <li>Kinetic Blow</li><li>Ice Shard</li><li>Paralysis</li>
+        <li>Barrier</li><li>Invisibility</li><li>Bewilderment</li>
+        <li>Rapid Healing</li><li>Transfer Life</li><li>Cure Illness</li>
+        <li>Illuminate</li>
+      </ul>
+
+      <div class="cat-header">Books (item system stub)</div>
+      <ul class="item-list dim">
+        <li>Alchemist's Guide</li><li>Fletcher's Guide</li><li>Druid's Spellbook</li>
+        <li>Smithing Guide</li><li>Carpenter's Guide</li><li>Herbalist's Guide</li>
+        <li>Crafting Guide</li><li>Hunter's Guide</li>
+      </ul>
+
+      <div class="cat-header">Systems</div>
+      <ul class="item-list single dim">
+        <li>Travel — distance, stamina cost, time, random events (logic exists but not wired)</li>
+        <li>Conditions / Effects — Cold, Injured etc. defined but not triggered in-game yet</li>
+        <li>Quest Engine — data defined, completion checks and rewards not wired</li>
+        <li>NPC Dialog — templates exist, no conversation engine</li>
+        <li>Combat — not yet implemented</li>
+        <li>Crafting (recipe-driven) — attemptCraftOrCook exists, not in wheel</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.accordion-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panel = btn.nextElementSibling;
+      const isOpen = panel.classList.contains('open');
+      btn.classList.toggle('open', !isOpen);
+      btn.setAttribute('aria-expanded', String(!isOpen));
+      panel.classList.toggle('open', !isOpen);
+    });
+  });
+</script>
+</body>
+</html>

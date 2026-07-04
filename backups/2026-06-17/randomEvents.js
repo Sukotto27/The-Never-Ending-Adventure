@@ -57,7 +57,7 @@ const randomEvents = [
     weight: 8,
     trigger: {
       biomes: ['Forest', 'Hills', 'Plains'],
-      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
+      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -218,7 +218,7 @@ const randomEvents = [
     weight: 6,
     trigger: {
       biomes: ['Forest', 'Hills'],
-      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
+      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: ['Ardrenhold', 'Dwynbroch', 'Orindroth'],
       minLevel: 1,
@@ -301,8 +301,6 @@ const randomEvents = [
             storyText: 'The troll clubs you hard enough to see stars. You retreat, bloodied.',
             effects: [
               { type: 'life', amount: -30 },
-              { type: 'status', value: 'bleeding' },
-              { type: 'status', value: 'wounded' },
             ],
           },
         },
@@ -345,7 +343,7 @@ const randomEvents = [
     weight: 7,
     trigger: {
       biomes: ['Forest', 'Plains', 'Hills'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -368,7 +366,6 @@ const randomEvents = [
             storyText: 'A tusk catches your leg as it passes.',
             effects: [
               { type: 'life', amount: -18 },
-              { type: 'status', value: 'injured' },
             ],
           },
         },
@@ -388,7 +385,6 @@ const randomEvents = [
             storyText: 'Your aim is off. The boar crashes into you.',
             effects: [
               { type: 'life', amount: -22 },
-              { type: 'status', value: 'bleeding' },
             ],
           },
         },
@@ -404,7 +400,7 @@ const randomEvents = [
     weight: 5,
     trigger: {
       biomes: ['Forest', 'Wetlands'],
-      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
+      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: ['Dwynbroch', 'Orindroth'],
       minLevel: 2,
@@ -428,8 +424,7 @@ const randomEvents = [
             storyText: 'The web entangles your weapon arm. The spider bites before you break free.',
             effects: [
               { type: 'life', amount: -20 },
-              { type: 'status', value: 'poisoned' },
-              { type: 'status', value: 'injured' },
+              { type: 'status', value: 'Poisoned' },
             ],
           },
         },
@@ -463,7 +458,7 @@ const randomEvents = [
     weight: 6,
     trigger: {
       biomes: ['Forest', 'Wetlands', 'Plains'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -473,8 +468,7 @@ const randomEvents = [
       storyText: 'The bite burns. You suck out what venom you can, but your leg swells by the hour.',
       effects: [
         { type: 'life', amount: -12 },
-        { type: 'status', value: 'poisoned' },
-        { type: 'status', value: 'injured' },
+        { type: 'status', value: 'Poisoned' },
         { type: 'skill', name: 'Survival' },
       ],
     },
@@ -493,7 +487,7 @@ const randomEvents = [
     weight: 8,
     trigger: {
       biomes: null,
-      timeOfDay: ['🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon', '🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening'],
+      timeOfDay: ['🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon', '🌆 Evening', '🌃 Mid-Evening'],
       weather: ['Clear', 'Cloudy'],
       kingdoms: null,
       minLevel: 1,
@@ -546,7 +540,7 @@ const randomEvents = [
     weight: 7,
     trigger: {
       biomes: ['Forest', 'Wetlands', 'Coastal', 'Hills'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌑 Night', '⭐ Late Night'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -596,7 +590,7 @@ const randomEvents = [
     polarity: 'bad',
     weight: 5,
     trigger: {
-      biomes: ['Mountains'],
+      biomes: ['Mountain'],
       timeOfDay: null,
       weather: ['Rain', 'Storm'],
       kingdoms: null,
@@ -650,7 +644,7 @@ const randomEvents = [
     polarity: 'bad',
     weight: 8,
     trigger: {
-      biomes: ['Mountains', 'Tundra'],
+      biomes: ['Mountain', 'Tundra'],
       timeOfDay: ['🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: ['Rendarost', 'Wistravael', 'Feldarún'],
@@ -700,7 +694,7 @@ const randomEvents = [
     weight: 5,
     trigger: {
       biomes: ['Forest', 'Plains'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: ['Clear', 'Cloudy'],
       kingdoms: null,
       minLevel: 1,
@@ -723,7 +717,7 @@ const randomEvents = [
             storyText: 'The swarm chases you further than it should. You are covered in stings.',
             effects: [
               { type: 'life', amount: -20 },
-              { type: 'status', value: 'sick' },
+              { type: 'status', value: 'Swarmed' },
             ],
           },
         },
@@ -814,7 +808,7 @@ const randomEvents = [
     polarity: 'bad',
     weight: 7,
     trigger: {
-      biomes: ['Mountains', 'Hills'],
+      biomes: ['Mountain', 'Hills'],
       timeOfDay: null,
       weather: null,
       kingdoms: null,
@@ -865,7 +859,7 @@ const randomEvents = [
     weight: 6,
     trigger: {
       biomes: null,
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning'],
       weather: ['Clear'],
       kingdoms: null,
       minLevel: 1,
@@ -990,7 +984,7 @@ const randomEvents = [
     weight: 8,
     trigger: {
       biomes: ['Plains', 'Hills', 'Coastal'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: ['Clear'],
       kingdoms: null,
       minLevel: 1,
@@ -1060,7 +1054,7 @@ const randomEvents = [
     weight: 8,
     trigger: {
       biomes: ['Forest', 'Plains'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: ['Clear'],
       kingdoms: null,
       minLevel: 1,
@@ -1082,7 +1076,7 @@ const randomEvents = [
     polarity: 'good',
     weight: 3,
     trigger: {
-      biomes: ['Forest', 'Hills', 'Mountains'],
+      biomes: ['Forest', 'Hills', 'Mountain'],
       timeOfDay: null,
       weather: null,
       kingdoms: null,
@@ -1105,7 +1099,7 @@ const randomEvents = [
     polarity: 'good',
     weight: 4,
     trigger: {
-      biomes: ['Mountains', 'Forest', 'Hills'],
+      biomes: ['Mountain', 'Forest', 'Hills'],
       timeOfDay: null,
       weather: null,
       kingdoms: null,
@@ -1161,7 +1155,7 @@ const randomEvents = [
     weight: 7,
     trigger: {
       biomes: ['Plains', 'Hills', 'Coastal'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: ['Clear', 'Cloudy'],
       kingdoms: null,
       minLevel: 1,
@@ -1255,7 +1249,7 @@ const randomEvents = [
     weight: 5,
     trigger: {
       biomes: ['Plains', 'Hills', 'Coastal'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -1303,7 +1297,7 @@ const randomEvents = [
     weight: 4,
     trigger: {
       biomes: null,
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: ['Clear'],
       kingdoms: null,
       minLevel: 1,
@@ -1368,7 +1362,7 @@ const randomEvents = [
     polarity: 'mixed',
     weight: 3,
     trigger: {
-      biomes: ['Forest', 'Mountains', 'Hills'],
+      biomes: ['Forest', 'Mountain', 'Hills'],
       timeOfDay: ['🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: null,
@@ -1412,7 +1406,7 @@ const randomEvents = [
     weight: 3,
     trigger: {
       biomes: ['Forest'],
-      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
+      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
       weather: ['Fog', 'Clear'],
       kingdoms: null,
       minLevel: 1,
@@ -1541,8 +1535,8 @@ const randomEvents = [
     polarity: 'neutral',
     weight: 5,
     trigger: {
-      biomes: ['Forest', 'Mountains', 'Hills'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      biomes: ['Forest', 'Mountain', 'Hills'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -1596,7 +1590,7 @@ const randomEvents = [
     weight: 4,
     trigger: {
       biomes: ['Plains', 'Hills'],
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: ['Clear'],
       kingdoms: null,
       minLevel: 1,
@@ -1697,7 +1691,7 @@ const randomEvents = [
     weight: 4,
     trigger: {
       biomes: ['Forest'],
-      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
+      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -1751,7 +1745,7 @@ const randomEvents = [
     weight: 6,
     trigger: {
       biomes: null,
-      timeOfDay: ['🌅 Early Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
+      timeOfDay: ['🌅 Early Morning', '🌄 Mid-Morning', '☀️ Morning', '🌞 Midday', '🌤️ Afternoon', '⛅ Mid-Afternoon', '🌇 Late Afternoon'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -1768,7 +1762,7 @@ const randomEvents = [
     weight: 3,
     trigger: {
       biomes: null,
-      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk'],
+      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -1806,7 +1800,7 @@ const randomEvents = [
     weight: 5,
     trigger: {
       biomes: null,
-      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌌 Late Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
+      timeOfDay: ['🌆 Evening', '🌃 Mid-Evening', '🌙 Dusk', '🌑 Night', '⭐ Late Night'],
       weather: null,
       kingdoms: null,
       minLevel: 1,
@@ -2254,32 +2248,6 @@ const randomEvents = [
           },
         },
       ],
-    },
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // SCRIPTED EVENT — Ithris / Sarsett (The Slow Becoming)
-  // ══════════════════════════════════════════════════════════════════════════
-  // This event fires once only, when conditions are met.
-  // The actual scene runs through _meetIthris() in script.js.
-  // Weight 0 here — the engine fires it directly via _checkIthrisMeetTrigger().
-  {
-    id: 'ithris_encounter',
-    name: 'A Woman on the Road',
-    type: 'quest_seed',
-    polarity: 'mixed',
-    weight: 0,
-    trigger: {
-      biomes: ['Forest', 'Plains', 'Hills', 'Coastal'],
-      timeOfDay: ['☀️ Morning', '🌞 Midday', '🌅 Early Morning'],
-      weather: null,
-      kingdoms: null,
-      minLevel: 2,
-    },
-    narrative: 'A woman stands at the crossroads ahead, studying the roads with the patience of someone who has been walking a long time.',
-    simple: {
-      storyText: null,
-      effects: [],
     },
   },
 
