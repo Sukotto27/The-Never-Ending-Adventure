@@ -22193,7 +22193,7 @@ if (canShow) {
 						const cell = mapData[key] || {};
 
 					let html;
-					const isDiscovered = cell.discovered || iconsVisible || key === player?.currentLocation;
+					const isDiscovered = cell.discovered || iconsVisible || key === player?.currentLocation || developerMode;
 					if (!isDiscovered) {
 						const _unveiledBiome = cell.biome ? ` <span style="opacity:0.6">(${cell.biome})</span>` : '';
 						if (cell.nearby) {
@@ -22211,12 +22211,13 @@ if (canShow) {
 						}
 						const ttKnownLoc     = (player.knownLocations || {})[key];
 						const ttKnownKingdom = (player.knownKingdoms  || {})[cell.kingdom];
-						const ttName    = ttKnownLoc?.nameKnown && cell.cityVillage ? cell.cityVillage : '???';
-						const ttKingdom = ttKnownKingdom && cell.kingdom ? cell.kingdom : 'Uncharted Territory';
+						const ttNameKnown    = developerMode || ttKnownLoc?.nameKnown;
+						const ttName    = ttNameKnown && cell.cityVillage ? cell.cityVillage : '???';
+						const ttKingdom = (developerMode || ttKnownKingdom) && cell.kingdom ? cell.kingdom : 'Uncharted Territory';
 						html = `<div class="tooltip-zone"><strong>${icon} ${ttName}</strong><br>`;
 						html += `<em>Kingdom:</em> ${ttKingdom}<br>`;
-						if (ttKnownLoc?.nameKnown && cell.description) html += `<em>Description:</em> ${cell.description}<br>`;
-						if (ttKnownLoc?.nameKnown) {
+						if (ttNameKnown && cell.description) html += `<em>Description:</em> ${cell.description}<br>`;
+						if (ttNameKnown) {
 							const ttNames = (cell.establishments || []).map(e => e.name).filter(n => n).join(', ');
 							if (ttNames) html += `<em>Establishments:</em> ${ttNames}<br>`;
 						}
@@ -22319,7 +22320,7 @@ if (canShow) {
 				// 6d) Default click → show travel UI
 				const destCell  = (typeof mapData !== 'undefined' && mapData[key]) || {};
 				const knownDest = (player.knownLocations || {})[key];
-				const destName  = knownDest?.nameKnown && destCell.cityVillage
+				const destName  = (developerMode || knownDest?.nameKnown) && destCell.cityVillage
 					? `${destCell.cityVillage} (${key})`
 					: (destCell.biome ? `${destCell.biome} region` : key);
 
@@ -22361,7 +22362,7 @@ if (canShow) {
 						addStory('⚠️ You are too exhausted for that journey. Rest and recover first.');
 						clearCellUI(); return;
 					}
-					const destCellKnown = !!(player.knownLocations?.[key]?.nameKnown);
+					const destCellKnown = developerMode || !!(player.knownLocations?.[key]?.nameKnown);
 					const destLabel = destCellKnown ? (destCell.cityVillage || 'this location') : 'this location';
 					confirmText.textContent = `Travel to ${destLabel}? (~${hoursETA}h · ${staminaCost} stamina)`;
 					confirmModal.style.display = 'block';

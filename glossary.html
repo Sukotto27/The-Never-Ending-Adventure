@@ -508,9 +508,49 @@
 
     .item-list.dim li { color: #7a6040; }
     .item-list.dim li::before { color: rgba(120,90,40,0.30); }
+
+    /* Continent map */
+    .continent-map {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 3px;
+      border: 1px solid rgba(212,168,48,0.28);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.55);
+      margin-bottom: 1rem;
+    }
+
+    /* Music toggle */
+    .music-toggle {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 10;
+      width: 2.6rem;
+      height: 2.6rem;
+      border-radius: 50%;
+      background: rgba(10,5,2,0.72);
+      border: 1px solid rgba(212,168,48,0.35);
+      color: #d4a830;
+      font-size: 1.15rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(6px) brightness(0.9);
+      -webkit-backdrop-filter: blur(6px) brightness(0.9);
+      transition: border-color 0.18s ease, background 0.18s ease;
+    }
+
+    .music-toggle:hover {
+      border-color: rgba(212,168,48,0.6);
+      background: rgba(14,7,2,0.85);
+    }
   </style>
 </head>
 <body>
+<audio id="bg-music" src="music/glossary.mp3" loop preload="auto"></audio>
+<button id="music-toggle" class="music-toggle" type="button" aria-label="Mute background music" title="Mute music">🔊</button>
 <div class="page-wrap">
 
   <!-- Header -->
@@ -592,6 +632,7 @@
     </button>
     <div class="accordion-panel">
       <p class="section-intro">The continent of Estranta is home to ten distinct kingdoms with unique cultures, climates, and mysteries.</p>
+      <img class="continent-map" src="images/map4.png" alt="Map of the continent of Estranta" loading="lazy">
 
       <div class="kingdom-block">
         <img class="kingdom-banner" src="images/banners/ardrenhold.png" alt="Banner of the Kingdom of Ardrenhold" loading="lazy">
@@ -2714,6 +2755,39 @@
       panel.classList.toggle('open', !isOpen);
     });
   });
+
+  // Background music with mute toggle
+  (() => {
+    const music = document.getElementById('bg-music');
+    const toggleBtn = document.getElementById('music-toggle');
+
+    function updateButton() {
+      toggleBtn.textContent = music.muted ? '🔇' : '🔊';
+      toggleBtn.setAttribute('aria-label', music.muted ? 'Unmute background music' : 'Mute background music');
+      toggleBtn.title = music.muted ? 'Unmute music' : 'Mute music';
+    }
+
+    function attemptPlay() {
+      music.play().catch(() => {
+        // Autoplay blocked — start on the first user interaction instead.
+        const startOnGesture = () => {
+          music.play().catch(() => {});
+          document.removeEventListener('click', startOnGesture);
+          document.removeEventListener('keydown', startOnGesture);
+        };
+        document.addEventListener('click', startOnGesture, { once: true });
+        document.addEventListener('keydown', startOnGesture, { once: true });
+      });
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      music.muted = !music.muted;
+      updateButton();
+    });
+
+    updateButton();
+    attemptPlay();
+  })();
 </script>
 </body>
 </html>
